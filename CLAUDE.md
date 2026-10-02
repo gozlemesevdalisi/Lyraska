@@ -49,16 +49,22 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 ```
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
-│   ├── components/           # React bileşenleri (karşılama ekranı, nokta matris vb.)
+│   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
+│   ├── hooks/                # usePlayer: komutlar, durum sorgulama, kısayollar
 │   ├── lib/                  # Saf yardımcılar, Rust köprüsü (backend.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
 │   ├── src/
 │   │   ├── lib.rs            # Tauri kurulumu, komut kaydı
 │   │   ├── commands.rs       # Arayüzün çağırdığı ince Tauri komutları
-│   │   ├── audio/            # Ses motoru: decode, dsp (f64), output (WASAPI)
+│   │   ├── audio/            # Ses motoru
+│   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
+│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, duraklatma geçişi (ayırma/kilit yok)
+│   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI
+│   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   └── visual_bridge/    # Çalma zamanı + şarkı haritası → görseller; gecikme telafisi
+│   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
 ├── scripts/                  # Yardımcı betikler (npm lisans denetimi)
@@ -92,6 +98,8 @@ Hepsi depo kökünde çalıştırılır.
 | Rust testleri                  | `cd src-tauri && cargo test`                                                         |
 | Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
 | Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
+| Windows'a özel kodu denetle    | `cd src-tauri && cargo clippy --target x86_64-pc-windows-msvc --all-targets`         |
+| Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                   |
 | Kurulum dosyası (Windows)      | `npm run tauri build`                                                                |
 
 Not: Rust derlemesi için önce `npm run build` ile `dist/` oluşturulmuş olmalıdır.

@@ -1,5 +1,5 @@
-import { WelcomeScreen } from "./components/WelcomeScreen";
+import { PlayerScreen } from "./components/PlayerScreen";
 
 export default function App() {
-  return <WelcomeScreen />;
+  return <PlayerScreen />;
 }

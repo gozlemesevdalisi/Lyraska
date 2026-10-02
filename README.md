@@ -1,6 +1,7 @@
 # Lyraska
 
-> **Draft** — the project is in Phase 0 (foundation). Nothing here is ready for everyday use yet.
+> **Early development** — Phase 1 is in progress. Lyraska can already open and play local audio
+> files on Windows (MP3, FLAC, WAV, AIFF, OGG Vorbis, AAC/ALAC); visuals and the library come next.
 
 An offline music player for Windows whose visuals **know the song before it plays**.
 
