@@ -12,7 +12,7 @@ export interface AppInfo {
 
 /** Tarayıcıda (Tauri dışında) geliştirme yaparken kullanılan yedek bilgi. */
 export const BROWSER_FALLBACK: AppInfo = {
-  name: "Müzik Çalar",
+  name: "Lyraska",
   version: __APP_VERSION__,
   phase: "Faz 0",
   audioEngine: "tarayıcı önizlemesi",

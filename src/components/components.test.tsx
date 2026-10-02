@@ -7,7 +7,7 @@ import { textToColumns } from "../lib/dotFont";
 describe("karşılama ekranı", () => {
   it("program adını ve durum satırını gösterir", async () => {
     render(<App />);
-    expect(screen.getByRole("img", { name: "Müzik Çalar" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Lyraska" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/Faz 0 · Sürüm/)).toBeInTheDocument());
   });
 });

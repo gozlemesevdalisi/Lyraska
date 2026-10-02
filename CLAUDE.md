@@ -1,4 +1,4 @@
-# CLAUDE.md — Müzik Çalar
+# CLAUDE.md — Lyraska
 
 Bu dosya, bu depoda çalışan Claude oturumları için kalıcı talimatlardır.
 Her oturumun başında okunur. Burada yazan kurallar tartışmaya açık değildir;
@@ -13,9 +13,11 @@ değişmesi gerekiyorsa önce proje sahibine sorulur.
   o zaman da hangi sayfada hangi butona basılacağı tam olarak yazılır.
 - Sahibine karar sorulacaksa seçenekler ve Claude'un önerisi birlikte sunulur.
 - Test için sahibine her zaman sabit indirme linki verilir:
-  https://github.com/gozlemesevdalisi/muzik-calar/releases/download/test-surumu/MuzikCalar-Kurulum.exe
+  https://github.com/gozlemesevdalisi/lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
 
 ## Ürün
+
+Adı **Lyraska** (lir çalgısı ve Lyra takımyıldızından). Depo: `gozlemesevdalisi/lyraska`.
 
 Görselleri şarkıyı **önceden bilen**, tamamen **çevrimdışı** çalışan bir Windows müzik çalar.
 
@@ -45,7 +47,7 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## Mimari
 
 ```
-muzik-calar/
+lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (karşılama ekranı, nokta matris vb.)
 │   ├── lib/                  # Saf yardımcılar, Rust köprüsü (backend.ts)

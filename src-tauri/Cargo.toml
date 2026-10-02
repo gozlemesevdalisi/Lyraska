@@ -1,16 +1,16 @@
 [package]
-name = "muzik-calar"
+name = "lyraska"
 version = "0.0.1"
 description = "Görselleri şarkıyı önceden bilen, çevrimdışı müzik çalar"
-authors = ["Müzik Çalar geliştiricileri"]
+authors = ["Lyraska geliştiricileri"]
 license = "GPL-3.0-only"
-repository = "https://github.com/gozlemesevdalisi/muzik-calar"
+repository = "https://github.com/gozlemesevdalisi/lyraska"
 edition = "2021"
 rust-version = "1.85"
 
 [lib]
 # `_lib` soneki Windows'ta bin ve lib adlarının çakışmasını önler.
-name = "muzik_calar_lib"
+name = "lyraska_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

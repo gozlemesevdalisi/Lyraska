@@ -23,7 +23,7 @@ impl AppInfo {
     /// Derleme anındaki bilgilerden program bilgisini oluşturur.
     pub fn current() -> Self {
         Self {
-            name: "Müzik Çalar".to_owned(),
+            name: "Lyraska".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             phase: "Faz 0".to_owned(),
             audio_engine: audio::status().label().to_owned(),

@@ -5,7 +5,7 @@ import { SpectrumDemo } from "./SpectrumDemo";
 import { textToColumns } from "../lib/dotFont";
 import { BROWSER_FALLBACK, getAppInfo, type AppInfo } from "../lib/backend";
 
-const TITLE = "MÜZİK ÇALAR";
+const TITLE = "LYRASKA";
 const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
@@ -63,7 +63,7 @@ export function WelcomeScreen() {
             {/* Esneme oranları sütun sayılarına eşit: böylece başlık ve spektrum
                 noktaları ekranda aynı boyutta görünür. */}
             <h1 className="display__title" style={{ flexGrow: titleColumns.length }}>
-              <DotMatrix columns={titleColumns} label="Müzik Çalar" className="vfd vfd--primary" />
+              <DotMatrix columns={titleColumns} label="Lyraska" className="vfd vfd--primary" />
             </h1>
             <div className="display__spectrum" style={{ flexGrow: SPECTRUM_COLUMNS }}>
               <SpectrumDemo bands={SPECTRUM_BANDS} rows={8} className="vfd vfd--accent" />

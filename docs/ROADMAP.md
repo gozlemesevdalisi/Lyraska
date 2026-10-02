@@ -1,4 +1,4 @@
-# Yol haritası
+# Lyraska — Yol haritası
 
 Görselleri şarkıyı önceden bilen, tamamen çevrimdışı çalışan Windows müzik çalar.
 Lansman hedefi: **Mart 2027 başı (v1.0)**.
