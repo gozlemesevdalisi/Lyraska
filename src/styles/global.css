@@ -1,0 +1,275 @@
+/*
+ * Müzik Çalar — genel stiller.
+ * Renkler tek yerden (:root) yönetilir. Program yalnızca koyu temada çalışır.
+ */
+
+:root {
+  --bg: #040506;
+  --bg-glow: #0c1416;
+  --panel-top: #1b1d21;
+  --panel-bottom: #0d0e10;
+  --panel-edge: #2a2d33;
+  --glass: #010605;
+  --text-muted: #6d767c;
+
+  /* VFD (vakumlu floresan ekran) renkleri */
+  --vfd: #6cf6df;
+  --vfd-ghost: rgba(108, 246, 223, 0.075);
+  --vfd-glow: rgba(108, 246, 223, 0.55);
+  --accent: #ffb54c;
+  --accent-ghost: rgba(255, 181, 76, 0.08);
+  --accent-glow: rgba(255, 181, 76, 0.5);
+
+  color-scheme: dark;
+  font-family:
+    "Segoe UI Variable",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  color: #c9d1d6;
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(ellipse at 50% 40%, var(--bg-glow) 0%, transparent 60%), var(--bg);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ---------- Karşılama düzeni ---------- */
+
+.welcome {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px 16px;
+}
+
+.faceplate {
+  position: relative;
+  width: min(1040px, 100%);
+  padding: 28px 34px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--panel-top) 0%, var(--panel-bottom) 100%);
+  border: 1px solid var(--panel-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.6),
+    0 30px 80px rgba(0, 0, 0, 0.75),
+    0 0 120px rgba(108, 246, 223, 0.04);
+}
+
+.faceplate__screw {
+  position: absolute;
+  top: 12px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #4a4e55, #15171a 70%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.faceplate__screw--left {
+  left: 14px;
+}
+.faceplate__screw--right {
+  right: 14px;
+}
+
+.faceplate__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.faceplate__brand {
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: #4b5258;
+}
+
+.knob {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #1a1c1f 38%, transparent 40%),
+    conic-gradient(from 0deg, #3a3e44, #121315, #3a3e44, #121315, #3a3e44);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Ekran (cam) ---------- */
+
+.display {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 22px 20px;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at 50% 30%, #04110f 0%, var(--glass) 75%);
+  border: 2px solid #000;
+  box-shadow:
+    inset 0 0 0 1px rgba(108, 246, 223, 0.06),
+    inset 0 8px 24px rgba(0, 0, 0, 0.9);
+  animation: power-on 1.6s ease-out both;
+}
+
+/* Cam yansıması ve çok hafif tarama çizgileri */
+.display__glass {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, transparent 38%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+}
+
+.display__indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--accent-ghost);
+}
+
+.display__indicators .is-on {
+  color: var(--accent);
+  text-shadow:
+    0 0 4px var(--accent-glow),
+    0 0 12px var(--accent-glow);
+}
+
+.display__main {
+  display: flex;
+  align-items: flex-end;
+  gap: 4%;
+}
+
+.display__title,
+.display__spectrum {
+  flex-basis: 0;
+  min-width: 0;
+  margin: 0;
+  line-height: 0;
+}
+
+.display__title .dot-matrix,
+.display__spectrum .dot-matrix {
+  width: 100%;
+  height: auto;
+}
+
+.display__marquee {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 20px;
+}
+
+/* ---------- Nokta matris renklendirme ---------- */
+
+.dot-matrix {
+  display: block;
+  overflow: visible;
+}
+
+.vfd--primary .dot-matrix__lit {
+  fill: var(--vfd);
+}
+.vfd--primary .dot-matrix__ghost {
+  fill: var(--vfd-ghost);
+}
+.vfd--primary {
+  filter: drop-shadow(0 0 2px var(--vfd-glow)) drop-shadow(0 0 9px var(--vfd-glow));
+}
+
+.vfd--accent .dot-matrix__lit {
+  fill: var(--accent);
+}
+.vfd--accent .dot-matrix__ghost {
+  fill: var(--accent-ghost);
+}
+.vfd--accent {
+  filter: drop-shadow(0 0 2px var(--accent-glow)) drop-shadow(0 0 8px var(--accent-glow));
+}
+
+/* ---------- Durum satırı ---------- */
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 22px;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- Animasyonlar ---------- */
+
+/* Açılışta ekran yavaşça "ısınır". Yanıp sönme yoktur (epilepsi güvenliği). */
+@keyframes power-on {
+  from {
+    opacity: 0;
+    filter: brightness(0.4) saturate(0.6);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .display {
+    animation: none;
+  }
+}
+
+/* ---------- Dar pencereler ---------- */
+
+@media (max-width: 720px) {
+  .faceplate {
+    padding: 22px 16px 14px;
+  }
+  .display {
+    padding: 14px;
+  }
+  .display__main {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+  }
+  .display__title,
+  .display__spectrum {
+    flex-basis: auto;
+  }
+}
