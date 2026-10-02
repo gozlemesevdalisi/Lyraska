@@ -2,6 +2,10 @@
 //!
 //! Komutlar ince tutulur: asıl iş ilgili modülde yapılır, burada yalnızca
 //! arayüze uygun veri biçimine çevrilir. Hatalar Türkçe metin olarak döner.
+//!
+//! Oynatıcı komutları `async`tır: Tauri düz komutları ana (pencere) iş parçacığında
+//! çalıştırır; şarkı açmak birkaç yüz milisaniye sürebildiği için pencere donmasın diye
+//! bu komutlar arka plandaki iş parçacıklarında çalışır.
 
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -65,13 +69,16 @@ pub fn app_info() -> AppInfo {
 
 /// Şarkıyı açar ve çalmaya başlar.
 #[tauri::command]
-pub fn open_track(path: PathBuf, player: State<'_, PlayerState>) -> Result<TrackInfo, String> {
+pub async fn open_track(
+    path: PathBuf,
+    player: State<'_, PlayerState>,
+) -> Result<TrackInfo, String> {
     player.lock()?.load(&path, true).map_err(|e| e.to_string())
 }
 
 /// Çalıyorsa duraklatır, değilse çalar.
 #[tauri::command]
-pub fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
+pub async fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
     let mut player = player.lock()?;
     player.toggle().map_err(|e| e.to_string())?;
     Ok(player.status())
@@ -79,7 +86,7 @@ pub fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus,
 
 /// Durdurur ve şarkının başına döner.
 #[tauri::command]
-pub fn stop_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
+pub async fn stop_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
     let mut player = player.lock()?;
     player.stop().map_err(|e| e.to_string())?;
     Ok(player.status())
@@ -87,7 +94,7 @@ pub fn stop_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, S
 
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.
 #[tauri::command]
-pub fn playback_status(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
+pub async fn playback_status(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
     Ok(player.lock()?.status())
 }
 

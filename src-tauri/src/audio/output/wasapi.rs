@@ -8,9 +8,12 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use rtrb::Consumer;
-use wasapi::{initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WaveFormat};
+use wasapi::{
+    initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WasapiError, WaveFormat,
+};
 
 use super::OutputSpec;
 use crate::audio::player::SharedState;
@@ -22,9 +25,14 @@ const BUFFER_DURATION_HNS: i64 = 1_000_000;
 /// Bu süre içinde olay gelmezse aygıt kopmuş sayılır.
 const EVENT_TIMEOUT_MS: u32 = 2_000;
 /// Şarkı sonunda aygıttaki son örneklerin çalınmasını beklerken yoklama aralığı.
-const DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(5);
+const DRAIN_POLL: Duration = Duration::from_millis(5);
 
-type Ready = SyncSender<Result<(), String>>;
+type Ready = SyncSender<Result<(), AudioError>>;
+
+/// WASAPI hatasını kullanıcıya gösterilecek Türkçe bir mesajla sarar.
+fn fail(context: &'static str) -> impl FnOnce(WasapiError) -> AudioError {
+    move |error| AudioError::Output(format!("{context}: {error}"))
+}
 
 pub fn spawn(
     spec: OutputSpec,
@@ -36,14 +44,14 @@ pub fn spawn(
         .name("lyraska-ses-cikisi".to_owned())
         .spawn(move || {
             let mut ready = Some(ready_tx);
-            if let Err(message) = run(spec, source, &shared, &mut ready) {
+            if let Err(error) = run(spec, source, &shared, &mut ready) {
                 match ready.take() {
                     // Açılışta hata: oynatıcıya hemen bildir.
                     Some(tx) => {
-                        let _ = tx.send(Err(message));
+                        let _ = tx.send(Err(error));
                     }
                     // Çalarken hata: arayüz durum sorgusunda görür.
-                    None => shared.fail(message),
+                    None => shared.fail(error.to_string()),
                 }
             }
         })
@@ -51,9 +59,9 @@ pub fn spawn(
 
     match ready_rx.recv() {
         Ok(Ok(())) => Ok(handle),
-        Ok(Err(message)) => {
+        Ok(Err(error)) => {
             let _ = handle.join();
-            Err(AudioError::Output(message))
+            Err(error)
         }
         Err(_) => {
             let _ = handle.join();
@@ -69,19 +77,18 @@ fn run(
     mut source: Consumer<Sample>,
     shared: &SharedState,
     ready: &mut Option<Ready>,
-) -> Result<(), String> {
+) -> Result<(), AudioError> {
     initialize_mta()
         .ok()
-        .map_err(|e| format!("COM başlatılamadı: {e}"))?;
+        .map_err(|e| AudioError::Output(format!("COM başlatılamadı: {e}")))?;
 
-    let enumerator =
-        DeviceEnumerator::new().map_err(|e| format!("Ses aygıtları listelenemedi: {e}"))?;
+    let enumerator = DeviceEnumerator::new().map_err(fail("Ses aygıtları listelenemedi"))?;
     let device = enumerator
         .get_default_device(&Direction::Render)
-        .map_err(|e| format!("Varsayılan ses çıkış aygıtı bulunamadı: {e}"))?;
+        .map_err(|_| AudioError::NoOutputDevice)?;
     let mut client = device
         .get_iaudioclient()
-        .map_err(|e| format!("Ses aygıtı açılamadı: {e}"))?;
+        .map_err(fail("Ses aygıtı açılamadı"))?;
 
     // Şarkının biçiminde 32-bit kayan nokta akış; gerekirse Windows dönüştürür.
     let format = WaveFormat::new(
@@ -99,16 +106,16 @@ fn run(
     };
     client
         .initialize_client(&format, &Direction::Render, &mode)
-        .map_err(|e| format!("Ses akışı başlatılamadı: {e}"))?;
+        .map_err(fail("Ses akışı başlatılamadı"))?;
     let event = client
         .set_get_eventhandle()
-        .map_err(|e| format!("Ses olayı oluşturulamadı: {e}"))?;
+        .map_err(fail("Ses olayı oluşturulamadı"))?;
     let render_client = client
         .get_audiorenderclient()
-        .map_err(|e| format!("Ses yazıcısı alınamadı: {e}"))?;
+        .map_err(fail("Ses yazıcısı alınamadı"))?;
     let buffer_frames = client
         .get_buffer_size()
-        .map_err(|e| format!("Arabellek boyutu alınamadı: {e}"))? as usize;
+        .map_err(fail("Arabellek boyutu alınamadı"))? as usize;
 
     // Bütün bellek burada, bir kez ayrılır; döngüde ayırma yapılmaz.
     let mut floats = vec![0.0f32; buffer_frames * spec.channels];
@@ -134,8 +141,7 @@ fn run(
         if !draining {
             let space = client
                 .get_available_space_in_frames()
-                .map_err(|e| format!("Ses aygıtı okunamadı: {e}"))?
-                as usize;
+                .map_err(fail("Ses aygıtı okunamadı"))? as usize;
             let frames = space.min(buffer_frames);
             if frames > 0 {
                 let out = &mut floats[..frames * spec.channels];
@@ -146,7 +152,7 @@ fn run(
                 }
                 render_client
                     .write_to_device(frames, &bytes[..frames * block_align], None)
-                    .map_err(|e| format!("Ses aygıtına yazılamadı: {e}"))?;
+                    .map_err(fail("Ses aygıtına yazılamadı"))?;
                 consumed += outcome.frames_consumed as u64;
                 if outcome.frames_missing > 0 && !shared.decode_done.load(Ordering::Acquire) {
                     shared.underruns.fetch_add(1, Ordering::Relaxed);
@@ -158,17 +164,19 @@ fn run(
         if !started {
             client
                 .start_stream()
-                .map_err(|e| format!("Ses akışı başlatılamadı: {e}"))?;
+                .map_err(fail("Ses akışı başlatılamadı"))?;
             started = true;
         }
 
-        // Duyulan konum = halka tampondan alınan - henüz aygıtta bekleyen.
+        // Duyulan konum ≈ halka tampondan alınan - henüz aygıtta bekleyen.
+        // Duraklatmada aygıta sessizlik yazıldığı için bu tahmin bir an geriye
+        // kayabilir; şarkıda geri sarma olmadığından konum hiç azaltılmaz.
         let padding = client
             .get_current_padding()
-            .map_err(|e| format!("Ses aygıtı okunamadı: {e}"))? as u64;
+            .map_err(fail("Ses aygıtı okunamadı"))? as u64;
         shared
             .frames_played
-            .store(consumed.saturating_sub(padding), Ordering::Release);
+            .fetch_max(consumed.saturating_sub(padding), Ordering::AcqRel);
 
         if draining {
             if padding == 0 {
@@ -180,7 +188,9 @@ fn run(
         }
 
         if event.wait_for_event(EVENT_TIMEOUT_MS).is_err() {
-            break Err("Ses aygıtı yanıt vermiyor; bağlantısı kesilmiş olabilir.".to_owned());
+            break Err(AudioError::Output(
+                "aygıt yanıt vermiyor; bağlantısı kesilmiş olabilir".to_owned(),
+            ));
         }
     };
 

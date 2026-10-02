@@ -38,6 +38,8 @@ pub enum AudioError {
     Decode(String),
     #[error("Ses çıkışı bu işletim sisteminde henüz desteklenmiyor (şimdilik yalnızca Windows).")]
     OutputUnavailable,
+    #[error("Ses çıkış aygıtı bulunamadı. Hoparlör ya da kulaklık bağlı ve açık mı?")]
+    NoOutputDevice,
     #[error("Ses aygıtı hatası: {0}")]
     Output(String),
 }

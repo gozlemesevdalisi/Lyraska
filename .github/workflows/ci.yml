@@ -94,10 +94,24 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
       - run: npm ci
+      - name: Arayüzü derle
+        run: npm run build
+      # WASAPI çıkışı gibi yalnızca Windows'ta derlenen kod burada denetlenir.
+      - name: Lint (Clippy, Windows)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Testler (Windows)
+        working-directory: src-tauri
+        run: cargo test --locked
+      - name: Gerçek ses aygıtıyla deneme
+        working-directory: src-tauri
+        run: cargo run --locked --example ses_denemesi
       - name: Kurulum dosyasını derle (tauri-action)
         uses: tauri-apps/tauri-action@v0
         env:
