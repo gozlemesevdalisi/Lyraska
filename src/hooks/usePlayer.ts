@@ -7,6 +7,7 @@ import {
   onFileDrop,
   openTrack,
   pickAudioFile,
+  seekPlayback,
   stopPlayback,
   togglePlayback,
   type PlaybackStatus,
@@ -14,6 +15,8 @@ import {
 
 /** Durum sorgulama aralığı. Ekranda saniye gösterildiği için 4 kez/sn yeterli. */
 const POLL_MS = 250;
+/** Ok tuşlarıyla sarma adımı (saniye). */
+export const SEEK_STEP_SECONDS = 5;
 
 export interface PlayerControls {
   status: PlaybackStatus;
@@ -27,13 +30,15 @@ export interface PlayerControls {
   openPath: (path: string) => Promise<void>;
   toggle: () => Promise<void>;
   stop: () => Promise<void>;
+  /** Şarkıda verilen saniyeye atlar. */
+  seek: (seconds: number) => Promise<void>;
 }
 
 /**
  * Oynatıcıyı yöneten hook: komutları Rust çekirdeğine iletir, durumu düzenli
  * aralıklarla sorar, klavye kısayollarını ve sürükle-bırak ile dosya açmayı bağlar.
  *
- * Kısayollar: Boşluk = çal/duraklat, Ctrl+O = dosya aç.
+ * Kısayollar: Boşluk = çal/duraklat, ←/→ = 5 sn geri/ileri, Ctrl+O = dosya aç.
  */
 export function usePlayer(extensions: string[]): PlayerControls {
   const available = isDesktop();
@@ -80,6 +85,16 @@ export function usePlayer(extensions: string[]): PlayerControls {
 
   const toggle = useCallback(() => run(togglePlayback), [run]);
   const stop = useCallback(() => run(stopPlayback), [run]);
+  const seek = useCallback(
+    (seconds: number) => run(() => seekPlayback(Math.max(0, seconds))),
+    [run],
+  );
+
+  // Ok tuşlarında güncel konuma göre sarabilmek için son durumu sakla.
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // Şarkı açıkken durumu düzenli sor (konum, şarkı sonu, aygıt hataları).
   const hasTrack = status.track !== null;
@@ -105,6 +120,14 @@ export function usePlayer(extensions: string[]): PlayerControls {
       if (event.code === "Space" && !interactive && !event.repeat) {
         event.preventDefault();
         void toggle();
+      } else if (
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        !interactive &&
+        statusRef.current.track
+      ) {
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        void seek(statusRef.current.positionSecs + direction * SEEK_STEP_SECONDS);
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
         event.preventDefault();
         void openFile();
@@ -112,7 +135,7 @@ export function usePlayer(extensions: string[]): PlayerControls {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [available, toggle, openFile]);
+  }, [available, toggle, openFile, seek]);
 
   // Pencereye bırakılan ilk dosyayı aç.
   useEffect(() => {
@@ -132,5 +155,5 @@ export function usePlayer(extensions: string[]): PlayerControls {
     };
   }, [openPath]);
 
-  return { status, available, busy, error, openFile, openPath, toggle, stop };
+  return { status, available, busy, error, openFile, openPath, toggle, stop, seek };
 }

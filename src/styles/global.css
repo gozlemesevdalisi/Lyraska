@@ -261,11 +261,54 @@ body {
   margin-top: 20px;
 }
 
+/* İlerleme çubuğu: ince görünür, ama tıklama alanı daha geniştir. */
+.seekbar {
+  position: relative;
+  z-index: 3; /* cam yansımasının üstünde, tıklanabilir */
+  margin-top: 8px;
+  padding: 6px 0;
+  touch-action: none;
+}
+
+.seekbar.is-seekable {
+  cursor: pointer;
+}
+
+.seekbar:focus-visible {
+  outline: 1px solid var(--vfd);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.seekbar.is-seekable:hover .display__progress,
+.seekbar.is-dragging .display__progress {
+  transform: scaleY(1.7);
+}
+
+.seekbar.is-dragging .display__progress-fill {
+  transition: none;
+}
+
+.seekbar__tip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--vfd);
+  background: rgba(0, 0, 0, 0.85);
+  box-shadow: 0 0 8px var(--vfd-glow);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* İnce, parlayan ilerleme çubuğu */
 .display__progress {
   position: relative;
   height: 3px;
-  margin-top: 14px;
+  transition: transform 0.15s;
   border-radius: 2px;
   background: var(--vfd-ghost);
   overflow: hidden;

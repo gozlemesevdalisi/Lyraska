@@ -1,7 +1,7 @@
 //! Gerçek ses aygıtıyla uçtan uca deneme (CI'da Windows'ta çalışır).
 //!
-//! Kısa, kısık bir test sesi üretir; açar, duraklatır, devam ettirir ve sonuna
-//! kadar çalar. Takılma, konum ve "bitti" durumunu denetler.
+//! Kısa, kısık bir test sesi üretir; açar, duraklatır, sarar, devam ettirir ve
+//! sonuna kadar çalar. Takılma, konum ve "bitti" durumunu denetler.
 //! Makinede ses aygıtı yoksa bunu açıkça yazar ve başarıyla çıkar.
 //!
 //! Çalıştırma: `cargo run --example ses_denemesi`
@@ -92,6 +92,19 @@ fn run(path: &Path) -> Result<(), Outcome> {
         player.state() == PlaybackState::Paused,
         "duraklatma durumu yok",
     )?;
+
+    // Sar: duraklatılmışken 0,9 saniyeye atla; konum orada beklemeli.
+    player
+        .seek(0.9)
+        .map_err(|e| Outcome::Failed(e.to_string()))?;
+    std::thread::sleep(Duration::from_millis(150));
+    let seeked = player.status().position_secs;
+    println!("Sarıldı: {seeked:.3} sn");
+    check(
+        (seeked - 0.9).abs() < 0.005,
+        format!("sarma konumu {seeked:.3}"),
+    )?;
+    check(player.spectrum_now().is_some(), "spektrum verisi yok")?;
 
     // Devam et ve sonuna kadar çal.
     player.play().map_err(|e| Outcome::Failed(e.to_string()))?;

@@ -36,6 +36,13 @@ export interface PlaybackStatus {
   error: string | null;
 }
 
+/** Rust tarafındaki `visual_bridge::VisualFrame`. */
+export interface VisualFrame {
+  positionSecs: number;
+  /** Logaritmik aralıklı frekans bantları (bastan tize), 0..1. */
+  bands: number[];
+}
+
 export const IDLE_STATUS: PlaybackStatus = {
   state: "idle",
   track: null,
@@ -87,6 +94,15 @@ export function togglePlayback(): Promise<PlaybackStatus> {
 
 export function stopPlayback(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("stop_playback");
+}
+
+export function seekPlayback(seconds: number): Promise<PlaybackStatus> {
+  return invoke<PlaybackStatus>("seek_playback", { seconds });
+}
+
+/** Şu an duyulan anın görsel verisi; analiz o ana yetişmediyse `null`. */
+export function getVisualFrame(): Promise<VisualFrame | null> {
+  return invoke<VisualFrame | null>("visual_frame");
 }
 
 export function getPlaybackStatus(): Promise<PlaybackStatus> {

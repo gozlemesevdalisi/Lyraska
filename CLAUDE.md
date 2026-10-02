@@ -51,7 +51,7 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
 │   ├── hooks/                # usePlayer: komutlar, durum sorgulama, kısayollar
-│   ├── lib/                  # Saf yardımcılar, Rust köprüsü (backend.ts)
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont), Rust köprüsü (backend.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
 │   ├── src/
@@ -60,10 +60,12 @@ lyraska/
 │   │   ├── audio/            # Ses motoru
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
 │   │   │   ├── render.rs     #   gerçek zamanlı doldurma, duraklatma geçişi (ayırma/kilit yok)
-│   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI
+│   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
+│   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
-│   │   └── visual_bridge/    # Çalma zamanı + şarkı haritası → görseller; gecikme telafisi
+│   │   │   └── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant)
+│   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
@@ -82,6 +84,10 @@ Kurallar:
   içinde TypeScript karşılığı tutulur.
 - Ses çıkış geri çağrısında (real-time thread) **bellek ayırma, kilit bekleme, dosya/ağ erişimi ve panic yoktur**.
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
+- Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
+  konumuna karşılık gelen analiz karesini `visual_bridge` üzerinden okur.
+- Oynatıcı akışları (aç, sar, durdur, şarkı sonu) birim testlerinde sanal çıkışla sınanır; gerçek
+  aygıt davranışı `examples/ses_denemesi.rs` ile denenir.
 
 ## Komutlar
 
