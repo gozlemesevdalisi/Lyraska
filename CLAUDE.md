@@ -13,11 +13,11 @@ değişmesi gerekiyorsa önce proje sahibine sorulur.
   o zaman da hangi sayfada hangi butona basılacağı tam olarak yazılır.
 - Sahibine karar sorulacaksa seçenekler ve Claude'un önerisi birlikte sunulur.
 - Test için sahibine her zaman sabit indirme linki verilir:
-  https://github.com/gozlemesevdalisi/lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
+  https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
 
 ## Ürün
 
-Adı **Lyraska** (lir çalgısı ve Lyra takımyıldızından). Depo: `gozlemesevdalisi/lyraska`.
+Adı **Lyraska** (lir çalgısı ve Lyra takımyıldızından). Depo: `gozlemesevdalisi/Lyraska`.
 
 Görselleri şarkıyı **önceden bilen**, tamamen **çevrimdışı** çalışan bir Windows müzik çalar.
 

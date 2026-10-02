@@ -1,6 +1,6 @@
 # main her güncellendiğinde Windows kurulum dosyasını derler ve "test-surumu"
 # adlı sabit GitHub Release'ini yeniler. İndirme linki hiç değişmez:
-# https://github.com/gozlemesevdalisi/lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
+# https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
 name: Test sürümü
 
 on:

@@ -32,7 +32,7 @@ early March 2027.
 
 The latest test build of the Windows installer is always available at the same link:
 
-**<https://github.com/gozlemesevdalisi/lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe>**
+**<https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe>**
 
 It is rebuilt automatically every time `main` changes. Builds are not code-signed yet, so Windows
 SmartScreen will show an "unknown publisher" warning: click **More info → Run anyway**.
