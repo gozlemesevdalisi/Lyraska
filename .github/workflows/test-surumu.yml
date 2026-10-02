@@ -1,0 +1,89 @@
+# main her güncellendiğinde Windows kurulum dosyasını derler ve "test-surumu"
+# adlı sabit GitHub Release'ini yeniler. İndirme linki hiç değişmez:
+# https://github.com/gozlemesevdalisi/muzik-calar/releases/download/test-surumu/MuzikCalar-Kurulum.exe
+name: Test sürümü
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Aynı anda tek yayın; yeni bir push gelirse eskisi iptal edilir.
+concurrency:
+  group: test-surumu
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: test-surumu
+  ASSET_NAME: MuzikCalar-Kurulum.exe
+
+jobs:
+  yayinla:
+    name: Kurulum dosyasını derle ve yayınla
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+
+      - name: Kurulum dosyasını derle (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Kurulum dosyasını sabit ada kopyala
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $exe) { throw "Kurulum dosyası bulunamadı" }
+          Copy-Item $exe.FullName $env:ASSET_NAME
+          Write-Host "Kurulum dosyası: $($exe.Name) -> $env:ASSET_NAME"
+
+      - name: Sürüm notlarını hazırla
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          short_sha=${GITHUB_SHA::7}
+          date=$(TZ=Europe/Istanbul date '+%d.%m.%Y %H:%M')
+          cat > notlar.md <<NOTES
+          **En güncel test sürümü** — her \`main\` güncellemesinde otomatik yenilenir.
+
+          - Sürüm: \`$version\`
+          - Commit: [\`$short_sha\`](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)
+          - Derlenme: $date (İstanbul)
+
+          ### Kurulum
+          1. **$ASSET_NAME** dosyasını indirin ve çift tıklayın.
+          2. Windows "Windows kişisel bilgisayarınızı korudu" derse **Ek bilgi** → **Yine de çalıştır**'a basın.
+             (Program henüz dijital olarak imzalanmadığı için bu uyarı normaldir; imzalama Faz 4'te.)
+          3. Kurulum yönetici izni istemez; program Başlat menüsüne "Muzik Calar" adıyla eklenir.
+          NOTES
+
+      - name: test-surumu Release'ini yenile
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Etiketi bu commit'e taşı (Release aynı kalır, böylece link değişmez).
+          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$RELEASE_TAG"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
+            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$ASSET_NAME" --verify-tag \
+              --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
+          fi
+          echo "İndirme linki: https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$ASSET_NAME"

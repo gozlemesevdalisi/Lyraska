@@ -1,0 +1,92 @@
+name: Hata kaydı
+description: Programda bir sorun mu gördünüz? Buradan bildirin.
+title: "[Hata] "
+labels: ["hata"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bildiriminiz için teşekkürler! Teknik bilgi gerekmez; gördüğünüzü kendi cümlelerinizle anlatmanız yeterli.
+        Yıldızlı (*) alanlar zorunludur.
+
+  - type: dropdown
+    id: bolum
+    attributes:
+      label: Sorun nerede?
+      options:
+        - Kurulum
+        - Programın açılışı / karşılama ekranı
+        - Şarkı çalma / ses
+        - Müzik kütüphanesi
+        - Görseller
+        - Ekolayzer ve ses ayarları
+        - Diğer
+    validations:
+      required: true
+
+  - type: textarea
+    id: ne-oldu
+    attributes:
+      label: Ne oldu?
+      description: Gördüğünüz sorunu anlatın. Hata mesajı çıktıysa metnini buraya yazın.
+      placeholder: "Örnek: Şarkıyı başlatınca ses geliyor ama görseller donuyor."
+    validations:
+      required: true
+
+  - type: textarea
+    id: beklenen
+    attributes:
+      label: Ne olmasını bekliyordunuz?
+      placeholder: "Örnek: Görsellerin müzikle birlikte hareket etmesini."
+    validations:
+      required: true
+
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Sorunu nasıl tekrar oluşturabiliriz?
+      description: Adım adım yazın. Bilmiyorsanız boş bırakabilirsiniz.
+      placeholder: |
+        1. Programı açtım
+        2. Kütüphaneden bir şarkı seçtim
+        3. ...
+
+  - type: dropdown
+    id: siklik
+    attributes:
+      label: Ne sıklıkla oluyor?
+      options:
+        - Her seferinde
+        - Bazen
+        - Yalnızca bir kez oldu
+    validations:
+      required: true
+
+  - type: input
+    id: surum
+    attributes:
+      label: Program sürümü
+      description: Karşılama ekranının altında "Sürüm ..." olarak yazar.
+      placeholder: "0.0.1"
+
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows sürümü
+      options:
+        - Windows 11
+        - Windows 10
+        - Bilmiyorum / Diğer
+
+  - type: textarea
+    id: ek
+    attributes:
+      label: Ekran görüntüsü, video veya şarkı bilgisi
+      description: Ekran görüntüsünü ya da videoyu bu kutuya sürükleyip bırakabilirsiniz. Sorun belirli bir şarkıda oluyorsa dosya türünü (MP3, FLAC vb.) yazın.
+
+  - type: checkboxes
+    id: saglik
+    attributes:
+      label: Işık hassasiyeti
+      options:
+        - label: Görsellerde göz yoran ya da rahatsız edici yanıp sönme fark ettim (öncelikli incelenir).
