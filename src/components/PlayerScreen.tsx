@@ -64,7 +64,9 @@ export function PlayerScreen() {
     };
   }, []);
 
-  const headlineText = headline(status);
+  // Ekranda akıcı saatle ilerleyen konum kullanılır (sarmada anında güncellenir).
+  const shown = { ...status, positionSecs: player.position };
+  const headlineText = headline({ ...status, positionSecs: player.position });
   const headlineColumns = useMemo(() => textToColumns(headlineText), [headlineText]);
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
@@ -104,7 +106,7 @@ export function PlayerScreen() {
             >
               <DotMatrix
                 columns={headlineColumns}
-                label={hasTrack ? `Konum ${formatTime(status.positionSecs)}` : "Lyraska"}
+                label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
                 className="vfd vfd--primary"
               />
             </h1>
@@ -131,9 +133,9 @@ export function PlayerScreen() {
           />
 
           <SeekBar
-            positionSecs={status.positionSecs}
+            positionSecs={shown.positionSecs}
             durationSecs={status.track?.durationSecs ?? null}
-            disabled={!player.available || player.busy}
+            disabled={!player.available}
             onSeek={(seconds) => void player.seek(seconds)}
           />
         </div>
@@ -145,7 +147,7 @@ export function PlayerScreen() {
               type="button"
               className="hw-button"
               onClick={() => void player.openFile()}
-              disabled={!player.available || player.busy}
+              disabled={!player.available}
               title="Dosya aç (Ctrl+O)"
               aria-label="Dosya aç"
             >
@@ -156,7 +158,7 @@ export function PlayerScreen() {
               type="button"
               className="hw-button hw-button--primary"
               onClick={() => void player.toggle()}
-              disabled={!player.available || !hasTrack || player.busy}
+              disabled={!player.available || !hasTrack}
               title="Çal / Duraklat (Boşluk)"
               aria-label={playing ? "Duraklat" : "Çal"}
             >
@@ -167,7 +169,7 @@ export function PlayerScreen() {
               type="button"
               className="hw-button"
               onClick={() => void player.stop()}
-              disabled={!player.available || !hasTrack || player.busy}
+              disabled={!player.available || !hasTrack}
               title="Durdur ve başa dön"
               aria-label="Durdur"
             >
@@ -186,7 +188,7 @@ export function PlayerScreen() {
         {hasTrack && status.track ? (
           <>
             <span>
-              {formatTime(status.positionSecs)} / {formatTime(status.track.durationSecs ?? 0)}
+              {formatTime(shown.positionSecs)} / {formatTime(status.track.durationSecs ?? 0)}
             </span>
             <span>{trackTechLine(status.track)}</span>
             <span className={status.underruns > 0 ? "status__warn" : undefined}>

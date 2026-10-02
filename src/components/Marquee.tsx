@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
 import { GLYPH_HEIGHT, textToColumns } from "../lib/dotFont";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
@@ -27,7 +27,12 @@ export function marqueeWindow(source: boolean[][], offset: number, width: number
 }
 
 /** Sağdan sola adım adım kayan nokta matris yazı. */
-export function Marquee({ text, width, stepMs = 90, className }: MarqueeProps) {
+export const Marquee = memo(function Marquee({
+  text,
+  width,
+  stepMs = 90,
+  className,
+}: MarqueeProps) {
   const source = useMemo(() => textToColumns(text), [text]);
   const reducedMotion = usePrefersReducedMotion();
   const [offset, setOffset] = useState(width);
@@ -44,4 +49,4 @@ export function Marquee({ text, width, stepMs = 90, className }: MarqueeProps) {
     : marqueeWindow(source, offset, width);
 
   return <DotMatrix columns={columns} label={text} className={className} />;
-}
+});
