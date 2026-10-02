@@ -22,7 +22,9 @@ pub fn run() {
             commands::open_track,
             commands::toggle_playback,
             commands::stop_playback,
+            commands::seek_playback,
             commands::playback_status,
+            commands::visual_frame,
         ])
         .run(tauri::generate_context!())
         .expect("Lyraska başlatılamadı");

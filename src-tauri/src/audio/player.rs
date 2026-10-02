@@ -11,7 +11,7 @@
 //! İş parçacıkları birbirleriyle yalnızca kilitsiz halka tampon ve atomik
 //! değişkenler üzerinden konuşur; gerçek zamanlı çıkış hiçbir zaman beklemez.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -23,6 +23,7 @@ use serde::Serialize;
 use super::decode::{Decoder, TrackInfo};
 use super::output::{self, OutputSpec};
 use super::{AudioError, Sample};
+use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
 
 /// Halka tamponun süresi. Çözme iş parçacığı bu kadar önden gider.
 const RING_SECONDS: usize = 2;
@@ -32,6 +33,9 @@ const PREFILL_SECONDS: f64 = 0.25;
 const PREFILL_TIMEOUT: Duration = Duration::from_secs(3);
 /// Tampon doluyken çözme iş parçacığının bekleme aralığı.
 const DECODE_IDLE: Duration = Duration::from_millis(5);
+/// Şarkı değiştirirken ya da sararken sesin kısılması için beklenen süre
+/// (render geçişi + aygıt periyodu payı).
+const CUT_FADE: Duration = Duration::from_millis(25);
 
 /// İş parçacıkları arasında paylaşılan durum. Yalnızca atomik değişkenler
 /// gerçek zamanlı yolda kullanılır; `error` kilidi yalnızca hata anında alınır.
@@ -47,7 +51,9 @@ pub struct SharedState {
     pub decode_done: AtomicBool,
     /// Son örnek de hoparlörden çıktı.
     pub ended: AtomicBool,
-    /// Duyulan konum (kare cinsinden).
+    /// Oturumun başladığı kare (sarmada sıfırdan farklıdır). Oturum boyunca değişmez.
+    pub start_frame: u64,
+    /// Duyulan konum (şarkının başından itibaren, kare cinsinden).
     pub frames_played: AtomicU64,
     /// Çalma sırasında veri yetişmediği tur sayısı (hedef: her zaman 0).
     pub underruns: AtomicU64,
@@ -55,9 +61,13 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    fn new(paused: bool) -> Self {
-        let state = Self::default();
+    fn new(paused: bool, start_frame: u64) -> Self {
+        let state = Self {
+            start_frame,
+            ..Self::default()
+        };
         state.paused.store(paused, Ordering::Release);
+        state.frames_played.store(start_frame, Ordering::Release);
         state
     }
 
@@ -106,8 +116,13 @@ struct Session {
 }
 
 impl Session {
-    fn start(path: &Path, autoplay: bool) -> Result<Self, AudioError> {
-        let decoder = Decoder::open(path)?;
+    /// Oturumu başlatır. `start_secs` verilirse şarkının o noktasından başlar.
+    fn start(path: &Path, autoplay: bool, start_secs: Option<f64>) -> Result<Self, AudioError> {
+        let mut decoder = Decoder::open(path)?;
+        let start_frame = match start_secs {
+            Some(secs) if secs > 0.0 => decoder.seek(secs)?,
+            _ => 0,
+        };
         let info = decoder.info().clone();
         let spec = OutputSpec {
             sample_rate: info.sample_rate,
@@ -115,7 +130,7 @@ impl Session {
         };
         let capacity = info.sample_rate as usize * info.channels * RING_SECONDS;
         let (producer, consumer) = RingBuffer::new(capacity);
-        let shared = Arc::new(SharedState::new(!autoplay));
+        let shared = Arc::new(SharedState::new(!autoplay, start_frame));
 
         let decode_shared = Arc::clone(&shared);
         let decode = std::thread::Builder::new()
@@ -177,10 +192,45 @@ fn derive_state(has_error: bool, ended: bool, paused: bool) -> PlaybackState {
     }
 }
 
+/// Bir şarkının arka planda süren (ya da biten) spektrum analizi.
+struct Analysis {
+    path: PathBuf,
+    spectrogram: Arc<Spectrogram>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Analysis {
+    fn start(path: &Path) -> Option<Self> {
+        let decoder = Decoder::open(path).ok()?;
+        let spectrogram = Spectrogram::new();
+        let target = Arc::clone(&spectrogram);
+        let thread = std::thread::Builder::new()
+            .name("lyraska-analiz".to_owned())
+            .spawn(move || spectrogram::analyze(decoder, &target))
+            .ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            spectrogram,
+            thread: Some(thread),
+        })
+    }
+}
+
+impl Drop for Analysis {
+    fn drop(&mut self) {
+        self.spectrogram.cancel();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// Arayüzün kullandığı oynatıcı. Tauri tarafında bir `Mutex` içinde tutulur.
 #[derive(Default)]
 pub struct Player {
     session: Option<Session>,
+    /// Çalan şarkının spektrumu. Sarma ve durdurmada (aynı şarkı) korunur.
+    analysis: Option<Analysis>,
     /// Son açma girişimi başarısız olduysa nedeni.
     last_error: Option<String>,
 }
@@ -192,13 +242,35 @@ impl Player {
 
     /// Şarkıyı açar. `autoplay` ise hemen çalmaya başlar, değilse başında duraklatılmış bekler.
     pub fn load(&mut self, path: &Path, autoplay: bool) -> Result<TrackInfo, AudioError> {
+        self.restart(path, autoplay, None)
+    }
+
+    /// Oturumu yeniden kurar (yeni şarkı, sarma, durdurma için ortak yol).
+    fn restart(
+        &mut self,
+        path: &Path,
+        autoplay: bool,
+        start_secs: Option<f64>,
+    ) -> Result<TrackInfo, AudioError> {
+        // Çalan sesi önce yumuşakça kıs, sonra oturumu kapat: "tık" sesi olmasın.
+        if let Some(session) = &self.session {
+            if session.state() == PlaybackState::Playing {
+                session.shared.paused.store(true, Ordering::Release);
+                std::thread::sleep(CUT_FADE);
+            }
+        }
         // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
         self.session = None;
         self.last_error = None;
-        match Session::start(path, autoplay) {
+        match Session::start(path, autoplay, start_secs) {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
+                // Yeni şarkıysa spektrum analizini baştan başlat.
+                if self.analysis.as_ref().is_none_or(|a| a.path != path) {
+                    self.analysis = None;
+                    self.analysis = Analysis::start(path);
+                }
                 Ok(info)
             }
             Err(error) => {
@@ -242,6 +314,17 @@ impl Player {
         }
     }
 
+    /// Şarkıda verilen saniyeye atlar. Çalıyorsa çalmaya devam eder, değilse
+    /// yeni noktada duraklatılmış bekler.
+    pub fn seek(&mut self, seconds: f64) -> Result<(), AudioError> {
+        let Some(session) = &self.session else {
+            return Ok(());
+        };
+        let path = session.info.path.clone();
+        let resume = session.state() == PlaybackState::Playing;
+        self.restart(&path, resume, Some(seconds)).map(|_| ())
+    }
+
     /// Durdurur ve şarkının başına döner (duraklatılmış olarak).
     pub fn stop(&mut self) -> Result<(), AudioError> {
         let Some(session) = &self.session else {
@@ -257,6 +340,15 @@ impl Player {
             None if self.last_error.is_some() => PlaybackState::Error,
             None => PlaybackState::Idle,
         }
+    }
+
+    /// Şu an duyulan anın frekans bantları (0..1). Analiz o ana yetişmediyse `None`.
+    pub fn spectrum_now(&self) -> Option<(f64, [f32; BANDS])> {
+        let session = self.session.as_ref()?;
+        let frames = session.shared.frames_played.load(Ordering::Acquire);
+        let seconds = frames as f64 / f64::from(session.info.sample_rate);
+        let bands = self.analysis.as_ref()?.spectrogram.frame_at(seconds)?;
+        Some((seconds, bands))
     }
 
     pub fn status(&self) -> PlaybackStatus {
@@ -377,7 +469,7 @@ mod tests {
 
         // Küçük tampon: geri basınç (tampon dolu → bekle) yolunu da sınar.
         let (producer, mut consumer) = RingBuffer::<Sample>::new(1_001);
-        let shared = Arc::new(SharedState::new(false));
+        let shared = Arc::new(SharedState::new(false, 0));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
 
@@ -409,7 +501,7 @@ mod tests {
         write_wav(&path, 8_000, 1, 80_000, |_, _| 0.1);
         let decoder = Decoder::open(&path).unwrap();
         let (producer, _consumer) = RingBuffer::<Sample>::new(100); // hiç boşalmayacak
-        let shared = Arc::new(SharedState::new(false));
+        let shared = Arc::new(SharedState::new(false, 0));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
 
@@ -440,15 +532,119 @@ mod tests {
         player.stop().unwrap();
     }
 
-    #[cfg(not(windows))]
+    /// Koşul sağlanana kadar (en fazla 5 sn) bekler.
+    fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        false
+    }
+
+    /// Her karesi kendi zamanını taşıyan 2 saniyelik mono test şarkısı.
+    fn ramp_song(name: &str) -> PathBuf {
+        let path = temp_path(name);
+        write_wav(&path, 8_000, 1, 16_000, |frame, _| frame as f64 / 16_000.0);
+        path
+    }
+
     #[test]
-    fn windows_disinda_cikis_yok_hatasi_verir() {
-        let path = temp_path("cikis.wav");
-        write_wav(&path, 44_100, 2, 44_100, |_, _| 0.0);
+    fn sarki_sonuna_kadar_calar_ve_bitti_durumuna_gecer() {
+        let path = ramp_song("sona-kadar.wav");
         let mut player = Player::new();
-        let error = player.load(&path, true).err().unwrap();
-        assert!(matches!(error, AudioError::OutputUnavailable));
-        assert_eq!(player.state(), PlaybackState::Error);
+        let info = player.load(&path, true).unwrap();
+        assert_eq!(info.sample_rate, 8_000);
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        let status = player.status();
+        assert!(
+            (status.position_secs - 2.0).abs() < 1e-9,
+            "{}",
+            status.position_secs
+        );
+
+        // Bitince "çal" baştan başlatır.
+        player.play().unwrap();
+        assert!(matches!(
+            player.state(),
+            PlaybackState::Playing | PlaybackState::Ended
+        ));
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn duraklatilmisken_sarinca_yeni_noktada_bekler() {
+        let path = ramp_song("sar-duraklat.wav");
+        let mut player = Player::new();
+        player.load(&path, false).unwrap();
+        assert_eq!(player.state(), PlaybackState::Paused);
+
+        player.seek(1.5).unwrap();
+        assert_eq!(player.state(), PlaybackState::Paused);
+        std::thread::sleep(Duration::from_millis(30));
+        assert!((player.status().position_secs - 1.5).abs() < 1e-9);
+
+        // Devam edince 1,5 saniyeden sona kadar çalar.
+        player.play().unwrap();
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        assert!((player.status().position_secs - 2.0).abs() < 1e-9);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn calarken_sarinca_calmaya_devam_eder() {
+        let path = ramp_song("sar-cal.wav");
+        let mut player = Player::new();
+        player.load(&path, true).unwrap();
+        player.seek(0.5).unwrap();
+        assert!(player.status().position_secs >= 0.5);
+        assert!(matches!(
+            player.state(),
+            PlaybackState::Playing | PlaybackState::Ended
+        ));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn durdur_basa_sarar_ve_duraklatir() {
+        let path = ramp_song("durdur.wav");
+        let mut player = Player::new();
+        player.load(&path, true).unwrap();
+        assert!(wait_until(|| player.status().position_secs > 0.5));
+        player.stop().unwrap();
+        assert_eq!(player.state(), PlaybackState::Paused);
+        assert_eq!(player.status().position_secs, 0.0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn spektrum_calan_ana_karsilik_gelir_ve_sarmada_korunur() {
+        let path = ramp_song("spektrum.wav");
+        let mut player = Player::new();
+        player.load(&path, false).unwrap();
+        let first = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| first.is_done()));
+
+        player.seek(1.0).unwrap();
+        let (seconds, bands) = player.spectrum_now().unwrap();
+        assert!((seconds - 1.0).abs() < 1e-9);
+        assert_eq!(bands.len(), BANDS);
+        // Aynı şarkıda sarma analizi yeniden başlatmaz.
+        assert!(Arc::ptr_eq(
+            &first,
+            &player.analysis.as_ref().unwrap().spectrogram
+        ));
+
+        // Başka şarkı açılınca analiz yenilenir.
+        let other = ramp_song("spektrum-2.wav");
+        player.load(&other, false).unwrap();
+        assert!(!Arc::ptr_eq(
+            &first,
+            &player.analysis.as_ref().unwrap().spectrogram
+        ));
+        std::fs::remove_file(path).ok();
+        std::fs::remove_file(other).ok();
     }
 }

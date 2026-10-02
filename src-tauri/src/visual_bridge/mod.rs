@@ -1,26 +1,38 @@
 //! Görsel köprüsü.
 //!
-//! Ses motorunun çalma zamanını ve şarkı haritasını arayüzdeki WebGL2
-//! görsellerine taşır. Gecikme telafisi ve kalibrasyon (hedef: ±20 ms
-//! senkron) burada yapılacak.
+//! Ses motorunun çalma zamanını ve analiz sonuçlarını arayüzdeki görsellere
+//! taşır. Şimdilik spektrum karesi; Faz 2'de şarkı haritası, gecikme telafisi
+//! ve kalibrasyon (hedef: ±20 ms senkron) burada yapılacak.
+
+use serde::Serialize;
+
+/// Arayüzün her ekran karesinde istediği görsel veri.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualFrame {
+    /// Verinin ait olduğu çalma konumu (saniye).
+    pub position_secs: f64,
+    /// Logaritmik aralıklı frekans bantları (bastan tize), 0..1.
+    pub bands: Vec<f32>,
+}
 
 /// Görsel köprüsünün durumu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeStatus {
-    /// Henüz yazılmadı (Faz 0).
-    NotImplemented,
+    /// Spektrum aktarılıyor; şarkı haritası Faz 2'de.
+    Spectrum,
 }
 
 impl BridgeStatus {
     /// Kullanıcıya gösterilen Türkçe durum metni.
     pub fn label(self) -> &'static str {
         match self {
-            Self::NotImplemented => "Faz 1'de geliyor",
+            Self::Spectrum => "spektrum aktif",
         }
     }
 }
 
 /// Görsel köprüsünün şu anki durumu.
 pub fn status() -> BridgeStatus {
-    BridgeStatus::NotImplemented
+    BridgeStatus::Spectrum
 }

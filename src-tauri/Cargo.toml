@@ -23,6 +23,7 @@ symphonia = { version = "0.6", default-features = false, features = ["all", "opt
 rtrb = "0.4"
 thiserror = "2"
 tauri-plugin-dialog = "2"
+rustfft = "6"
 
 [dev-dependencies]
 serde_json = "1"

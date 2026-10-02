@@ -168,15 +168,17 @@ fn run(
             started = true;
         }
 
-        // Duyulan konum ≈ halka tampondan alınan - henüz aygıtta bekleyen.
-        // Duraklatmada aygıta sessizlik yazıldığı için bu tahmin bir an geriye
-        // kayabilir; şarkıda geri sarma olmadığından konum hiç azaltılmaz.
+        // Duyulan konum ≈ oturumun başladığı kare + halka tampondan alınan -
+        // henüz aygıtta bekleyen. Duraklatmada aygıta sessizlik yazıldığı için bu
+        // tahmin bir an geriye kayabilir; oturum içinde geri gidiş olmadığından
+        // (sarma yeni oturum açar) konum hiç azaltılmaz.
         let padding = client
             .get_current_padding()
             .map_err(fail("Ses aygıtı okunamadı"))? as u64;
-        shared
-            .frames_played
-            .fetch_max(consumed.saturating_sub(padding), Ordering::AcqRel);
+        shared.frames_played.fetch_max(
+            shared.start_frame + consumed.saturating_sub(padding),
+            Ordering::AcqRel,
+        );
 
         if draining {
             if padding == 0 {

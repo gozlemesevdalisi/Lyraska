@@ -1743,6 +1743,7 @@ name = "lyraska"
 version = "0.0.2"
 dependencies = [
  "rtrb",
+ "rustfft",
  "serde",
  "serde_json",
  "symphonia",
