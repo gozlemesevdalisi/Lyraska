@@ -15,16 +15,20 @@ export function pointerRatio(clientX: number, left: number, width: number): numb
 }
 
 /**
- * İnce, parlayan ilerleme çubuğu. Tıklayınca o noktaya atlar; sürüklerken
+ * Parlayan ilerleme çubuğu ve tutamacı. Fareyle üstüne gelince o noktanın
+ * süresini gösterir; tıklayınca oraya atlar; tutamaç (ya da çubuk) sürüklenince
  * gidilecek süreyi gösterir ve bırakınca atlar. Klavyede ←/→ (genel kısayol).
  */
 export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBarProps) {
   const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null);
   // Çizim için state, olaylar için ref: çok hızlı bas-bırak'ta bırakma olayı
   // yeniden çizimden önce gelse bile sürükleme bilgisi kaybolmaz.
   const dragging = useRef(false);
   const seekable = !disabled && durationSecs !== null && durationSecs > 0;
   const ratio = dragRatio ?? progress(positionSecs, durationSecs);
+  // İpucu sürüklerken gidilecek yeri, yoksa fare altındaki noktayı gösterir.
+  const tipRatio = dragRatio ?? (seekable ? hoverRatio : null);
 
   const ratioOf = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -50,7 +54,9 @@ export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBa
       }}
       onPointerMove={(event) => {
         if (dragging.current) setDragRatio(ratioOf(event));
+        else if (seekable) setHoverRatio(ratioOf(event));
       }}
+      onPointerLeave={() => setHoverRatio(null)}
       onPointerUp={(event) => {
         if (!dragging.current || !durationSecs) return;
         dragging.current = false;
@@ -62,12 +68,17 @@ export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBa
         setDragRatio(null);
       }}
     >
-      <div className="display__progress">
-        <div className="display__progress-fill" style={{ transform: `scaleX(${ratio})` }} />
+      <div className="seekbar__track">
+        <div className="display__progress">
+          <div className="display__progress-fill" style={{ transform: `scaleX(${ratio})` }} />
+        </div>
+        {seekable ? (
+          <span className="seekbar__thumb" style={{ left: `${ratio * 100}%` }} aria-hidden />
+        ) : null}
       </div>
-      {dragRatio !== null && durationSecs ? (
-        <span className="seekbar__tip" style={{ left: `${dragRatio * 100}%` }}>
-          {formatTime(dragRatio * durationSecs)}
+      {tipRatio !== null && durationSecs ? (
+        <span className="seekbar__tip" style={{ left: `${tipRatio * 100}%` }}>
+          {formatTime(tipRatio * durationSecs)}
         </span>
       ) : null}
     </div>

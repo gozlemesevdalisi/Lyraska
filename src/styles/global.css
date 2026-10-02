@@ -265,8 +265,8 @@ body {
 .seekbar {
   position: relative;
   z-index: 3; /* cam yansımasının üstünde, tıklanabilir */
-  margin-top: 8px;
-  padding: 6px 0;
+  margin-top: 10px;
+  padding: 9px 0;
   touch-action: none;
 }
 
@@ -280,13 +280,42 @@ body {
   border-radius: 3px;
 }
 
-.seekbar.is-seekable:hover .display__progress,
-.seekbar.is-dragging .display__progress {
-  transform: scaleY(1.7);
+.seekbar__track {
+  position: relative;
 }
 
-.seekbar.is-dragging .display__progress-fill {
+.seekbar.is-seekable:hover .display__progress,
+.seekbar.is-dragging .display__progress {
+  transform: scaleY(1.5);
+}
+
+.seekbar.is-dragging .display__progress-fill,
+.seekbar.is-dragging .seekbar__thumb {
   transition: none;
+}
+
+/* Sürüklenebilir tutamaç: parlayan bir nokta */
+.seekbar__thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--vfd);
+  box-shadow:
+    0 0 6px var(--vfd-glow),
+    0 0 14px var(--vfd-glow);
+  transition:
+    left 0.25s linear,
+    width 0.15s,
+    height 0.15s;
+}
+
+.seekbar.is-seekable:hover .seekbar__thumb,
+.seekbar.is-dragging .seekbar__thumb {
+  width: 16px;
+  height: 16px;
 }
 
 .seekbar__tip {
@@ -307,7 +336,7 @@ body {
 /* İnce, parlayan ilerleme çubuğu */
 .display__progress {
   position: relative;
-  height: 3px;
+  height: 4px;
   transition: transform 0.15s;
   border-radius: 2px;
   background: var(--vfd-ghost);
@@ -417,7 +446,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .display__progress-fill {
+  .display__progress-fill,
+  .seekbar__thumb {
     transition: none;
   }
 }

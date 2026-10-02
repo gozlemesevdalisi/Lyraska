@@ -147,6 +147,20 @@ describe("sarma ve spektrum", () => {
     expect(backend.seek).toHaveBeenCalledWith(56.25);
   });
 
+  it("fareyle çubuğun üstüne gelince o noktanın süresini gösterir", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const bar = await screen.findByRole("slider", { name: "Şarkıda konum" });
+    bar.getBoundingClientRect = () => ({ left: 0, width: 225 }) as DOMRect;
+    await act(async () => fireEvent.pointerMove(bar, { clientX: 150 }));
+    expect(screen.getByText("02:30")).toBeInTheDocument();
+    await act(async () => fireEvent.pointerLeave(bar));
+    expect(screen.queryByText("02:30")).not.toBeInTheDocument();
+    expect(backend.seek).not.toHaveBeenCalled();
+  });
+
   it("çalarken spektrum gerçek veriyle yanar", async () => {
     backend.desktop = true;
     backend.status = playing;
