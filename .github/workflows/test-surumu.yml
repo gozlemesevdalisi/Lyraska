@@ -55,7 +55,8 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           short_sha=${GITHUB_SHA::7}
-          date=$(TZ=Europe/Istanbul date '+%d.%m.%Y %H:%M')
+          # Windows'taki Git Bash saat dilimi verisi içermez; tarihi Node ile biçimlendir.
+          date=$(node -p "new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })")
           cat > notlar.md <<NOTES
           **En güncel test sürümü** — her \`main\` güncellemesinde otomatik yenilenir.
 
