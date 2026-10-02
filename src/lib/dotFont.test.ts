@@ -20,7 +20,7 @@ describe("dotFont", () => {
   });
 
   it("her karakter 5x8 boyutundadır", () => {
-    for (const char of "AÇĞİÖŞÜ09.-:!?/· ") {
+    for (const char of "AÇĞİÖŞÜ09.-:!?/· ()&▶‖■") {
       const rows = glyphFor(char);
       expect(rows).toHaveLength(GLYPH_HEIGHT);
       rows.forEach((row) => expect(row).toMatch(/^[#.]{5}$/));
@@ -29,6 +29,19 @@ describe("dotFont", () => {
 
   it("bilinmeyen karakterleri soru işareti olarak gösterir", () => {
     expect(glyphFor("€")).toEqual(glyphFor("?"));
+  });
+
+  it("Türkçe dışındaki aksanlı harfleri aksansız gösterir, Türkçe harfleri korur", () => {
+    expect(glyphFor("é")).toEqual(glyphFor("E"));
+    expect(glyphFor("Ñ")).toEqual(glyphFor("N"));
+    expect(glyphFor("ç")).toEqual(glyphFor("Ç"));
+    expect(glyphFor("ç")).not.toEqual(glyphFor("C"));
+  });
+
+  it("şarkı adlarında sık geçen işaretleri ve oynatıcı simgelerini destekler", () => {
+    for (const char of "()'&+[]▶‖■") {
+      expect(isSupported(char), char).toBe(true);
+    }
   });
 
   it("metni doğru sayıda sütuna çevirir", () => {

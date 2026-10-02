@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Ana pencerenin izinleri. Yalnızca gerçekten gereken izinler eklenir.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:allow-open"]
 }

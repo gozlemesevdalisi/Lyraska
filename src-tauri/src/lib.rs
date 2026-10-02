@@ -1,4 +1,4 @@
-//! Müzik Çalar çekirdeği.
+//! Lyraska çekirdeği.
 //!
 //! Modül yapısı:
 //! - [`audio`]: ses motoru (çözme, 64-bit iç işlem, WASAPI çıkışı)
@@ -15,7 +15,15 @@ pub mod visual_bridge;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![commands::app_info])
+        .plugin(tauri_plugin_dialog::init())
+        .manage(commands::PlayerState::default())
+        .invoke_handler(tauri::generate_handler![
+            commands::app_info,
+            commands::open_track,
+            commands::toggle_playback,
+            commands::stop_playback,
+            commands::playback_status,
+        ])
         .run(tauri::generate_context!())
-        .expect("Müzik Çalar başlatılamadı");
+        .expect("Lyraska başlatılamadı");
 }

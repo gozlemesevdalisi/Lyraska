@@ -1,4 +1,4 @@
-# Yol haritası
+# Lyraska — Yol haritası
 
 Görselleri şarkıyı önceden bilen, tamamen çevrimdışı çalışan Windows müzik çalar.
 Lansman hedefi: **Mart 2027 başı (v1.0)**.
@@ -22,7 +22,8 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 
 ## Faz 1 — Çalan program, v0.1 (12 Ekim – 8 Kasım 2026)
 
-- [ ] Ses motoru: symphonia ile çözme, 64-bit iç işlem, WASAPI çıkışı
+- [x] Ses motoru: symphonia ile çözme, 64-bit iç işlem, kilitsiz halka tampon, WASAPI çıkışı
+- [x] Dosya aç, çal/duraklat (yumuşak geçişli), durdur; sürükle-bırak; konum ve takılma sayacı
 - [ ] Müzik kütüphanesi (SQLite): klasör tarama, etiketler, arama
 - [ ] 10 bantlı ekolayzer
 - [ ] 3 sahne: nokta matris spektrum, VU ibreleri, bir shader sahnesi
@@ -59,3 +60,17 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [ ] macOS ve Linux sürümleri
 - [ ] Oda ışıkları entegrasyonu
 - [ ] Yapay zekâ destekli analiz
+
+## Fikir havuzu (karar bekliyor)
+
+Proje sahibinin sorularından doğan öneriler. Her biri eklenmeden önce lisansı (kod **ve** model
+ağırlıkları) ayrıca doğrulanır; ticari kullanımı yasaklayanlar alınmaz.
+
+- **Kaynak ayrıştırma** (Demucs benzeri; kod MIT): şarkıyı davul, bas, vokal ve diğerlerine ayırıp
+  Görsel Yönetmen'e ayrı ayrı vermek. Görseller davula ayrı, vokale ayrı tepki verir.
+- **Yapay zekâ ile beat/bölüm tespiti**: klasik yöntemlerden daha isabetli; F-ölçüsü ≥ 0,80 hedefine
+  yardım eder. Bilinen bazı modellerin ağırlıkları ticari kullanımı yasakladığı için seçim dikkatle yapılmalı.
+- **Windows uzamsal ses** (Spatial Audio API): kullanıcı Windows Sonic ya da satın aldığı bir uzamsal
+  ses eklentisini açtıysa Lyraska bunu bilinçli kullanır. Dolby'nin kendi teknolojileri kapalı kaynak ve
+  ücretli olduğundan GPL-3.0 programa doğrudan eklenemez.
+- **WebGPU**: WebGL2'den sonraki nesil; daha karmaşık sahneler için (WebView2 desteği olgunlaşınca).

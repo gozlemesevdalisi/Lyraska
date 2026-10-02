@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    muzik_calar_lib::run()
+    lyraska_lib::run()
 }

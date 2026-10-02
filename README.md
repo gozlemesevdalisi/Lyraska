@@ -1,14 +1,17 @@
-# Müzik Çalar
+# Lyraska
 
-> **Draft** — the project is in Phase 0 (foundation). Nothing here is ready for everyday use yet.
+> **Early development** — Phase 1 is in progress. Lyraska can already open and play local audio
+> files on Windows (MP3, FLAC, WAV, AIFF, OGG Vorbis, AAC/ALAC); visuals and the library come next.
 
 An offline music player for Windows whose visuals **know the song before it plays**.
+
+The name comes from the _lyre_ and the _Lyra_ constellation.
 
 Every track is analysed ahead of time — beats, bars, sections, drops and energy — producing a
 _song map_. A **Visual Director** then choreographs the visuals in three layers (**atmosphere**,
 **rhythm** and **texture**) so that scenes anticipate the music instead of merely reacting to it.
 
-Alongside the visuals, Müzik Çalar aims to be a serious audio player: parametric EQ, AutoEq
+Alongside the visuals, Lyraska aims to be a serious audio player: parametric EQ, AutoEq
 headphone profiles, EBU R128 loudness normalisation, crossfeed and a bit-perfect output mode.
 
 ## Highlights (planned)
@@ -30,7 +33,7 @@ early March 2027.
 
 The latest test build of the Windows installer is always available at the same link:
 
-**<https://github.com/gozlemesevdalisi/muzik-calar/releases/download/test-surumu/MuzikCalar-Kurulum.exe>**
+**<https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe>**
 
 It is rebuilt automatically every time `main` changes. Builds are not code-signed yet, so Windows
 SmartScreen will show an "unknown publisher" warning: click **More info → Run anyway**.

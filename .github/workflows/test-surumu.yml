@@ -1,6 +1,6 @@
 # main her güncellendiğinde Windows kurulum dosyasını derler ve "test-surumu"
 # adlı sabit GitHub Release'ini yeniler. İndirme linki hiç değişmez:
-# https://github.com/gozlemesevdalisi/muzik-calar/releases/download/test-surumu/MuzikCalar-Kurulum.exe
+# https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
 name: Test sürümü
 
 on:
@@ -19,7 +19,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: test-surumu
-  ASSET_NAME: MuzikCalar-Kurulum.exe
+  ASSET_NAME: Lyraska-Kurulum.exe
 
 jobs:
   yayinla:
@@ -68,7 +68,7 @@ jobs:
           1. **$ASSET_NAME** dosyasını indirin ve çift tıklayın.
           2. Windows "Windows kişisel bilgisayarınızı korudu" derse **Ek bilgi** → **Yine de çalıştır**'a basın.
              (Program henüz dijital olarak imzalanmadığı için bu uyarı normaldir; imzalama Faz 4'te.)
-          3. Kurulum yönetici izni istemez; program Başlat menüsüne "Muzik Calar" adıyla eklenir.
+          3. Kurulum yönetici izni istemez; program Başlat menüsüne "Lyraska" adıyla eklenir.
           NOTES
 
       - name: test-surumu Release'ini yenile
@@ -83,6 +83,13 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
             gh release upload "$RELEASE_TAG" "$ASSET_NAME" --clobber
+            # Eski adlı dosyaları (ör. ad değişikliğinden kalanları) sil; sayfada tek dosya kalsın.
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | while read -r name; do
+              if [ "$name" != "$ASSET_NAME" ]; then
+                echo "Eski dosya siliniyor: $name"
+                gh release delete-asset "$RELEASE_TAG" "$name" --yes
+              fi
+            done
           else
             gh release create "$RELEASE_TAG" "$ASSET_NAME" --verify-tag \
               --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease

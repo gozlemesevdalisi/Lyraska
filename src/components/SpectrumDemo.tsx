@@ -5,6 +5,8 @@ import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
 export interface SpectrumDemoProps {
   bands?: number;
   rows?: number;
+  /** false ise hareket durur ve son görüntü donar (ör. duraklatılmışken). */
+  active?: boolean;
   className?: string;
 }
 
@@ -58,7 +60,12 @@ function staticLevels(bands: number): number[] {
  * Karşılama ekranındaki "gösteri modu" spektrumu. Gerçek ses verisi değildir;
  * müziğe benzeyen yumuşak bir hareket üretir. Ani parlama içermez.
  */
-export function SpectrumDemo({ bands = 16, rows = 10, className }: SpectrumDemoProps) {
+export function SpectrumDemo({
+  bands = 16,
+  rows = 10,
+  active = true,
+  className,
+}: SpectrumDemoProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [state, setState] = useState(() => ({
     levels: staticLevels(bands),
@@ -74,7 +81,7 @@ export function SpectrumDemo({ bands = 16, rows = 10, className }: SpectrumDemoP
   });
 
   useEffect(() => {
-    if (reducedMotion || typeof window.requestAnimationFrame !== "function") return;
+    if (!active || reducedMotion || typeof window.requestAnimationFrame !== "function") return;
     let raf = 0;
     let last = 0;
 
@@ -112,7 +119,7 @@ export function SpectrumDemo({ bands = 16, rows = 10, className }: SpectrumDemoP
 
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
-  }, [bands, reducedMotion]);
+  }, [active, bands, reducedMotion]);
 
   return (
     <DotMatrix

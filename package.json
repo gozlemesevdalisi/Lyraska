@@ -1,7 +1,7 @@
 {
-  "name": "muzik-calar",
+  "name": "lyraska",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
