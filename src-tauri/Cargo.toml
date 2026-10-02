@@ -1,0 +1,37 @@
+[package]
+name = "muzik-calar"
+version = "0.0.1"
+description = "Görselleri şarkıyı önceden bilen, çevrimdışı müzik çalar"
+authors = ["Müzik Çalar geliştiricileri"]
+license = "GPL-3.0-only"
+repository = "https://github.com/gozlemesevdalisi/muzik-calar"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+# `_lib` soneki Windows'ta bin ve lib adlarının çakışmasını önler.
+name = "muzik_calar_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
