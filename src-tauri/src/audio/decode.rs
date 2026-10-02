@@ -9,9 +9,10 @@ use serde::Serialize;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
-use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTag};
+use symphonia::core::units::{Time, TimeBase};
 
 use super::{AudioError, Sample};
 
@@ -43,9 +44,12 @@ pub struct Decoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn AudioDecoder>,
     track_id: u32,
+    time_base: Option<TimeBase>,
     info: TrackInfo,
     /// Son çözülen paketin örnekleri (kanallar iç içe: L, R, L, R...).
     buffer: Vec<Sample>,
+    /// Sarmadan sonra bu saniyeden önceki örnekler atılır (örnek hassasiyetinde sarma).
+    skip_until: Option<f64>,
 }
 
 impl Decoder {
@@ -76,6 +80,7 @@ impl Decoder {
             .ok_or(AudioError::NoAudioTrack)?;
         let track_id = track.id;
         let num_frames = track.num_frames;
+        let time_base = track.time_base;
         let params = track
             .codec_params
             .as_ref()
@@ -117,14 +122,47 @@ impl Decoder {
             format,
             decoder,
             track_id,
+            time_base,
             info,
             buffer: Vec::new(),
+            skip_until: None,
         })
     }
 
     /// Şarkı bilgileri.
     pub fn info(&self) -> &TrackInfo {
         &self.info
+    }
+
+    /// Şarkıda verilen saniyeye atlar ve gerçekten atlanan kareyi döndürür.
+    ///
+    /// Biçimler genellikle hedefin biraz öncesine atlayabilir; aradaki fazla
+    /// örnekler sonraki [`Decoder::next_chunk`] çağrılarında atılır.
+    pub fn seek(&mut self, seconds: f64) -> Result<u64, AudioError> {
+        let rate = f64::from(self.info.sample_rate);
+        let last = self
+            .info
+            .duration_secs
+            .map_or(f64::MAX, |d| (d - 1.0 / rate).max(0.0));
+        let target = if seconds.is_finite() {
+            seconds.clamp(0.0, last)
+        } else {
+            0.0
+        };
+        let time = Time::try_from_secs_f64(target)
+            .ok_or_else(|| AudioError::Seek("geçersiz konum".to_owned()))?;
+        self.format
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::Time {
+                    time,
+                    track_id: Some(self.track_id),
+                },
+            )
+            .map_err(|e| AudioError::Seek(e.to_string()))?;
+        self.decoder.reset();
+        self.skip_until = self.time_base.map(|_| target);
+        Ok((target * rate).round() as u64)
     }
 
     /// Sonraki örnek dilimini döndürür; şarkı bittiyse `None`.
@@ -146,14 +184,30 @@ impl Decoder {
             if packet.track_id != self.track_id {
                 continue;
             }
+            let packet_start = self
+                .time_base
+                .and_then(|tb| tb.calc_time(packet.pts))
+                .map(|t| t.as_secs_f64());
             match self.decoder.decode(&packet) {
                 Ok(audio) => {
-                    if audio.frames() == 0 {
+                    let frames = audio.frames();
+                    if frames == 0 {
                         continue;
                     }
                     self.buffer.resize(audio.samples_interleaved(), 0.0);
                     audio.copy_to_slice_interleaved(&mut self.buffer);
-                    return Ok(Some(&self.buffer));
+
+                    // Sarmadan sonra hedefe kadar olan örnekleri at.
+                    let mut skip = 0;
+                    if let (Some(target), Some(start)) = (self.skip_until, packet_start) {
+                        let rate = f64::from(self.info.sample_rate);
+                        skip = ((target - start) * rate).round().max(0.0) as usize;
+                        if skip >= frames {
+                            continue;
+                        }
+                        self.skip_until = None;
+                    }
+                    return Ok(Some(&self.buffer[skip * self.info.channels..]));
                 }
                 Err(SymphoniaError::DecodeError(_)) => continue,
                 Err(e) => return Err(e.into()),
@@ -227,6 +281,38 @@ mod tests {
                 "kare {frame}"
             );
         }
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn sarma_ornek_hassasiyetinde_calisir() {
+        let path = temp_path("sarma.wav");
+        let rate = 8_000;
+        let frames = 24_000; // 3 saniye
+                             // Her kare kendi sırasını taşır: kaç saniyeye atlandığı örnekten okunabilir.
+        write_wav(&path, rate, 1, frames, |frame, _| {
+            frame as f64 / frames as f64
+        });
+
+        let mut decoder = Decoder::open(&path).unwrap();
+        let landed = decoder.seek(1.25).unwrap();
+        assert_eq!(landed, 10_000);
+
+        let mut samples = Vec::new();
+        while let Some(chunk) = decoder.next_chunk().unwrap() {
+            samples.extend_from_slice(chunk);
+        }
+        // Atlanan noktadan sona kadar tam olarak kalan örnekler gelir.
+        assert_eq!(samples.len(), frames - 10_000);
+        assert!(
+            (samples[0] - 10_000.0 / frames as f64).abs() < 1e-4,
+            "ilk örnek {}",
+            samples[0]
+        );
+
+        // Sona taşan ve negatif konumlar sınırlanır.
+        assert!(decoder.seek(99.0).unwrap() < frames as u64);
+        assert_eq!(decoder.seek(-5.0).unwrap(), 0);
         std::fs::remove_file(path).ok();
     }
 

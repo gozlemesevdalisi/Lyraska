@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
 import { Marquee } from "./Marquee";
+import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
+import { SpectrumView } from "./SpectrumView";
 import { EjectIcon, PauseIcon, PlayIcon, StopIcon } from "./icons";
 import { textToColumns } from "../lib/dotFont";
 import { BROWSER_FALLBACK, getAppInfo, type AppInfo, type PlaybackStatus } from "../lib/backend";
-import { formatTime, progress, trackTechLine, trackTitle } from "../lib/format";
+import { formatTime, trackTechLine, trackTitle } from "../lib/format";
 import { usePlayer } from "../hooks/usePlayer";
 
 const TITLE = "LYRASKA";
@@ -67,7 +69,6 @@ export function PlayerScreen() {
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
   const hasTrack = status.track !== null;
-  const ratio = progress(status.positionSecs, status.track?.durationSecs ?? null);
   const indicators = [
     { label: "ST", on: (status.track?.channels ?? 2) >= 2 && hasTrack },
     { label: playing ? "PLAY" : "PAUSE", on: hasTrack && status.state !== "ended" },
@@ -108,13 +109,17 @@ export function PlayerScreen() {
               />
             </h1>
             <div className="display__spectrum" style={{ flexGrow: SPECTRUM_COLUMNS }}>
-              {/* Şimdilik gösteri spektrumu; gerçek spektrum sahnesi Faz 1'in sonraki adımında. */}
-              <SpectrumDemo
-                bands={SPECTRUM_BANDS}
-                rows={8}
-                active={playing || !hasTrack}
-                className="vfd vfd--accent"
-              />
+              {/* Şarkı açıkken gerçek spektrum; boştayken gösteri animasyonu. */}
+              {hasTrack ? (
+                <SpectrumView
+                  bands={SPECTRUM_BANDS}
+                  rows={8}
+                  playing={playing}
+                  className="vfd vfd--accent"
+                />
+              ) : (
+                <SpectrumDemo bands={SPECTRUM_BANDS} rows={8} className="vfd vfd--accent" />
+              )}
             </div>
           </div>
 
@@ -125,16 +130,12 @@ export function PlayerScreen() {
             className="vfd vfd--primary display__marquee"
           />
 
-          <div
-            className="display__progress"
-            role="progressbar"
-            aria-label="Şarkının ilerleyişi"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(ratio * 100)}
-          >
-            <div className="display__progress-fill" style={{ transform: `scaleX(${ratio})` }} />
-          </div>
+          <SeekBar
+            positionSecs={status.positionSecs}
+            durationSecs={status.track?.durationSecs ?? null}
+            disabled={!player.available || player.busy}
+            onSeek={(seconds) => void player.seek(seconds)}
+          />
         </div>
 
         <div className="faceplate__controls">

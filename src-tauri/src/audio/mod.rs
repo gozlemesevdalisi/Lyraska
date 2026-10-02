@@ -36,6 +36,8 @@ pub enum AudioError {
     NoAudioTrack,
     #[error("Şarkı çözülürken hata oluştu: {0}")]
     Decode(String),
+    #[error("Bu dosyada istenen yere atlanamadı: {0}")]
+    Seek(String),
     #[error("Ses çıkışı bu işletim sisteminde henüz desteklenmiyor (şimdilik yalnızca Windows).")]
     OutputUnavailable,
     #[error("Ses çıkış aygıtı bulunamadı. Hoparlör ya da kulaklık bağlı ve açık mı?")]

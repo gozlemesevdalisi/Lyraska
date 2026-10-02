@@ -10,6 +10,8 @@ const backend = vi.hoisted(() => ({
   status: null as PlaybackStatus | null,
   toggle: vi.fn(),
   stop: vi.fn(),
+  seek: vi.fn(),
+  bands: null as number[] | null,
   open: vi.fn(),
   pick: vi.fn(),
 }));
@@ -30,6 +32,12 @@ vi.mock("../lib/backend", async (importOriginal) => {
       backend.stop();
       return current();
     },
+    seekPlayback: async (seconds: number) => {
+      backend.seek(seconds);
+      return current();
+    },
+    getVisualFrame: async () =>
+      backend.bands ? { positionSecs: current().positionSecs, bands: backend.bands } : null,
     openTrack: async (path: string) => {
       backend.open(path);
       return current().track;
@@ -42,6 +50,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
 // Testler bileşeni sahte arka uçla birlikte yükler.
 const { default: App } = await import("../App");
 const { headline, marqueeText } = await import("./PlayerScreen");
+const { pointerRatio } = await import("./SeekBar");
 
 const track: TrackInfo = {
   path: "C:\\Müzik\\gece.flac",
@@ -65,6 +74,7 @@ const playing: PlaybackStatus = {
 beforeEach(() => {
   backend.desktop = false;
   backend.status = null;
+  backend.bands = null;
   vi.clearAllMocks();
 });
 
@@ -106,6 +116,59 @@ describe("oynatıcı ekranı", () => {
       fireEvent.keyDown(window, { code: "Space", key: " " });
     });
     expect(backend.toggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sarma ve spektrum", () => {
+  it("ok tuşları 5 saniye ileri/geri sarar", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    // Durum ilk komutla gelir; Boşluk ile oynatıcıyı uyandır.
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" }));
+    expect(backend.seek).toHaveBeenLastCalledWith(83.4 + 5);
+    await act(async () => fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" }));
+    expect(backend.seek).toHaveBeenLastCalledWith(83.4 - 5);
+  });
+
+  it("ilerleme çubuğuna tıklayınca o noktaya atlar", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const bar = await screen.findByRole("slider", { name: "Şarkıda konum" });
+    bar.getBoundingClientRect = () => ({ left: 100, width: 400 }) as DOMRect;
+    await act(async () => {
+      fireEvent.pointerDown(bar, { button: 0, clientX: 200, pointerId: 1 });
+      fireEvent.pointerUp(bar, { button: 0, clientX: 200, pointerId: 1 });
+    });
+    // 200 px → çubuğun %25'i → 225 sn'lik şarkıda 56,25 sn
+    expect(backend.seek).toHaveBeenCalledWith(56.25);
+  });
+
+  it("çalarken spektrum gerçek veriyle yanar", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    backend.bands = new Array<number>(32).fill(0.9);
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const spectrum = await screen.findByRole("img", { name: "Spektrum" });
+    await waitFor(() => {
+      const lit = Number(
+        spectrum.querySelector(".dot-matrix__lit")!.getAttribute("data-lit-count"),
+      );
+      expect(lit).toBeGreaterThan(100);
+    });
+  });
+});
+
+describe("pointerRatio", () => {
+  it("işaretçi konumunu 0..1 aralığına çevirir", () => {
+    expect(pointerRatio(150, 100, 200)).toBe(0.25);
+    expect(pointerRatio(50, 100, 200)).toBe(0);
+    expect(pointerRatio(400, 100, 200)).toBe(1);
+    expect(pointerRatio(10, 0, 0)).toBe(0);
   });
 });
 

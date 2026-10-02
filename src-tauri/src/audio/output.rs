@@ -11,7 +11,9 @@ use rtrb::Consumer;
 use super::player::SharedState;
 use super::{AudioError, Sample};
 
-#[cfg(windows)]
+#[cfg(test)]
+mod simulated;
+#[cfg(all(windows, not(test)))]
 mod wasapi;
 
 /// Çıkış akışının biçimi: şarkının kendi örnekleme hızı ve kanal sayısı.
@@ -37,11 +39,17 @@ pub fn spawn(
     source: Consumer<Sample>,
     shared: Arc<SharedState>,
 ) -> Result<JoinHandle<()>, AudioError> {
-    #[cfg(windows)]
+    // Birim testleri ses aygıtı gerektirmeyen sanal çıkışı kullanır; gerçek
+    // aygıt `examples/ses_denemesi.rs` ile denenir.
+    #[cfg(test)]
+    {
+        simulated::spawn(spec, source, shared)
+    }
+    #[cfg(all(windows, not(test)))]
     {
         wasapi::spawn(spec, source, shared)
     }
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(test)))]
     {
         let _ = (spec, source, shared);
         Err(AudioError::OutputUnavailable)

@@ -15,6 +15,7 @@ use tauri::State;
 
 use crate::audio::decode::{TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::player::{PlaybackStatus, Player};
+use crate::visual_bridge::VisualFrame;
 use crate::{analysis, audio, visual_bridge};
 
 /// Karşılama ekranında gösterilen program bilgisi.
@@ -90,6 +91,30 @@ pub async fn stop_playback(player: State<'_, PlayerState>) -> Result<PlaybackSta
     let mut player = player.lock()?;
     player.stop().map_err(|e| e.to_string())?;
     Ok(player.status())
+}
+
+/// Şarkıda verilen saniyeye atlar.
+#[tauri::command]
+pub async fn seek_playback(
+    seconds: f64,
+    player: State<'_, PlayerState>,
+) -> Result<PlaybackStatus, String> {
+    let mut player = player.lock()?;
+    player.seek(seconds).map_err(|e| e.to_string())?;
+    Ok(player.status())
+}
+
+/// Şu an duyulan anın görsel verisi. Arayüz her ekran karesinde sorar;
+/// analiz o ana yetişmediyse `null` döner.
+#[tauri::command]
+pub async fn visual_frame(player: State<'_, PlayerState>) -> Result<Option<VisualFrame>, String> {
+    Ok(player
+        .lock()?
+        .spectrum_now()
+        .map(|(position_secs, bands)| VisualFrame {
+            position_secs,
+            bands: bands.to_vec(),
+        }))
 }
 
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.
