@@ -1,6 +1,6 @@
 [package]
 name = "lyraska"
-version = "0.0.3"
+version = "0.0.4"
 description = "Görselleri şarkıyı önceden bilen, çevrimdışı müzik çalar"
 authors = ["Lyraska geliştiricileri"]
 license = "GPL-3.0-only"

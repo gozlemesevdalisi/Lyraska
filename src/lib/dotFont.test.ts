@@ -38,6 +38,19 @@ describe("dotFont", () => {
     expect(glyphFor("ç")).not.toEqual(glyphFor("C"));
   });
 
+  it("tipografik işaretleri sadeleştirir: tireler, tırnaklar, üç nokta", () => {
+    expect(toDisplayCase("Sezen Aksu – Gülümse")).toBe("SEZEN AKSU - GÜLÜMSE");
+    expect(toDisplayCase("Don’t “Stop”…")).toBe('DON\'T "STOP"...');
+    expect(textToColumns("a — b")).toEqual(textToColumns("A - B"));
+  });
+
+  it("YouTube tarzı başlıklardaki işaretlerin hiçbiri soru işaretine düşmez", () => {
+    const title = "Artist | Song (Official Audio) [4K] feat. X & Y; 100% ~ @live $ <3 {v2} 90°";
+    for (const char of toDisplayCase(title)) {
+      expect(isSupported(char), char).toBe(true);
+    }
+  });
+
   it("şarkı adlarında sık geçen işaretleri ve oynatıcı simgelerini destekler", () => {
     for (const char of "()'&+[]▶‖■") {
       expect(isSupported(char), char).toBe(true);
