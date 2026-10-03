@@ -140,13 +140,7 @@ pub async fn seek_playback(
 /// analiz o ana yetişmediyse `null` döner.
 #[tauri::command]
 pub async fn visual_frame(player: State<'_, PlayerState>) -> Result<Option<VisualFrame>, String> {
-    Ok(player
-        .lock()?
-        .spectrum_now()
-        .map(|(position_secs, bands)| VisualFrame {
-            position_secs,
-            bands: bands.to_vec(),
-        }))
+    Ok(player.lock()?.visual_now().map(VisualFrame::from))
 }
 
 /// Kütüphane durumu: klasörler, şarkı sayısı, tarama ilerlemesi.

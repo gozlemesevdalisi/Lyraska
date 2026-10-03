@@ -42,6 +42,12 @@ export interface VisualFrame {
   positionSecs: number;
   /** Logaritmik aralıklı frekans bantları (bastan tize), 0..1. */
   bands: number[];
+  /** Sol/sağ etkin (RMS) seviye, dBFS; sessizlik −60. */
+  rmsDb: [number, number];
+  /** Sol/sağ tepe seviye, dBFS; sessizlik −60. */
+  peakDb: [number, number];
+  /** 0 VU'ya denk gelen seviye (dBFS), şarkıya göre; analiz bitene kadar `null`. */
+  vuReferenceDb: number | null;
 }
 
 /** Rust tarafındaki `library::FolderRow`. */
