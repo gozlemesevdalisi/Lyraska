@@ -23,6 +23,9 @@ const backend = vi.hoisted(() => ({
   pick: vi.fn(),
   drop: null as ((paths: string[]) => void) | null,
   setEq: vi.fn(),
+  headphone: null as import("../lib/backend").HeadphoneState | null,
+  pickProfile: vi.fn(),
+  importProfile: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -80,6 +83,31 @@ vi.mock("../lib/backend", async (importOriginal) => {
     setEqualizer: async (settings: import("../lib/backend").EqSettings) => {
       backend.setEq(settings);
       return actual.setEqualizer(settings);
+    },
+    getHeadphone: async () => backend.headphone ?? actual.NO_HEADPHONE,
+    pickHeadphoneProfile: async () => backend.pickProfile(),
+    importHeadphoneProfile: async (path: string) => {
+      backend.importProfile(path);
+      if (path.includes("bozuk")) throw "Dosyada kulaklık düzeltmesi bulunamadı.";
+      backend.headphone = {
+        enabled: true,
+        profile: {
+          name: "Sennheiser HD 600",
+          preampDb: -6.4,
+          filters: [{ kind: "peaking", freqHz: 1000, gainDb: 3, q: 1 }],
+        },
+        curveHz: [20, 1000, 20000],
+        curveDb: [-6.4, -3.4, -6.4],
+      };
+      return backend.headphone;
+    },
+    setHeadphoneEnabled: async (enabled: boolean) => {
+      backend.headphone = { ...(backend.headphone ?? actual.NO_HEADPHONE), enabled };
+      return backend.headphone;
+    },
+    clearHeadphone: async () => {
+      backend.headphone = null;
+      return actual.NO_HEADPHONE;
     },
   };
 });
@@ -552,5 +580,51 @@ describe("spectrumColumns", () => {
   it("aralık dışı değerleri sınırlar", () => {
     const [column] = spectrumColumns([2, -1], [0, 0], 4);
     expect(column!.every(Boolean)).toBe(true);
+  });
+});
+
+describe("kulaklık düzeltmesi", () => {
+  afterEach(() => {
+    backend.headphone = null;
+    backend.pickProfile.mockReset();
+    backend.importProfile.mockReset();
+  });
+
+  it("AutoEq profili yüklenir, açılıp kapanır ve kaldırılır", async () => {
+    backend.pickProfile.mockResolvedValue("C:\\İndirilenler\\Sennheiser HD 600 ParametricEQ.txt");
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Ekolayzer/ })));
+    expect(screen.getByText(/autoeq\.app/)).toBeInTheDocument();
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
+    expect(backend.importProfile).toHaveBeenCalledWith(
+      "C:\\İndirilenler\\Sennheiser HD 600 ParametricEQ.txt",
+    );
+    expect(screen.getByText("Sennheiser HD 600")).toBeInTheDocument();
+    expect(screen.getByText(/1 filtre · ön kazanç −6,4 dB/)).toBeInTheDocument();
+    const toggle = screen.getByRole("switch", { name: "Kulaklık düzeltmesi" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await act(async () => fireEvent.click(toggle));
+    expect(screen.getByRole("switch", { name: "Kulaklık düzeltmesi" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kaldır" })));
+    expect(screen.queryByText("Sennheiser HD 600")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Profil yükle" })).toBeInTheDocument();
+  });
+
+  it("vazgeçilirse bir şey olmaz; bozuk dosyada anlaşılır hata gösterir", async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Ekolayzer/ })));
+    backend.pickProfile.mockResolvedValue(null);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
+    expect(backend.importProfile).not.toHaveBeenCalled();
+
+    backend.pickProfile.mockResolvedValue("C:\\bozuk.txt");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
+    expect(screen.getByText(/kulaklık düzeltmesi bulunamadı/)).toBeInTheDocument();
   });
 });

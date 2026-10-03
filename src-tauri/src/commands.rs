@@ -15,6 +15,7 @@ use tauri::State;
 
 use crate::audio::decode::{TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
+use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
 use crate::audio::player::{PlaybackStatus, Player};
 use crate::library::{LibraryService, LibraryStatus, TrackRow};
 use crate::settings::SettingsStore;
@@ -68,7 +69,9 @@ impl PlayerState {
 /// Kayıtlı ayarları oynatıcıya uygular (program açılırken).
 pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
     if let Ok(mut player) = player.lock() {
-        player.set_equalizer(store.get().equalizer);
+        let settings = store.get();
+        player.set_equalizer(settings.equalizer);
+        player.set_headphone(settings.headphone);
     }
 }
 
@@ -212,6 +215,69 @@ pub async fn equalizer_set(
     Ok(EqState::new(applied))
 }
 
+/// Kulaklık düzeltmesi ve eğrisi.
+#[tauri::command]
+pub async fn headphone_get(player: State<'_, PlayerState>) -> Result<HeadphoneState, String> {
+    Ok(HeadphoneState::new(player.lock()?.headphone()))
+}
+
+/// AutoEq / Equalizer APO parametrik profil dosyasını okur, açar ve kaydeder.
+#[tauri::command]
+pub async fn headphone_import(
+    path: String,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<HeadphoneState, String> {
+    let path = std::path::Path::new(&path);
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("Profil dosyası okunamadı: {e}"))?;
+    let name = path
+        .file_stem()
+        .map(|s| HeadphoneProfile::name_from_file(&s.to_string_lossy()))
+        .unwrap_or_default();
+    let profile = HeadphoneProfile::parse(&text, &name).map_err(|e| e.to_string())?;
+    apply_headphone(
+        HeadphoneSettings {
+            enabled: true,
+            profile: Some(profile),
+        },
+        &player,
+        &store,
+    )
+}
+
+/// Kulaklık düzeltmesini açar ya da kapatır (profil korunur).
+#[tauri::command]
+pub async fn headphone_set_enabled(
+    enabled: bool,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<HeadphoneState, String> {
+    let current = player.lock()?.headphone();
+    apply_headphone(HeadphoneSettings { enabled, ..current }, &player, &store)
+}
+
+/// Kulaklık profilini kaldırır.
+#[tauri::command]
+pub async fn headphone_clear(
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<HeadphoneState, String> {
+    apply_headphone(HeadphoneSettings::default(), &player, &store)
+}
+
+fn apply_headphone(
+    settings: HeadphoneSettings,
+    player: &PlayerState,
+    store: &SettingsStore,
+) -> Result<HeadphoneState, String> {
+    let applied = player.lock()?.set_headphone(settings);
+    store
+        .update(|s| s.headphone = applied.clone())
+        .map_err(|e| format!("Kulaklık ayarı kaydedilemedi: {e}"))?;
+    Ok(HeadphoneState::new(applied))
+}
+
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.
 #[tauri::command]
 pub async fn playback_status(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
@@ -261,10 +327,35 @@ mod tests {
     #[test]
     fn kayitli_ayarlar_oynaticiya_uygulanir() {
         let store = SettingsStore::in_memory();
-        store.update(|s| s.equalizer.gains_db[4] = 7.0).unwrap();
+        let profile = HeadphoneProfile::parse(
+            "Preamp: -3 dB\nFilter 1: ON PK Fc 1000 Hz Gain 3 dB Q 1\n",
+            "Deneme",
+        )
+        .unwrap();
+        store
+            .update(|s| {
+                s.equalizer.gains_db[4] = 7.0;
+                s.headphone = HeadphoneSettings {
+                    enabled: true,
+                    profile: Some(profile.clone()),
+                };
+            })
+            .unwrap();
         let player = PlayerState::default();
         restore_settings(&player, &store);
-        assert_eq!(player.lock().unwrap().equalizer().gains_db[4], 7.0);
+        let restored = player.lock().unwrap();
+        assert_eq!(restored.equalizer().gains_db[4], 7.0);
+        assert!(restored.headphone().enabled);
+        assert_eq!(restored.headphone().profile.unwrap().name, "Deneme");
+    }
+
+    #[test]
+    fn eski_ayar_dosyasi_kulaklik_ayari_olmadan_okunur() {
+        let settings: crate::settings::Settings = serde_json::from_str(
+            r#"{"equalizer":{"enabled":true,"gainsDb":[0,0,0,0,0,0,0,0,0,0]}}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.headphone, HeadphoneSettings::default());
     }
 
     #[test]

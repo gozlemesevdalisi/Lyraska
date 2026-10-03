@@ -264,6 +264,67 @@ export async function setEqualizer(settings: EqSettings): Promise<EqState> {
   return invoke<EqState>("equalizer_set", { settings });
 }
 
+/** Rust tarafındaki `audio::peq::PeqFilter`. */
+export interface HeadphoneFilter {
+  kind: "peaking" | "lowShelf" | "highShelf";
+  freqHz: number;
+  gainDb: number;
+  q: number;
+}
+
+/** Rust tarafındaki `audio::peq::HeadphoneProfile`. */
+export interface HeadphoneProfile {
+  name: string;
+  preampDb: number;
+  filters: HeadphoneFilter[];
+}
+
+/** Rust tarafındaki `audio::peq::HeadphoneState`. */
+export interface HeadphoneState {
+  enabled: boolean;
+  profile: HeadphoneProfile | null;
+  /** Düzeltme eğrisi (ön kazanç dahil); profil yoksa boş. */
+  curveHz: number[];
+  curveDb: number[];
+}
+
+export const NO_HEADPHONE: HeadphoneState = {
+  enabled: false,
+  profile: null,
+  curveHz: [],
+  curveDb: [],
+};
+
+/** Kulaklık düzeltmesi. Tarayıcı önizlemesinde profil yoktur. */
+export async function getHeadphone(): Promise<HeadphoneState> {
+  if (!isTauri()) return NO_HEADPHONE;
+  return invoke<HeadphoneState>("headphone_get");
+}
+
+/** AutoEq profil dosyasını (ParametricEQ.txt) yükler ve düzeltmeyi açar. */
+export async function importHeadphoneProfile(path: string): Promise<HeadphoneState> {
+  return invoke<HeadphoneState>("headphone_import", { path });
+}
+
+export async function setHeadphoneEnabled(enabled: boolean): Promise<HeadphoneState> {
+  return invoke<HeadphoneState>("headphone_set_enabled", { enabled });
+}
+
+export async function clearHeadphone(): Promise<HeadphoneState> {
+  return invoke<HeadphoneState>("headphone_clear");
+}
+
+/** Kulaklık profili seçme penceresi; seçilen dosyanın yolu ya da `null`. */
+export async function pickHeadphoneProfile(): Promise<string | null> {
+  const selected = await open({
+    title: "AutoEq kulaklık profilini seçin (ParametricEQ.txt)",
+    multiple: false,
+    directory: false,
+    filters: [{ name: "AutoEq parametrik profil", extensions: ["txt"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
 /** Pencereye bırakılan dosyaları dinler. Dinlemeyi bırakmak için dönen fonksiyon çağrılır. */
 export async function onFileDrop(handler: (paths: string[]) => void): Promise<() => void> {
   if (!isTauri()) return () => {};

@@ -9,6 +9,7 @@ use rtrb::Consumer;
 
 use super::eq::{EqControl, EqProcessor};
 use super::limiter::Limiter;
+use super::peq::{PeqControl, PeqProcessor};
 use super::Sample;
 
 /// Duraklat/devam geçişinin süresi. Ani kesilme "tık" sesine yol açar.
@@ -32,13 +33,19 @@ pub struct Renderer {
     /// Her karede kazancın değiştiği miktar.
     fade_step: f64,
     eq: EqProcessor,
+    headphone: PeqProcessor,
     limiter: Limiter,
     /// Bir karelik çalışma alanı (bellek bir kez ayrılır).
     frame: Vec<Sample>,
 }
 
 impl Renderer {
-    pub fn new(channels: usize, sample_rate: u32, eq: Arc<EqControl>) -> Self {
+    pub fn new(
+        channels: usize,
+        sample_rate: u32,
+        eq: Arc<EqControl>,
+        headphone: Arc<PeqControl>,
+    ) -> Self {
         let fade_frames = (FADE_SECONDS * f64::from(sample_rate)).max(1.0);
         let channels = channels.max(1);
         Self {
@@ -46,6 +53,7 @@ impl Renderer {
             gain: 0.0,
             fade_step: 1.0 / fade_frames,
             eq: EqProcessor::new(eq, channels, sample_rate),
+            headphone: PeqProcessor::new(headphone, channels, sample_rate),
             limiter: Limiter::new(channels, sample_rate),
             frame: vec![0.0; channels],
         }
@@ -74,6 +82,7 @@ impl Renderer {
         let target = if paused { 0.0 } else { 1.0 };
         let mut outcome = RenderOutcome::default();
         self.eq.begin_block();
+        self.headphone.begin_block();
 
         for frame in out.chunks_exact_mut(self.channels) {
             // Sessiz karelerde de taşma korumasının gecikme hattı ilerler: duraklatma
@@ -92,10 +101,14 @@ impl Renderer {
                 }
                 continue;
             }
+            for value in self.frame.iter_mut() {
+                *value = source.pop().unwrap_or(0.0);
+            }
+            // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → ses geçişi → taşma koruması.
+            self.headphone.process_frame(&mut self.frame);
             self.eq.advance_frame();
             for (channel, value) in self.frame.iter_mut().enumerate() {
-                let sample = source.pop().unwrap_or(0.0);
-                *value = self.eq.process(channel, sample) * self.gain;
+                *value = self.eq.process(channel, *value) * self.gain;
             }
             self.write_frame(frame);
             outcome.frames_consumed += 1;
@@ -151,7 +164,7 @@ mod tests {
 
     #[test]
     fn baslangicta_sesi_yumusakca_acar() {
-        let mut renderer = Renderer::new(1, RATE, flat());
+        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
         let mut source = filled(&[0.8; 20]);
         let mut out = [0.0f32; 20];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -169,7 +182,7 @@ mod tests {
 
     #[test]
     fn duraklatinca_yumusakca_susar_ve_veri_tuketmez() {
-        let mut renderer = Renderer::new(2, RATE, flat());
+        let mut renderer = Renderer::new(2, RATE, flat(), Arc::default());
         let mut source = filled(&[0.5; 200]);
         let mut out = [0.0f32; 40];
         renderer.render(&mut source, &mut out, false); // tam sese ulaş
@@ -194,7 +207,7 @@ mod tests {
     #[test]
     fn devam_edince_kaldigi_yerden_surer() {
         let samples: Vec<Sample> = (0..100).map(|i| f64::from(i) / 100.0).collect();
-        let mut renderer = Renderer::new(1, RATE, flat());
+        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
         let mut source = filled(&samples);
         let mut out = [0.0f32; 30];
         renderer.render(&mut source, &mut out, false);
@@ -213,7 +226,7 @@ mod tests {
 
     #[test]
     fn veri_yetismezse_sessizlik_yazar_ve_sayar() {
-        let mut renderer = Renderer::new(2, RATE, flat());
+        let mut renderer = Renderer::new(2, RATE, flat(), Arc::default());
         let mut source = filled(&[0.3; 5]); // 2,5 kare: son yarım kare okunmamalı
         let mut out = [9.0f32; 8];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -236,7 +249,7 @@ mod tests {
             gains_db: [-12.0; BANDS],
         }));
         let rate = 48_000;
-        let mut renderer = Renderer::new(1, rate, eq);
+        let mut renderer = Renderer::new(1, rate, eq, Arc::default());
         let w = 2.0 * std::f64::consts::PI * 1000.0 / f64::from(rate);
         let samples: Vec<Sample> = (0..rate).map(|i| (w * f64::from(i)).sin()).collect();
         let mut source = filled(&samples);
