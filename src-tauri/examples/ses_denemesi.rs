@@ -1,7 +1,7 @@
 //! Gerçek ses aygıtıyla uçtan uca deneme (CI'da Windows'ta çalışır).
 //!
-//! Kısa, kısık bir test sesi üretir; açar, duraklatır, sarar, devam ettirir ve
-//! sonuna kadar çalar. Takılma, konum ve "bitti" durumunu denetler.
+//! Kısa, kısık bir test sesi üretir; açar, duraklatır, sarar, çalarken ekolayzeri
+//! değiştirir ve sonuna kadar çalar. Takılma, konum ve "bitti" durumunu denetler.
 //! Makinede ses aygıtı yoksa bunu açıkça yazar ve başarıyla çıkar.
 //!
 //! Çalıştırma: `cargo run --example ses_denemesi`
@@ -10,6 +10,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use lyraska_lib::audio::eq::{EqSettings, BANDS};
 use lyraska_lib::audio::player::{PlaybackState, Player};
 use lyraska_lib::audio::AudioError;
 
@@ -106,8 +107,22 @@ fn run(path: &Path) -> Result<(), Outcome> {
     )?;
     check(player.spectrum_now().is_some(), "spektrum verisi yok")?;
 
-    // Devam et ve sonuna kadar çal.
+    // Devam et; çalarken ekolayzeri değiştir (gerçek zamanlı yolda yeniden tasarım),
+    // sonra kapat. Bunlar takılmaya yol açmamalı.
     player.play().map_err(|e| Outcome::Failed(e.to_string()))?;
+    std::thread::sleep(Duration::from_millis(100));
+    let mut gains = [0.0; BANDS];
+    gains[3] = 9.0;
+    gains[7] = -6.0;
+    player.set_equalizer(EqSettings {
+        enabled: true,
+        gains_db: gains,
+    });
+    std::thread::sleep(Duration::from_millis(150));
+    player.set_equalizer(EqSettings {
+        enabled: false,
+        gains_db: gains,
+    });
     let deadline = Instant::now() + Duration::from_secs(10);
     while player.state() == PlaybackState::Playing && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));

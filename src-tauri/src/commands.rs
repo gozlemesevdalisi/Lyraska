@@ -14,8 +14,10 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::audio::decode::{TrackInfo, SUPPORTED_EXTENSIONS};
+use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::player::{PlaybackStatus, Player};
 use crate::library::{LibraryService, LibraryStatus, TrackRow};
+use crate::settings::SettingsStore;
 use crate::visual_bridge::VisualFrame;
 use crate::{analysis, audio, visual_bridge};
 
@@ -60,6 +62,13 @@ impl PlayerState {
         self.0.lock().map_err(|_| {
             "Oynatıcı beklenmedik bir hatayla durdu; programı yeniden başlatın.".to_owned()
         })
+    }
+}
+
+/// Kayıtlı ayarları oynatıcıya uygular (program açılırken).
+pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
+    if let Ok(mut player) = player.lock() {
+        player.set_equalizer(store.get().equalizer);
     }
 }
 
@@ -189,6 +198,26 @@ pub async fn library_search(
         .map_err(|e| e.to_string())
 }
 
+/// Ekolayzer ayarları ve uygulanan eğri.
+#[tauri::command]
+pub async fn equalizer_get(player: State<'_, PlayerState>) -> Result<EqState, String> {
+    Ok(EqState::new(player.lock()?.equalizer()))
+}
+
+/// Ekolayzer ayarlarını değiştirir (çalan sese hemen yansır) ve kaydeder.
+#[tauri::command]
+pub async fn equalizer_set(
+    settings: EqSettings,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<EqState, String> {
+    let applied = player.lock()?.set_equalizer(settings);
+    store
+        .update(|s| s.equalizer = applied)
+        .map_err(|e| format!("Ekolayzer ayarı kaydedilemedi: {e}"))?;
+    Ok(EqState::new(applied))
+}
+
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.
 #[tauri::command]
 pub async fn playback_status(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
@@ -210,6 +239,38 @@ mod tests {
         assert!(json.get("audioEngine").is_some());
         assert!(json.get("supportedExtensions").is_some());
         assert!(json.get("audio_engine").is_none());
+    }
+
+    #[test]
+    fn ekolayzer_arayuz_bicimine_uyar() {
+        let json = serde_json::to_value(EqState::new(EqSettings::default())).unwrap();
+        for key in [
+            "enabled",
+            "gainsDb",
+            "bandsHz",
+            "maxGainDb",
+            "preampDb",
+            "curveHz",
+            "curveDb",
+        ] {
+            assert!(json.get(key).is_some(), "{key} eksik");
+        }
+        // Arayüzden gelen ayar biçimi.
+        let settings: EqSettings = serde_json::from_value(
+            serde_json::json!({"enabled": false, "gainsDb": [1,0,0,0,0,0,0,0,0,0]}),
+        )
+        .unwrap();
+        assert!(!settings.enabled);
+        assert_eq!(settings.gains_db[0], 1.0);
+    }
+
+    #[test]
+    fn kayitli_ayarlar_oynaticiya_uygulanir() {
+        let store = SettingsStore::in_memory();
+        store.update(|s| s.equalizer.gains_db[4] = 7.0).unwrap();
+        let player = PlayerState::default();
+        restore_settings(&player, &store);
+        assert_eq!(player.lock().unwrap().equalizer().gains_db[4], 7.0);
     }
 
     #[test]
