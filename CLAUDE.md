@@ -61,7 +61,9 @@ lyraska/
 │   │   ├── audio/            # Ses motoru
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
-│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, duraklatma geçişi (ayırma/kilit yok)
+│   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
+│   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (−0,3 dBFS)
+│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, taşma koruması, duraklatma geçişi
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
@@ -72,7 +74,8 @@ lyraska/
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
-│   │   │   └── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
+│   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
+│   │   │   └── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)

@@ -35,6 +35,21 @@ export interface PlaybackStatus {
   positionSecs: number;
   underruns: number;
   error: string | null;
+  /** Şarkının temposu; analiz bitene kadar ya da belirgin ritim yoksa `null`. */
+  bpm: number | null;
+  /** Sesin aygıta giden yolu; şarkı açık değilse `null`. */
+  output: SignalPath | null;
+}
+
+/** Rust tarafındaki `audio::player::SignalPath`. */
+export interface SignalPath {
+  /** Aygıtın adı; bilinmiyorsa boş. */
+  deviceName: string;
+  /** Aygıta giden örnekleme hızı ve kanal sayısı. */
+  sampleRate: number;
+  channels: number;
+  /** Şarkı aygıtın hızına Lyraska'nın dönüştürücüsüyle çevriliyor mu? */
+  resampled: boolean;
 }
 
 /** Rust tarafındaki `visual_bridge::VisualFrame`. */
@@ -48,6 +63,17 @@ export interface VisualFrame {
   peakDb: [number, number];
   /** 0 VU'ya denk gelen seviye (dBFS), şarkıya göre; analiz bitene kadar `null`. */
   vuReferenceDb: number | null;
+  /** Tempo ve vuruş konumu; analiz bitene kadar ya da ritim yoksa `null`. */
+  beat: BeatFrame | null;
+}
+
+/** Rust tarafındaki `visual_bridge::BeatFrame`. */
+export interface BeatFrame {
+  bpm: number;
+  /** Son vuruşun sırası (0'dan başlar). */
+  index: number;
+  /** Son vuruştan bu yana geçen süre, vuruş aralığına oranla (0..1). */
+  phase: number;
 }
 
 /** Rust tarafındaki `library::FolderRow`. */
@@ -115,6 +141,8 @@ export const IDLE_STATUS: PlaybackStatus = {
   positionSecs: 0,
   underruns: 0,
   error: null,
+  bpm: null,
+  output: null,
 };
 
 /** Tarayıcıda (Tauri dışında) geliştirme yaparken kullanılan yedek bilgi. */

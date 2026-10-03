@@ -22,8 +22,10 @@ use serde::Serialize;
 
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{Design, EqControl, EqSettings};
-use super::output::{self, OutputSpec};
+use super::output::{self, DeviceInfo, OutputSpec};
+use super::resample::Converter;
 use super::{AudioError, Sample};
+use crate::analysis::beats::BeatPosition;
 use crate::analysis::levels::ChannelLevels;
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
 
@@ -55,8 +57,11 @@ pub struct SharedState {
     pub ended: AtomicBool,
     /// Oturumun başladığı kare (sarmada sıfırdan farklıdır). Oturum boyunca değişmez.
     pub start_frame: u64,
-    /// Duyulan konum (şarkının başından itibaren, kare cinsinden).
+    /// Duyulan konum (şarkının başından itibaren, şarkının kendi karesi cinsinden).
     pub frames_played: AtomicU64,
+    /// Bir çıkış karesinin kaç şarkı karesine denk geldiği (şarkı hızı / aygıt hızı).
+    /// Şarkı aygıtın hızına çevrildiği için çıkış iş parçacıkları konumu buna göre hesaplar.
+    pub rate_ratio: f64,
     /// Çalma sırasında veri yetişmediği tur sayısı (hedef: her zaman 0).
     pub underruns: AtomicU64,
     /// Ekolayzer ayarları (oynatıcı boyunca aynı; her oturum paylaşır).
@@ -65,15 +70,21 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    fn new(paused: bool, start_frame: u64, eq: Arc<EqControl>) -> Self {
+    fn new(paused: bool, start_frame: u64, rate_ratio: f64, eq: Arc<EqControl>) -> Self {
         let state = Self {
             start_frame,
+            rate_ratio,
             eq,
             ..Self::default()
         };
         state.paused.store(paused, Ordering::Release);
         state.frames_played.store(start_frame, Ordering::Release);
         state
+    }
+
+    /// Oturumda çalınan çıkış karesi sayısından duyulan şarkı konumu (kare).
+    pub fn song_frame(&self, output_frames: u64) -> u64 {
+        self.start_frame + (output_frames as f64 * self.rate_ratio).round() as u64
     }
 
     /// İlk hatayı kaydeder (sonrakiler genellikle ilkinin sonucudur).
@@ -110,6 +121,23 @@ pub struct PlaybackStatus {
     pub position_secs: f64,
     pub underruns: u64,
     pub error: Option<String>,
+    /// Şarkının temposu (BPM); analiz bitene kadar ya da belirgin ritim yoksa `None`.
+    pub bpm: Option<f64>,
+    /// Sesin aygıta giden yolu; şarkı açık değilse `None`.
+    pub output: Option<SignalPath>,
+}
+
+/// Sesin şarkıdan hoparlöre giden yolu (profesyonel çalarlardaki "sinyal yolu").
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalPath {
+    /// Aygıtın adı (ör. "Hoparlörler (Realtek(R) Audio)"); bilinmiyorsa boş.
+    pub device_name: String,
+    /// Aygıta giden örnekleme hızı ve kanal sayısı.
+    pub sample_rate: u32,
+    pub channels: usize,
+    /// Şarkı aygıtın hızına Lyraska'nın yüksek kaliteli dönüştürücüsüyle çevriliyor mu?
+    pub resampled: bool,
 }
 
 /// Şu an duyulan anın görsel verisi (önceden yapılmış analizden).
@@ -123,11 +151,15 @@ pub struct VisualData {
     pub levels: ChannelLevels,
     /// 0 VU'ya denk gelen seviye (dBFS); analiz bitene kadar `None`.
     pub vu_reference_db: Option<f32>,
+    /// Tempo ve o anın vuruş ızgarasındaki yeri; analiz bitene kadar ya da
+    /// belirgin ritim yoksa `None`.
+    pub beat: Option<(f64, BeatPosition)>,
 }
 
 /// Bir şarkının çalınması için kurulan iş parçacıkları ve durumları.
 struct Session {
     info: TrackInfo,
+    path: SignalPath,
     shared: Arc<SharedState>,
     decode: Option<JoinHandle<()>>,
     output: Option<JoinHandle<()>>,
@@ -147,18 +179,33 @@ impl Session {
             _ => 0,
         };
         let info = decoder.info().clone();
+        // Aygıtın kendi hızında çal: dönüştürmeyi Windows değil, biz yaparız.
+        let device = output::device_info();
         let spec = OutputSpec {
-            sample_rate: info.sample_rate,
-            channels: info.channels,
+            sample_rate: device.as_ref().map_or(info.sample_rate, |d| d.sample_rate),
+            channels: Converter::output_channels(info.channels),
         };
-        let capacity = info.sample_rate as usize * info.channels * RING_SECONDS;
+        let converter = Converter::new(
+            info.sample_rate,
+            info.channels,
+            spec.sample_rate,
+            spec.channels,
+        )?;
+        let path = signal_path(device, &info, spec);
+        let capacity = spec.sample_rate as usize * spec.channels * RING_SECONDS;
         let (producer, consumer) = RingBuffer::new(capacity);
-        let shared = Arc::new(SharedState::new(!autoplay, start_frame, Arc::clone(eq)));
+        let rate_ratio = f64::from(info.sample_rate) / f64::from(spec.sample_rate);
+        let shared = Arc::new(SharedState::new(
+            !autoplay,
+            start_frame,
+            rate_ratio,
+            Arc::clone(eq),
+        ));
 
         let decode_shared = Arc::clone(&shared);
         let decode = std::thread::Builder::new()
             .name("lyraska-cozme".to_owned())
-            .spawn(move || decode_loop(decoder, producer, &decode_shared))
+            .spawn(move || decode_loop(decoder, converter, spec, producer, &decode_shared))
             .map_err(|e| AudioError::Decode(e.to_string()))?;
 
         wait_for_prefill(&shared, PREFILL_TIMEOUT);
@@ -174,6 +221,7 @@ impl Session {
 
         Ok(Self {
             info,
+            path,
             shared,
             decode: Some(decode),
             output: Some(output),
@@ -199,6 +247,16 @@ impl Drop for Session {
         if let Some(handle) = self.decode.take() {
             let _ = handle.join();
         }
+    }
+}
+
+/// Ekranda gösterilecek sinyal yolu.
+fn signal_path(device: Option<DeviceInfo>, info: &TrackInfo, spec: OutputSpec) -> SignalPath {
+    SignalPath {
+        device_name: device.map(|d| d.name).unwrap_or_default(),
+        sample_rate: spec.sample_rate,
+        channels: spec.channels,
+        resampled: spec.sample_rate != info.sample_rate,
     }
 }
 
@@ -393,6 +451,9 @@ impl Player {
         let mut bands = spectrogram.frame_at(seconds)?;
         let levels = spectrogram.meters_at(seconds)?;
         let vu_reference_db = spectrogram.vu_reference_db();
+        let beat = spectrogram
+            .beat_grid()
+            .and_then(|grid| Some((grid.bpm, grid.position_at(seconds)?)));
         let offsets = self.visual_eq_offsets(rate);
         for (level, &db) in bands.iter_mut().zip(&offsets) {
             *level = spectrogram::shift_level(*level, db);
@@ -402,6 +463,7 @@ impl Player {
             bands,
             levels,
             vu_reference_db,
+            beat,
         })
     }
 
@@ -437,6 +499,12 @@ impl Player {
                     position_secs: frames as f64 / f64::from(session.info.sample_rate),
                     underruns: session.shared.underruns.load(Ordering::Relaxed),
                     error: session.shared.error(),
+                    bpm: self
+                        .analysis
+                        .as_ref()
+                        .and_then(|a| a.spectrogram.beat_grid())
+                        .map(|grid| grid.bpm),
+                    output: Some(session.path.clone()),
                 }
             }
             None => PlaybackStatus {
@@ -445,6 +513,8 @@ impl Player {
                 position_secs: 0.0,
                 underruns: 0,
                 error: self.last_error.clone(),
+                bpm: None,
+                output: None,
             },
         }
     }
@@ -454,33 +524,54 @@ impl Player {
 ///
 /// Tampon doluysa kısa aralıklarla bekler. Halka tampona her zaman tam kareler
 /// yazılır; böylece çıkış tarafı kanalları hiçbir zaman karıştırmaz.
-fn decode_loop(mut decoder: Decoder, mut producer: Producer<Sample>, shared: &SharedState) {
-    let channels = decoder.info().channels;
-    let prefill_target = ((f64::from(decoder.info().sample_rate) * PREFILL_SECONDS) as usize
-        * channels)
+fn decode_loop(
+    mut decoder: Decoder,
+    mut converter: Converter,
+    spec: OutputSpec,
+    mut producer: Producer<Sample>,
+    shared: &SharedState,
+) {
+    let channels = spec.channels;
+    let prefill_target = ((f64::from(spec.sample_rate) * PREFILL_SECONDS) as usize * channels)
         .min(producer.buffer().capacity() / 2);
     let mut pending: Vec<Sample> = Vec::new();
     let mut pos = 0;
     let mut pushed = 0usize;
+    let mut finished = false;
 
     loop {
         if shared.stop.load(Ordering::Acquire) {
             return;
         }
         if pos == pending.len() {
-            match decoder.next_chunk() {
-                Ok(Some(chunk)) => {
-                    pending.clear();
-                    pending.extend_from_slice(chunk);
-                    pos = 0;
-                    continue;
+            if finished {
+                break;
+            }
+            // Çözülen dilim aygıt biçimine çevrilir; şarkı bitince dönüştürücünün
+            // içinde kalanlar da alınır.
+            let converted = match decoder.next_chunk() {
+                Ok(Some(chunk)) => converter.process(chunk),
+                Ok(None) => {
+                    finished = true;
+                    converter.finish()
                 }
-                Ok(None) => break,
+                Err(error) => {
+                    shared.fail(error.to_string());
+                    break;
+                }
+            };
+            match converted {
+                Ok(samples) => {
+                    pending.clear();
+                    pending.extend_from_slice(samples);
+                    pos = 0;
+                }
                 Err(error) => {
                     shared.fail(error.to_string());
                     break;
                 }
             }
+            continue;
         }
 
         let free = producer.slots() / channels * channels;
@@ -545,9 +636,16 @@ mod tests {
 
         // Küçük tampon: geri basınç (tampon dolu → bekle) yolunu da sınar.
         let (producer, mut consumer) = RingBuffer::<Sample>::new(1_001);
-        let shared = Arc::new(SharedState::new(false, 0, Arc::default()));
+        let shared = Arc::new(SharedState::new(false, 0, 1.0, Arc::default()));
         let thread_shared = Arc::clone(&shared);
-        let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
+        let converter = Converter::new(8_000, 2, 8_000, 2).unwrap();
+        let spec = OutputSpec {
+            sample_rate: 8_000,
+            channels: 2,
+        };
+        let handle = std::thread::spawn(move || {
+            decode_loop(decoder, converter, spec, producer, &thread_shared)
+        });
 
         let mut received = Vec::with_capacity(frames * 2);
         while received.len() < frames * 2 {
@@ -577,9 +675,16 @@ mod tests {
         write_wav(&path, 8_000, 1, 80_000, |_, _| 0.1);
         let decoder = Decoder::open(&path).unwrap();
         let (producer, _consumer) = RingBuffer::<Sample>::new(100); // hiç boşalmayacak
-        let shared = Arc::new(SharedState::new(false, 0, Arc::default()));
+        let shared = Arc::new(SharedState::new(false, 0, 1.0, Arc::default()));
         let thread_shared = Arc::clone(&shared);
-        let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
+        let converter = Converter::new(8_000, 1, 8_000, 2).unwrap();
+        let spec = OutputSpec {
+            sample_rate: 8_000,
+            channels: 2,
+        };
+        let handle = std::thread::spawn(move || {
+            decode_loop(decoder, converter, spec, producer, &thread_shared)
+        });
 
         wait_for_prefill(&shared, Duration::from_secs(5));
         shared.stop.store(true, Ordering::Release);
@@ -647,6 +752,31 @@ mod tests {
             player.state(),
             PlaybackState::Playing | PlaybackState::Ended
         ));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn aygitin_hizina_cevirip_calar_ve_konumu_dogru_sayar() {
+        // Şarkı 8 kHz, sanal aygıt 48 kHz: ses aygıtın hızına çevrilir; konum
+        // yine şarkı zamanıyla ilerler ve tam şarkı süresinde biter.
+        output::simulated::set_device_rate(Some(48_000));
+        let path = ramp_song("aygit-hizi.wav");
+        let mut player = Player::new();
+        player.load(&path, true).unwrap();
+        let path_info = player.status().output.unwrap();
+        assert_eq!(path_info.sample_rate, 48_000);
+        assert_eq!(path_info.channels, 2);
+        assert!(path_info.resampled);
+        assert_eq!(path_info.device_name, "Sanal aygıt");
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        let status = player.status();
+        assert!(
+            (status.position_secs - 2.0).abs() < 1e-9,
+            "{}",
+            status.position_secs
+        );
+        assert_eq!(status.underruns, 0);
+        output::simulated::set_device_rate(None);
         std::fs::remove_file(path).ok();
     }
 

@@ -1,4 +1,4 @@
-import type { TrackInfo } from "./backend";
+import type { PlaybackStatus, TrackInfo } from "./backend";
 
 /** Saniyeyi teyp ekranı biçiminde yazar: "03:45", bir saatten uzunsa "1:02:03". */
 export function formatTime(seconds: number): string {
@@ -26,6 +26,27 @@ export function trackTechLine(track: TrackInfo): string {
   return [track.codec.toUpperCase(), `${KHZ.format(track.sampleRate / 1000)} kHz`, channels].join(
     " · ",
   );
+}
+
+/**
+ * Sinyal yolu: sesin şarkıdan hoparlöre nasıl gittiği. Şarkı açık değilse `null`.
+ * Ör. "MP3 44,1 kHz → 48 kHz (yüksek kalite) → Hoparlörler (Realtek) · taşma koruması".
+ */
+export function signalPathText(status: PlaybackStatus): string | null {
+  const { track, output } = status;
+  if (!track || !output) return null;
+  const source = `${track.codec.toUpperCase()} ${KHZ.format(track.sampleRate / 1000)} kHz`;
+  const conversion = output.resampled
+    ? `${KHZ.format(output.sampleRate / 1000)} kHz (yüksek kalite)`
+    : "dönüştürmesiz";
+  const parts = [source, conversion, output.deviceName || "varsayılan ses aygıtı"];
+  const problems = status.underruns > 0 ? ` · takılma: ${status.underruns}` : "";
+  return `${parts.join(" → ")} · taşma koruması${problems}`;
+}
+
+/** Tempo: "128 BPM", kesirliyse "105,5 BPM". */
+export function formatBpm(bpm: number): string {
+  return `${KHZ.format(Math.round(bpm * 10) / 10)} BPM`;
 }
 
 /** İlerleme oranı (0..1); süre bilinmiyorsa 0. */

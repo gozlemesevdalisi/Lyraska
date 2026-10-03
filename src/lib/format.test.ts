@@ -1,5 +1,12 @@
-import { formatTime, progress, trackTechLine, trackTitle } from "./format";
-import type { TrackInfo } from "./backend";
+import {
+  formatBpm,
+  formatTime,
+  progress,
+  signalPathText,
+  trackTechLine,
+  trackTitle,
+} from "./format";
+import type { PlaybackStatus, TrackInfo } from "./backend";
 
 const track: TrackInfo = {
   path: "C:\\Müzik\\sarki.flac",
@@ -44,6 +51,49 @@ describe("trackTechLine", () => {
       "MP3 · 48 kHz · Mono",
     );
     expect(trackTechLine({ ...track, channels: 6 })).toContain("6 kanal");
+  });
+});
+
+describe("signalPathText", () => {
+  const status: PlaybackStatus = {
+    state: "playing",
+    track: { ...track, codec: "mp3" },
+    positionSecs: 1,
+    underruns: 0,
+    error: null,
+    bpm: null,
+    output: {
+      deviceName: "Hoparlörler (Realtek)",
+      sampleRate: 48000,
+      channels: 2,
+      resampled: true,
+    },
+  };
+
+  it("sesin aygıta giden yolunu anlatır", () => {
+    expect(signalPathText(status)).toBe(
+      "MP3 44,1 kHz → 48 kHz (yüksek kalite) → Hoparlörler (Realtek) · taşma koruması",
+    );
+  });
+
+  it("dönüştürme yoksa, aygıt adı bilinmiyorsa ve takılma varsa söyler", () => {
+    const text = signalPathText({
+      ...status,
+      underruns: 3,
+      output: { deviceName: "", sampleRate: 44100, channels: 2, resampled: false },
+    });
+    expect(text).toContain("dönüştürmesiz → varsayılan ses aygıtı");
+    expect(text).toContain("takılma: 3");
+    expect(signalPathText({ ...status, output: null })).toBeNull();
+    expect(signalPathText({ ...status, track: null })).toBeNull();
+  });
+});
+
+describe("formatBpm", () => {
+  it("tempoyu Türkçe ondalıkla yazar", () => {
+    expect(formatBpm(128)).toBe("128 BPM");
+    expect(formatBpm(105.5)).toBe("105,5 BPM");
+    expect(formatBpm(89.96)).toBe("90 BPM");
   });
 });
 

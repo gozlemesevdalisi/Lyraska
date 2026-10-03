@@ -2,6 +2,9 @@
 //!
 //! Windows'ta WASAPI paylaşımlı mod kullanılır. Diğer sistemlerde çıkış henüz
 //! yoktur (macOS/Linux v1.0'dan sonra); motorun geri kalanı yine derlenir ve test edilir.
+//!
+//! Akış, aygıtın kendi örnekleme hızında açılır ([`device_info`]); şarkı o hıza
+//! [`super::resample`] ile çevrilir. Böylece Windows ses motoru sese dokunmaz.
 
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -12,18 +15,40 @@ use super::player::SharedState;
 use super::{AudioError, Sample};
 
 #[cfg(test)]
-mod simulated;
+pub(crate) mod simulated;
 #[cfg(all(windows, not(test)))]
 mod wasapi;
 
-/// Çıkış akışının biçimi: şarkının kendi örnekleme hızı ve kanal sayısı.
-///
-/// Aygıtın biçimi farklıysa (ör. 48 kHz) Windows ses motoru dönüştürür.
-/// Kendi yüksek kaliteli yeniden örnekleyicimiz ve bit-perfect mod Faz 3'te.
+/// Çıkış akışının biçimi: aygıtın örnekleme hızı ve akışın kanal sayısı.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSpec {
     pub sample_rate: u32,
     pub channels: usize,
+}
+
+/// Varsayılan ses aygıtı: adı ve paylaşımlı modda çalıştığı biçim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceInfo {
+    pub name: String,
+    pub sample_rate: u32,
+    pub channels: usize,
+}
+
+/// Varsayılan ses aygıtının bilgisi. Öğrenilemezse `None` (akış şarkının kendi
+/// hızında açılır, gerekirse Windows dönüştürür).
+pub fn device_info() -> Option<DeviceInfo> {
+    #[cfg(test)]
+    {
+        simulated::device_info()
+    }
+    #[cfg(all(windows, not(test)))]
+    {
+        wasapi::device_info()
+    }
+    #[cfg(all(not(windows), not(test)))]
+    {
+        None
+    }
 }
 
 /// Bu platformda ses çıkışı var mı?

@@ -23,6 +23,20 @@ pub struct VisualFrame {
     /// 0 VU'ya denk gelen seviye (dBFS): şarkının yüksek bölümlerine göre.
     /// Analiz bitene kadar `null`.
     pub vu_reference_db: Option<f32>,
+    /// Tempo ve vuruş konumu; analiz bitene kadar ya da ritim yoksa `null`.
+    pub beat: Option<BeatFrame>,
+}
+
+/// O anın vuruş ızgarasındaki yeri.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BeatFrame {
+    /// Şarkının temposu (vuruş/dakika).
+    pub bpm: f64,
+    /// Son vuruşun sırası (0'dan başlar).
+    pub index: usize,
+    /// Son vuruştan bu yana geçen süre, vuruş aralığına oranla (0..1).
+    pub phase: f64,
 }
 
 impl From<VisualData> for VisualFrame {
@@ -33,6 +47,11 @@ impl From<VisualData> for VisualFrame {
             rms_db: data.levels.rms_db,
             peak_db: data.levels.peak_db,
             vu_reference_db: data.vu_reference_db,
+            beat: data.beat.map(|(bpm, position)| BeatFrame {
+                bpm,
+                index: position.index,
+                phase: position.phase,
+            }),
         }
     }
 }
@@ -73,12 +92,22 @@ mod tests {
                 peak_db: [-3.0, -4.0],
             },
             vu_reference_db: None,
+            beat: Some((
+                128.0,
+                crate::analysis::beats::BeatPosition {
+                    index: 7,
+                    phase: 0.25,
+                },
+            )),
         });
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["positionSecs"], 1.5);
         assert_eq!(json["rmsDb"][1], -14.0);
         assert_eq!(json["peakDb"][0], -3.0);
         assert!(json["vuReferenceDb"].is_null());
+        assert_eq!(json["beat"]["bpm"], 128.0);
+        assert_eq!(json["beat"]["index"], 7);
+        assert_eq!(json["beat"]["phase"], 0.25);
         assert_eq!(json["bands"].as_array().unwrap().len(), 32);
     }
 }
