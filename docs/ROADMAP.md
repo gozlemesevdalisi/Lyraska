@@ -31,7 +31,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)
 
-- [ ] Şarkı haritası analizi: beat, ölçü, bölümler, drop, enerji
+- [ ] Şarkı haritası analizi: beat ✓ (tempo ve vuruşlar), ölçü, bölümler, drop, enerji
 - [ ] Gecikme telafisi ve kalibrasyon
 - [ ] Koreografi: atmosfer, ritim ve doku katmanları
 - [ ] "Gece otoyolu" sahnesi

@@ -1,4 +1,4 @@
-import { formatTime, progress, trackTechLine, trackTitle } from "./format";
+import { formatBpm, formatTime, progress, trackTechLine, trackTitle } from "./format";
 import type { TrackInfo } from "./backend";
 
 const track: TrackInfo = {
@@ -44,6 +44,14 @@ describe("trackTechLine", () => {
       "MP3 · 48 kHz · Mono",
     );
     expect(trackTechLine({ ...track, channels: 6 })).toContain("6 kanal");
+  });
+});
+
+describe("formatBpm", () => {
+  it("tempoyu Türkçe ondalıkla yazar", () => {
+    expect(formatBpm(128)).toBe("128 BPM");
+    expect(formatBpm(105.5)).toBe("105,5 BPM");
+    expect(formatBpm(89.96)).toBe("90 BPM");
   });
 });
 

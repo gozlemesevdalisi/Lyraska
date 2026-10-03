@@ -20,7 +20,7 @@ import {
 } from "../lib/backend";
 import { splitDropped } from "../lib/drop";
 import { loadScene, nextScene, saveScene, sceneName, type Scene } from "../lib/scene";
-import { formatTime, trackTechLine, trackTitle } from "../lib/format";
+import { formatBpm, formatTime, trackTechLine, trackTitle } from "../lib/format";
 import {
   EMPTY_QUEUE,
   RESTART_THRESHOLD_SECONDS,
@@ -64,7 +64,8 @@ export function marqueeText(status: PlaybackStatus, error: string | null): strin
   if (problem) return `HATA · ${problem} ·`;
   if (!status.track) return WELCOME_TEXT;
   const suffix = status.state === "ended" ? " · BİTTİ" : "";
-  return `${trackTitle(status.track)}${suffix} · ${trackTechLine(status.track)} ·`;
+  const tempo = status.bpm ? ` · ${formatBpm(status.bpm)}` : "";
+  return `${trackTitle(status.track)}${suffix} · ${trackTechLine(status.track)}${tempo} ·`;
 }
 
 /**

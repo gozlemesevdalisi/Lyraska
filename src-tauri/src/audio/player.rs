@@ -24,6 +24,7 @@ use super::decode::{Decoder, TrackInfo};
 use super::eq::{Design, EqControl, EqSettings};
 use super::output::{self, OutputSpec};
 use super::{AudioError, Sample};
+use crate::analysis::beats::BeatPosition;
 use crate::analysis::levels::ChannelLevels;
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
 
@@ -110,6 +111,8 @@ pub struct PlaybackStatus {
     pub position_secs: f64,
     pub underruns: u64,
     pub error: Option<String>,
+    /// Şarkının temposu (BPM); analiz bitene kadar ya da belirgin ritim yoksa `None`.
+    pub bpm: Option<f64>,
 }
 
 /// Şu an duyulan anın görsel verisi (önceden yapılmış analizden).
@@ -123,6 +126,9 @@ pub struct VisualData {
     pub levels: ChannelLevels,
     /// 0 VU'ya denk gelen seviye (dBFS); analiz bitene kadar `None`.
     pub vu_reference_db: Option<f32>,
+    /// Tempo ve o anın vuruş ızgarasındaki yeri; analiz bitene kadar ya da
+    /// belirgin ritim yoksa `None`.
+    pub beat: Option<(f64, BeatPosition)>,
 }
 
 /// Bir şarkının çalınması için kurulan iş parçacıkları ve durumları.
@@ -393,6 +399,9 @@ impl Player {
         let mut bands = spectrogram.frame_at(seconds)?;
         let levels = spectrogram.meters_at(seconds)?;
         let vu_reference_db = spectrogram.vu_reference_db();
+        let beat = spectrogram
+            .beat_grid()
+            .and_then(|grid| Some((grid.bpm, grid.position_at(seconds)?)));
         let offsets = self.visual_eq_offsets(rate);
         for (level, &db) in bands.iter_mut().zip(&offsets) {
             *level = spectrogram::shift_level(*level, db);
@@ -402,6 +411,7 @@ impl Player {
             bands,
             levels,
             vu_reference_db,
+            beat,
         })
     }
 
@@ -437,6 +447,11 @@ impl Player {
                     position_secs: frames as f64 / f64::from(session.info.sample_rate),
                     underruns: session.shared.underruns.load(Ordering::Relaxed),
                     error: session.shared.error(),
+                    bpm: self
+                        .analysis
+                        .as_ref()
+                        .and_then(|a| a.spectrogram.beat_grid())
+                        .map(|grid| grid.bpm),
                 }
             }
             None => PlaybackStatus {
@@ -445,6 +460,7 @@ impl Player {
                 position_secs: 0.0,
                 underruns: 0,
                 error: self.last_error.clone(),
+                bpm: None,
             },
         }
     }

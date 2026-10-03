@@ -11,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 
+use super::beats::{self, BeatGrid, OnsetDetector};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use crate::audio::decode::Decoder;
 use crate::audio::Sample;
@@ -37,8 +38,12 @@ pub struct Spectrogram {
     levels: RwLock<Vec<u8>>,
     /// Her kare için kanal seviyeleri ([`levels`] modülünün saklama biçimi).
     meters: RwLock<Vec<u8>>,
+    /// Her karenin başlangıç gücü (beat takibi için).
+    onset: RwLock<Vec<f32>>,
     /// Analiz bitince hesaplanan VU referansı (dBFS).
     vu_reference: RwLock<Option<f32>>,
+    /// Analiz bitince bulunan vuruş ızgarası (ritim yoksa `None`).
+    beats: RwLock<Option<Arc<BeatGrid>>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -50,7 +55,9 @@ impl Spectrogram {
         Arc::new(Self {
             levels: RwLock::new(Vec::new()),
             meters: RwLock::new(Vec::new()),
+            onset: RwLock::new(Vec::new()),
             vu_reference: RwLock::new(None),
+            beats: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -106,10 +113,18 @@ impl Spectrogram {
         self.vu_reference.read().ok().and_then(|r| *r)
     }
 
-    fn push(&self, frames: &[u8], meters: &[u8]) {
-        // Önce seviyeler: hazır kare sayısı arttığında ikisi de okunabilir olsun.
+    /// Şarkının vuruş ızgarası; analiz bitene kadar ya da ritim yoksa `None`.
+    pub fn beat_grid(&self) -> Option<Arc<BeatGrid>> {
+        self.beats.read().ok().and_then(|b| b.clone())
+    }
+
+    fn push(&self, frames: &[u8], meters: &[u8], onset: &[f32]) {
+        // Önce seviyeler: hazır kare sayısı arttığında hepsi okunabilir olsun.
         if let Ok(mut stored) = self.meters.write() {
             stored.extend_from_slice(meters);
+        }
+        if let Ok(mut stored) = self.onset.write() {
+            stored.extend_from_slice(onset);
         }
         if let Ok(mut levels) = self.levels.write() {
             levels.extend_from_slice(frames);
@@ -125,6 +140,14 @@ impl Spectrogram {
             .and_then(|m| levels::vu_reference_db(&m, FRAMES_PER_SECOND));
         if let Ok(mut stored) = self.vu_reference.write() {
             *stored = reference;
+        }
+        let grid = self
+            .onset
+            .read()
+            .ok()
+            .and_then(|o| beats::track(&o, FRAMES_PER_SECOND));
+        if let Ok(mut stored) = self.beats.write() {
+            *stored = grid.map(Arc::new);
         }
         self.done.store(true, Ordering::Release);
     }
@@ -146,6 +169,7 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
     let mut batch: Vec<u8> = Vec::with_capacity(BANDS * 64);
     let mut meters = LevelAccumulator::default();
     let mut meter_batch: Vec<u8> = Vec::with_capacity(VALUES_PER_FRAME * 64);
+    let mut onset_batch: Vec<f32> = Vec::with_capacity(64);
 
     loop {
         if target.cancelled.load(Ordering::Acquire) {
@@ -167,22 +191,24 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
                 // k. karenin penceresi (k+1)·hop örnekte biter, ortası k/60 saniyenin
                 // yaklaşık 6 ms gerisindedir: görüntü sesle hizalı kalır. Pencerenin
                 // yarısı dolana kadar kare sessiz sayılır.
-                let levels = if filled < FFT_SIZE / 2 {
-                    [0u8; BANDS]
+                let (levels, onset) = if filled < FFT_SIZE / 2 {
+                    ([0u8; BANDS], analyzer.onset.silent())
                 } else {
                     analyzer.process(&window, head)
                 };
                 batch.extend_from_slice(&levels);
                 meter_batch.extend_from_slice(&meters.finish());
+                onset_batch.push(onset);
                 if batch.len() >= BANDS * 64 {
-                    target.push(&batch, &meter_batch);
+                    target.push(&batch, &meter_batch, &onset_batch);
                     batch.clear();
                     meter_batch.clear();
+                    onset_batch.clear();
                 }
             }
         }
     }
-    target.push(&batch, &meter_batch);
+    target.push(&batch, &meter_batch, &onset_batch);
     target.finish();
 }
 
@@ -197,6 +223,8 @@ struct BandAnalyzer {
     tilt: Vec<f64>,
     /// Tam ölçekli bir sinüsün 0 dB çıkması için ölçek.
     norm: f64,
+    /// Aynı FFT'den beat takibi için başlangıç gücü.
+    onset: OnsetDetector,
 }
 
 impl BandAnalyzer {
@@ -228,11 +256,13 @@ impl BandAnalyzer {
             ranges,
             tilt,
             norm,
+            onset: OnsetDetector::new(sample_rate, FFT_SIZE),
         }
     }
 
     /// `window` dairesel tampondur; en eski örnek `head` konumundadır.
-    fn process(&mut self, window: &[Sample], head: usize) -> [u8; BANDS] {
+    /// Bant seviyelerini ve başlangıç gücünü döndürür.
+    fn process(&mut self, window: &[Sample], head: usize) -> ([u8; BANDS], f32) {
         let ordered = window[head..].iter().chain(&window[..head]);
         for ((dst, &x), &w) in self.buffer.iter_mut().zip(ordered).zip(&self.hann) {
             *dst = Complex::new(x * w, 0.0);
@@ -250,7 +280,7 @@ impl BandAnalyzer {
             let db = 20.0 * peak.max(1e-12).log10() + self.tilt[band];
             out[band] = to_level(db);
         }
-        out
+        (out, self.onset.process(&self.buffer, self.norm))
     }
 }
 

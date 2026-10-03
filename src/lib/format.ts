@@ -28,6 +28,11 @@ export function trackTechLine(track: TrackInfo): string {
   );
 }
 
+/** Tempo: "128 BPM", kesirliyse "105,5 BPM". */
+export function formatBpm(bpm: number): string {
+  return `${KHZ.format(Math.round(bpm * 10) / 10)} BPM`;
+}
+
 /** İlerleme oranı (0..1); süre bilinmiyorsa 0. */
 export function progress(positionSecs: number, durationSecs: number | null): number {
   if (!durationSecs || durationSecs <= 0) return 0;

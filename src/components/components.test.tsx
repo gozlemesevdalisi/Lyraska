@@ -106,6 +106,7 @@ const playing: PlaybackStatus = {
   positionSecs: 83.4,
   underruns: 0,
   error: null,
+  bpm: null,
 };
 
 beforeEach(() => {
@@ -465,6 +466,7 @@ describe("sahneler", () => {
       rmsDb: [-14, -60] as [number, number],
       peakDb: [-3, -60] as [number, number],
       vuReferenceDb: -14,
+      beat: null,
     };
     let meters: Parameters<typeof stepMeters>[0] = {
       needles: [
@@ -506,6 +508,10 @@ describe("marqueeText", () => {
     expect(marqueeText(playing, null)).toBe("Lyra - Gece Otoyolu · FLAC · 44,1 kHz · Stereo ·");
     expect(marqueeText({ ...playing, state: "ended" }, null)).toContain("BİTTİ");
     expect(marqueeText(playing, "Dosya açılamadı")).toBe("HATA · Dosya açılamadı ·");
+    // Tempo bulununca sona eklenir.
+    expect(marqueeText({ ...playing, bpm: 128 }, null)).toBe(
+      "Lyra - Gece Otoyolu · FLAC · 44,1 kHz · Stereo · 128 BPM ·",
+    );
   });
 });
 

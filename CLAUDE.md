@@ -72,7 +72,8 @@ lyraska/
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
-│   │   │   └── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
+│   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
+│   │   │   └── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
