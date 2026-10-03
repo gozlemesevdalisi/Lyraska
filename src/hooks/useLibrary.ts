@@ -27,6 +27,8 @@ export interface LibraryControls {
   loading: boolean;
   error: string | null;
   addFolder: () => Promise<void>;
+  /** Yolu bilinen klasörü ekler (ör. pencereye sürüklenen). */
+  addFolderPath: (path: string) => Promise<void>;
   removeFolder: (id: number) => Promise<void>;
   rescan: () => Promise<void>;
 }
@@ -103,8 +105,21 @@ export function useLibrary(): LibraryControls {
     }
   }, [available, apply]);
 
+  const addFolderPath = useCallback((path: string) => apply(() => addLibraryFolder(path)), [apply]);
+
   const removeFolder = useCallback((id: number) => apply(() => removeLibraryFolder(id)), [apply]);
   const rescan = useCallback(() => apply(rescanLibrary), [apply]);
 
-  return { status, tracks, query, setQuery, loading, error, addFolder, removeFolder, rescan };
+  return {
+    status,
+    tracks,
+    query,
+    setQuery,
+    loading,
+    error,
+    addFolder,
+    addFolderPath,
+    removeFolder,
+    rescan,
+  };
 }

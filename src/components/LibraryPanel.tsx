@@ -166,6 +166,10 @@ export function LibraryPanel({
             Lyraska klasördeki (alt klasörler dahil) bütün şarkıları bulur; sanatçı, albüm ve şarkı
             adlarıyla listeler. Dosyalarınız yerinden oynamaz, internet gerekmez.
           </p>
+          <p>
+            Klasörü bu pencereye sürükleyip bırakabilirsiniz. "Klasör ekle" penceresinde şarkılar
+            görünmez; klasörün içine girip "Klasör seç" düğmesine basmanız yeterli.
+          </p>
           <button
             type="button"
             className="hw-button hw-button--primary"

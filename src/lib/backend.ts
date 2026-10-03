@@ -150,9 +150,17 @@ export function getPlaybackStatus(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("playback_status");
 }
 
+/**
+ * Klasör seçme penceresinin başlığı. Windows bu pencerede dosyaları göstermez;
+ * yalnızca şarkı içeren bir klasöre girince "öğe yok" yazar. Kullanıcı bunu hata
+ * sanmasın diye ne yapacağı başlıkta yazar.
+ */
+export const PICK_FOLDER_TITLE =
+  "Müzik klasörünü seçin — şarkılar bu pencerede görünmez; klasöre girip “Klasör seç”e basın";
+
 /** Klasör seçme penceresini gösterir; seçilen klasörün yolunu ya da `null` döndürür. */
 export async function pickFolder(): Promise<string | null> {
-  const selected = await open({ title: "Müzik klasörü seç", multiple: false, directory: true });
+  const selected = await open({ title: PICK_FOLDER_TITLE, multiple: false, directory: true });
   return typeof selected === "string" ? selected : null;
 }
 

@@ -10,10 +10,12 @@ import { textToColumns } from "../lib/dotFont";
 import {
   BROWSER_FALLBACK,
   getAppInfo,
+  onFileDrop,
   type AppInfo,
   type LibraryTrack,
   type PlaybackStatus,
 } from "../lib/backend";
+import { splitDropped } from "../lib/drop";
 import { formatTime, trackTechLine, trackTitle } from "../lib/format";
 import {
   EMPTY_QUEUE,
@@ -31,8 +33,7 @@ const TITLE = "LYRASKA";
 const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
-const WELCOME_TEXT =
-  "HOŞ GELDİNİZ · KÜTÜPHANEYE MÜZİK KLASÖRÜNÜZÜ EKLEYİN YA DA BİR ŞARKIYI PENCEREYE SÜRÜKLEYİN ·";
+const WELCOME_TEXT = "HOŞ GELDİNİZ · MÜZİK KLASÖRÜNÜZÜ YA DA ŞARKILARINIZI PENCEREYE SÜRÜKLEYİN ·";
 
 /** Büyük nokta matris alanında gösterilecek metin: boşta program adı, çalarken süre. */
 export function headline(status: PlaybackStatus): string {
@@ -120,6 +121,28 @@ export function PlayerScreen() {
     if (player.position > RESTART_THRESHOLD_SECONDS || !target) void player.seek(0);
     else playQueue(target);
   };
+
+  // Pencereye bırakılanlar: şarkılar bırakılış sırasıyla çalınır, klasörler kütüphaneye eklenir.
+  const { addFolderPath } = library;
+  const extensions = info.supportedExtensions;
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    onFileDrop((paths) => {
+      const { tracks, folders } = splitDropped(paths, extensions);
+      const first = tracks[0];
+      if (first) playQueue(queueFrom(tracks, first));
+      for (const folder of folders) void addFolderPath(folder);
+    })
+      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
+      .catch(() => {
+        /* Sürükle-bırak isteğe bağlı bir kolaylıktır. */
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [extensions, playQueue, addFolderPath]);
 
   useEffect(() => {
     let cancelled = false;

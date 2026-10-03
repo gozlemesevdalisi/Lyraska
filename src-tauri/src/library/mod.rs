@@ -27,6 +27,8 @@ pub enum LibraryError {
     FolderExists,
     #[error("Klasör bulunamadı: {0}")]
     FolderMissing(String),
+    #[error("Bu bir klasör ya da desteklenen bir ses dosyası değil: {0}")]
+    NotAFolder(String),
 }
 
 /// Aramada kullanılan sadeleştirilmiş metin: küçük harf, Türkçe harfler ve
