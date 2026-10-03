@@ -24,6 +24,7 @@ use super::decode::{Decoder, TrackInfo};
 use super::eq::{Design, EqControl, EqSettings};
 use super::output::{self, OutputSpec};
 use super::{AudioError, Sample};
+use crate::analysis::levels::ChannelLevels;
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
 
 /// Halka tamponun süresi. Çözme iş parçacığı bu kadar önden gider.
@@ -109,6 +110,19 @@ pub struct PlaybackStatus {
     pub position_secs: f64,
     pub underruns: u64,
     pub error: Option<String>,
+}
+
+/// Şu an duyulan anın görsel verisi (önceden yapılmış analizden).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VisualData {
+    /// Verinin ait olduğu çalma konumu (saniye).
+    pub seconds: f64,
+    /// Frekans bantları (0..1), ekolayzerin etkisi eklenmiş.
+    pub bands: [f32; BANDS],
+    /// Sol/sağ kanal seviyeleri (ekolayzerden önce).
+    pub levels: ChannelLevels,
+    /// 0 VU'ya denk gelen seviye (dBFS); analiz bitene kadar `None`.
+    pub vu_reference_db: Option<f32>,
 }
 
 /// Bir şarkının çalınması için kurulan iş parçacıkları ve durumları.
@@ -367,20 +381,28 @@ impl Player {
         self.eq.set(settings)
     }
 
-    /// Şu an duyulan anın frekans bantları (0..1). Analiz o ana yetişmediyse `None`.
+    /// Şu an duyulan anın görsel verisi. Analiz o ana yetişmediyse `None`.
     /// Spektrum ekolayzerden önce çıkarıldığı için ekolayzerin etkisi burada eklenir:
     /// görseller duyulanı gösterir.
-    pub fn spectrum_now(&mut self) -> Option<(f64, [f32; BANDS])> {
+    pub fn visual_now(&mut self) -> Option<VisualData> {
         let session = self.session.as_ref()?;
         let rate = session.info.sample_rate;
         let frames = session.shared.frames_played.load(Ordering::Acquire);
         let seconds = frames as f64 / f64::from(rate);
-        let mut bands = self.analysis.as_ref()?.spectrogram.frame_at(seconds)?;
+        let spectrogram = &self.analysis.as_ref()?.spectrogram;
+        let mut bands = spectrogram.frame_at(seconds)?;
+        let levels = spectrogram.meters_at(seconds)?;
+        let vu_reference_db = spectrogram.vu_reference_db();
         let offsets = self.visual_eq_offsets(rate);
         for (level, &db) in bands.iter_mut().zip(&offsets) {
             *level = spectrogram::shift_level(*level, db);
         }
-        Some((seconds, bands))
+        Some(VisualData {
+            seconds,
+            bands,
+            levels,
+            vu_reference_db,
+        })
     }
 
     /// Ekolayzerin spektrum bantlarındaki toplam kazancı (ön kazanç dahil, dB).
@@ -682,7 +704,12 @@ mod tests {
         assert!(wait_until(|| first.is_done()));
 
         player.seek(1.0).unwrap();
-        let (seconds, bands) = player.spectrum_now().unwrap();
+        let visual = player.visual_now().unwrap();
+        let (seconds, bands) = (visual.seconds, visual.bands);
+        assert!(
+            visual.vu_reference_db.is_some(),
+            "analiz bitti: referans hazır"
+        );
         assert!((seconds - 1.0).abs() < 1e-9);
         assert_eq!(bands.len(), BANDS);
         // Aynı şarkıda sarma analizi yeniden başlatmaz.
@@ -714,7 +741,7 @@ mod tests {
         let analysis = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
         assert!(wait_until(|| analysis.is_done()));
         player.seek(1.0).unwrap();
-        let (_, before) = player.spectrum_now().unwrap();
+        let before = player.visual_now().unwrap().bands;
         let loudest = (0..BANDS)
             .max_by(|&a, &b| before[a].total_cmp(&before[b]))
             .unwrap();
@@ -727,7 +754,7 @@ mod tests {
             gains_db: gains,
         });
         assert_eq!(player.equalizer(), applied);
-        let (_, after) = player.spectrum_now().unwrap();
+        let after = player.visual_now().unwrap().bands;
         let drop_db = f64::from(before[loudest] - after[loudest]) * 60.0;
         assert!((drop_db - 12.0).abs() < 1.5, "görsel düşüş {drop_db:.1} dB");
 
