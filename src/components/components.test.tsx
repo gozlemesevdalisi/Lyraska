@@ -12,6 +12,12 @@ const backend = vi.hoisted(() => ({
   stop: vi.fn(),
   seek: vi.fn(),
   bands: null as number[] | null,
+  library: null as import("../lib/backend").LibraryStatus | null,
+  tracks: [] as import("../lib/backend").LibraryTrack[],
+  search: vi.fn(),
+  addFolder: vi.fn(),
+  removeFolder: vi.fn(),
+  pickFolder: vi.fn(),
   open: vi.fn(),
   pick: vi.fn(),
 }));
@@ -46,6 +52,21 @@ vi.mock("../lib/backend", async (importOriginal) => {
     },
     pickAudioFile: async (extensions: string[]) => backend.pick(extensions),
     onFileDrop: async () => () => {},
+    getLibraryStatus: async () => backend.library ?? actual.EMPTY_LIBRARY,
+    searchLibrary: async (query: string) => {
+      backend.search(query);
+      return backend.tracks;
+    },
+    pickFolder: async () => backend.pickFolder(),
+    addLibraryFolder: async (path: string) => {
+      backend.addFolder(path);
+      return backend.library ?? actual.EMPTY_LIBRARY;
+    },
+    removeLibraryFolder: async (id: number) => {
+      backend.removeFolder(id);
+      return backend.library ?? actual.EMPTY_LIBRARY;
+    },
+    rescanLibrary: async () => backend.library ?? actual.EMPTY_LIBRARY,
   };
 });
 
@@ -77,6 +98,8 @@ beforeEach(() => {
   backend.desktop = false;
   backend.status = null;
   backend.bands = null;
+  backend.library = null;
+  backend.tracks = [];
   vi.clearAllMocks();
 });
 
@@ -208,6 +231,80 @@ describe("sarma ve spektrum", () => {
       );
       expect(lit).toBeGreaterThan(100);
     });
+  });
+});
+
+describe("kütüphane", () => {
+  const song = (id: number, title: string) => ({
+    id,
+    path: `C:\\Müzik\\${id}.flac`,
+    title,
+    artist: "Şebnem Ferah",
+    album: "Kelimeler",
+    trackNumber: id,
+    durationSecs: 200,
+    codec: "flac",
+  });
+  const library = {
+    folders: [{ id: 7, path: "C:\\Müzik" }],
+    trackCount: 3,
+    scan: { scanning: false, found: 3, processed: 3, current: null },
+    problems: [],
+  };
+
+  it("klasör yokken klasör eklemeye davet eder ve seçilen klasörü ekler", async () => {
+    backend.desktop = true;
+    backend.pickFolder.mockResolvedValue("D:\\Arşiv");
+    render(<App />);
+    expect(await screen.findByText("Müzik klasörünüzü ekleyin")).toBeInTheDocument();
+    const [, add] = screen.getAllByRole("button", { name: /Klasör ekle/ });
+    await act(async () => fireEvent.click(add!));
+    expect(backend.addFolder).toHaveBeenCalledWith("D:\\Arşiv");
+  });
+
+  it("şarkıları listeler, çift tıklayınca çalar, bitince sıradakine geçer", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    backend.tracks = [song(1, "Mayın Tarlası"), song(2, "Bir Kedi Gördüm"), song(3, "Hoşçakal")];
+    render(<App />);
+    const first = await screen.findByText("Mayın Tarlası");
+
+    // Çift tıklayınca çalar.
+    backend.open.mockImplementation((path: string) => {
+      const track = backend.tracks.find((t) => t.path === path)!;
+      backend.status = {
+        ...playing,
+        positionSecs: 0,
+        track: { ...playing.track!, path, title: track.title, durationSecs: 200 },
+      };
+    });
+    await act(async () => fireEvent.doubleClick(first));
+    await waitFor(() => expect(backend.open).toHaveBeenLastCalledWith(backend.tracks[0]!.path));
+
+    // "Sonraki" düğmesi ikinci şarkıyı çalar.
+    const nextButton = screen.getByRole("button", { name: "Sonraki" });
+    await waitFor(() => expect(nextButton).toBeEnabled());
+    await act(async () => fireEvent.click(nextButton));
+    await waitFor(() => expect(backend.open).toHaveBeenLastCalledWith(backend.tracks[1]!.path));
+
+    // Şarkı bitince üçüncüye kendiliğinden geçer.
+    backend.status = { ...backend.status!, state: "ended", positionSecs: 200 };
+    await waitFor(() => expect(backend.open).toHaveBeenLastCalledWith(backend.tracks[2]!.path), {
+      timeout: 2000,
+    });
+  });
+
+  it("arama kutusuna yazılanla arar ve klasör kaldırılabilir", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    render(<App />);
+    const search = await screen.findByRole("searchbox", { name: "Kütüphanede ara" });
+    await act(async () => fireEvent.change(search, { target: { value: "sebnem" } }));
+    await waitFor(() => expect(backend.search).toHaveBeenLastCalledWith("sebnem"));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: /Klasörü kütüphaneden çıkar/ })),
+    );
+    expect(backend.removeFolder).toHaveBeenCalledWith(7);
   });
 });
 

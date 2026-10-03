@@ -43,6 +43,47 @@ export interface VisualFrame {
   bands: number[];
 }
 
+/** Rust tarafındaki `library::FolderRow`. */
+export interface LibraryFolder {
+  id: number;
+  path: string;
+}
+
+/** Rust tarafındaki `library::TrackRow`. */
+export interface LibraryTrack {
+  id: number;
+  path: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  trackNumber: number | null;
+  durationSecs: number | null;
+  codec: string;
+}
+
+/** Rust tarafındaki `library::scan::ScanProgress`. */
+export interface ScanProgress {
+  scanning: boolean;
+  found: number;
+  processed: number;
+  current: string | null;
+}
+
+/** Rust tarafındaki `library::LibraryStatus`. */
+export interface LibraryStatus {
+  folders: LibraryFolder[];
+  trackCount: number;
+  scan: ScanProgress;
+  problems: string[];
+}
+
+export const EMPTY_LIBRARY: LibraryStatus = {
+  folders: [],
+  trackCount: 0,
+  scan: { scanning: false, found: 0, processed: 0, current: null },
+  problems: [],
+};
+
 export const IDLE_STATUS: PlaybackStatus = {
   state: "idle",
   track: null,
@@ -107,6 +148,32 @@ export function getVisualFrame(): Promise<VisualFrame | null> {
 
 export function getPlaybackStatus(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("playback_status");
+}
+
+/** Klasör seçme penceresini gösterir; seçilen klasörün yolunu ya da `null` döndürür. */
+export async function pickFolder(): Promise<string | null> {
+  const selected = await open({ title: "Müzik klasörü seç", multiple: false, directory: true });
+  return typeof selected === "string" ? selected : null;
+}
+
+export function getLibraryStatus(): Promise<LibraryStatus> {
+  return invoke<LibraryStatus>("library_status");
+}
+
+export function addLibraryFolder(path: string): Promise<LibraryStatus> {
+  return invoke<LibraryStatus>("library_add_folder", { path });
+}
+
+export function removeLibraryFolder(id: number): Promise<LibraryStatus> {
+  return invoke<LibraryStatus>("library_remove_folder", { id });
+}
+
+export function rescanLibrary(): Promise<LibraryStatus> {
+  return invoke<LibraryStatus>("library_rescan");
+}
+
+export function searchLibrary(query: string): Promise<LibraryTrack[]> {
+  return invoke<LibraryTrack[]>("library_search", { query });
 }
 
 /** Pencereye bırakılan dosyaları dinler. Dinlemeyi bırakmak için dönen fonksiyon çağrılır. */

@@ -1,13 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
 import { Marquee } from "./Marquee";
+import { LibraryPanel } from "./LibraryPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
-import { EjectIcon, PauseIcon, PlayIcon, StopIcon } from "./icons";
+import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
 import { textToColumns } from "../lib/dotFont";
-import { BROWSER_FALLBACK, getAppInfo, type AppInfo, type PlaybackStatus } from "../lib/backend";
+import {
+  BROWSER_FALLBACK,
+  getAppInfo,
+  type AppInfo,
+  type LibraryTrack,
+  type PlaybackStatus,
+} from "../lib/backend";
 import { formatTime, trackTechLine, trackTitle } from "../lib/format";
+import {
+  EMPTY_QUEUE,
+  RESTART_THRESHOLD_SECONDS,
+  currentPath,
+  nextInQueue,
+  previousInQueue,
+  queueFrom,
+  type Queue,
+} from "../lib/queue";
+import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
 
 const TITLE = "LYRASKA";
@@ -15,7 +32,7 @@ const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
 const WELCOME_TEXT =
-  "HOŞ GELDİNİZ · BİR ŞARKI AÇMAK İÇİN DOSYA AÇ DÜĞMESİNE BASIN YA DA DOSYAYI PENCEREYE SÜRÜKLEYİN ·";
+  "HOŞ GELDİNİZ · KÜTÜPHANEYE MÜZİK KLASÖRÜNÜZÜ EKLEYİN YA DA BİR ŞARKIYI PENCEREYE SÜRÜKLEYİN ·";
 
 /** Büyük nokta matris alanında gösterilecek metin: boşta program adı, çalarken süre. */
 export function headline(status: PlaybackStatus): string {
@@ -49,8 +66,60 @@ export function marqueeText(status: PlaybackStatus, error: string | null): strin
  */
 export function PlayerScreen() {
   const [info, setInfo] = useState<AppInfo>(BROWSER_FALLBACK);
-  const player = usePlayer(info.supportedExtensions);
+  const library = useLibrary();
+  const [queue, setQueue] = useState<Queue>(EMPTY_QUEUE);
+
+  // Sıradaki şarkıyı çalmak için oynatıcıya ihtiyaç var; oynatıcı da şarkı bitince
+  // sırayı soruyor. Döngüyü kırmak için açma işlevi sonradan bağlanır.
+  const [openPathRef] = useState<{ current: (path: string) => Promise<void> }>(() => ({
+    current: async () => {},
+  }));
+  const playQueue = useCallback(
+    (next: Queue) => {
+      const path = currentPath(next);
+      if (!path) return;
+      setQueue(next);
+      void openPathRef.current(path);
+    },
+    [openPathRef],
+  );
+  const onEnded = useCallback(
+    (ended: PlaybackStatus) => {
+      // Yalnızca sıradan çalınan şarkı bittiyse sonrakine geç.
+      if (currentPath(queue) !== ended.track?.path) return;
+      const next = nextInQueue(queue);
+      if (next) playQueue(next);
+    },
+    [queue, playQueue],
+  );
+
+  const player = usePlayer(info.supportedExtensions, { onEnded });
   const { status } = player;
+  useEffect(() => {
+    openPathRef.current = player.openPath;
+  }, [openPathRef, player.openPath]);
+
+  // Sıra yalnızca çalan şarkı sıradaysa geçerlidir ("Dosya aç" ile tek şarkı açılınca değil).
+  const queueActive = status.track !== null && currentPath(queue) === status.track.path;
+  const canNext = queueActive && nextInQueue(queue) !== null;
+
+  const playFromLibrary = (track: LibraryTrack, list: LibraryTrack[]) =>
+    playQueue(
+      queueFrom(
+        list.map((t) => t.path),
+        track.path,
+      ),
+    );
+  const next = () => {
+    const target = queueActive ? nextInQueue(queue) : null;
+    if (target) playQueue(target);
+  };
+  const previous = () => {
+    const target = queueActive ? previousInQueue(queue) : null;
+    // Şarkının ortasındaysa önce başa sar (alışılmış davranış).
+    if (player.position > RESTART_THRESHOLD_SECONDS || !target) void player.seek(0);
+    else playQueue(target);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +225,16 @@ export function PlayerScreen() {
             </button>
             <button
               type="button"
+              className="hw-button hw-button--icon"
+              onClick={previous}
+              disabled={!player.available || !status.track}
+              title="Önceki şarkı (şarkının ortasındaysa başa sarar)"
+              aria-label="Önceki"
+            >
+              <PreviousIcon />
+            </button>
+            <button
+              type="button"
               className="hw-button hw-button--primary"
               onClick={() => void player.toggle()}
               disabled={!player.available || !hasTrack}
@@ -164,6 +243,16 @@ export function PlayerScreen() {
             >
               {playing ? <PauseIcon /> : <PlayIcon />}
               <span>{playing ? "Duraklat" : "Çal"}</span>
+            </button>
+            <button
+              type="button"
+              className="hw-button hw-button--icon"
+              onClick={next}
+              disabled={!player.available || !canNext}
+              title="Sonraki şarkı"
+              aria-label="Sonraki"
+            >
+              <NextIcon />
             </button>
             <button
               type="button"
@@ -180,6 +269,14 @@ export function PlayerScreen() {
           <span className="knob" aria-hidden />
         </div>
       </section>
+
+      <LibraryPanel
+        library={library}
+        available={player.available}
+        currentPath={status.track?.path ?? null}
+        playing={playing}
+        onPlay={playFromLibrary}
+      />
 
       <footer className="status" aria-live="polite">
         <span>

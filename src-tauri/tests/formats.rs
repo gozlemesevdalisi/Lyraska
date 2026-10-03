@@ -64,6 +64,14 @@ fn her_bicim_acilir_ve_bilgileri_dogru() {
             Some("Lyraska Test"),
             "{ext}: sanatçı"
         );
+        assert_eq!(info.album.as_deref(), Some("Deneme Albümü"), "{ext}: albüm");
+        assert_eq!(
+            info.album_artist.as_deref(),
+            Some("Lyraska"),
+            "{ext}: albüm sanatçısı"
+        );
+        assert_eq!(info.track_number, Some(3), "{ext}: parça no");
+        assert_eq!(info.disc_number, Some(1), "{ext}: disk no");
     }
 }
 

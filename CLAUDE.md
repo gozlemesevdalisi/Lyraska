@@ -50,7 +50,7 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
-│   ├── hooks/                # usePlayer: komutlar, durum sorgulama, kısayollar
+│   ├── hooks/                # usePlayer (oynatma, akıcı saat, kısayollar), useLibrary (kütüphane)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont), Rust köprüsü (backend.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
@@ -63,10 +63,15 @@ lyraska/
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
+│   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
+│   │   │   ├── db.rs         #   klasör/şarkı tabloları, Türkçe duyarlı arama, sıralama
+│   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
+│   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   └── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
+│   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
 ├── scripts/                  # Yardımcı betikler (npm lisans denetimi)
@@ -104,7 +109,7 @@ Hepsi depo kökünde çalıştırılır.
 | Rust testleri                  | `cd src-tauri && cargo test`                                                         |
 | Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
 | Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
-| Windows'a özel kodu denetle    | `cd src-tauri && cargo clippy --target x86_64-pc-windows-msvc --all-targets`         |
+| Windows'a özel kodu denetle    | CI'daki Windows işi (SQLite C kodu yüzünden Linux'tan çapraz denetim yapılamıyor)    |
 | Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                   |
 | Kurulum dosyası (Windows)      | `npm run tauri build`                                                                |
 
