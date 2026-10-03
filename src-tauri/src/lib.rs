@@ -4,12 +4,16 @@
 //! - [`audio`]: ses motoru (çözme, 64-bit iç işlem, WASAPI çıkışı)
 //! - [`analysis`]: şarkı haritası analizi (beat, ölçü, bölümler, drop, enerji)
 //! - [`visual_bridge`]: analiz ve çalma zamanını arayüzdeki görsellere taşıyan köprü
+//! - [`library`]: müzik kütüphanesi (SQLite, klasör tarama, arama)
 //! - [`commands`]: arayüzün çağırabildiği Tauri komutları
 
 pub mod analysis;
 pub mod audio;
 pub mod commands;
+pub mod library;
 pub mod visual_bridge;
+
+use tauri::Manager;
 
 /// Programı başlatır.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +21,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::PlayerState::default())
+        .setup(|app| {
+            // Kütüphane uygulama veri klasöründe durur; açılır açılmaz arka planda güncellenir.
+            let service = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|dir| {
+                    library::LibraryService::open(&dir.join("library.sqlite3"))
+                        .map_err(|e| e.to_string())
+                });
+            if let Ok(service) = &service {
+                service.request_scan();
+            }
+            app.manage(commands::LibraryState::new(service));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::open_track,
@@ -25,7 +45,17 @@ pub fn run() {
             commands::seek_playback,
             commands::playback_status,
             commands::visual_frame,
+            commands::library_status,
+            commands::library_add_folder,
+            commands::library_remove_folder,
+            commands::library_rescan,
+            commands::library_search,
         ])
-        .run(tauri::generate_context!())
-        .expect("Lyraska başlatılamadı");
+        .build(tauri::generate_context!())
+        .expect("Lyraska başlatılamadı")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<commands::LibraryState>().shutdown();
+            }
+        });
 }

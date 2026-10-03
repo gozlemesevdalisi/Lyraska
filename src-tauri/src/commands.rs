@@ -15,6 +15,7 @@ use tauri::State;
 
 use crate::audio::decode::{TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::player::{PlaybackStatus, Player};
+use crate::library::{LibraryService, LibraryStatus, TrackRow};
 use crate::visual_bridge::VisualFrame;
 use crate::{analysis, audio, visual_bridge};
 
@@ -59,6 +60,28 @@ impl PlayerState {
         self.0.lock().map_err(|_| {
             "Oynatıcı beklenmedik bir hatayla durdu; programı yeniden başlatın.".to_owned()
         })
+    }
+}
+
+/// Tauri'nin yönettiği kütüphane. Veritabanı açılamadıysa nedenini taşır.
+pub struct LibraryState {
+    service: Result<LibraryService, String>,
+}
+
+impl LibraryState {
+    pub fn new(service: Result<LibraryService, String>) -> Self {
+        Self { service }
+    }
+
+    fn get(&self) -> Result<&LibraryService, String> {
+        self.service.as_ref().map_err(Clone::clone)
+    }
+
+    /// Program kapanırken süren taramayı durdurur.
+    pub fn shutdown(&self) {
+        if let Ok(service) = &self.service {
+            service.shutdown();
+        }
     }
 }
 
@@ -115,6 +138,55 @@ pub async fn visual_frame(player: State<'_, PlayerState>) -> Result<Option<Visua
             position_secs,
             bands: bands.to_vec(),
         }))
+}
+
+/// Kütüphane durumu: klasörler, şarkı sayısı, tarama ilerlemesi.
+#[tauri::command]
+pub async fn library_status(library: State<'_, LibraryState>) -> Result<LibraryStatus, String> {
+    library.get()?.status().map_err(|e| e.to_string())
+}
+
+/// Klasörü kütüphaneye ekler ve arka planda taramaya başlar.
+#[tauri::command]
+pub async fn library_add_folder(
+    path: PathBuf,
+    library: State<'_, LibraryState>,
+) -> Result<LibraryStatus, String> {
+    let service = library.get()?;
+    service.add_folder(&path).map_err(|e| e.to_string())?;
+    service.status().map_err(|e| e.to_string())
+}
+
+/// Klasörü (ve şarkılarını) kütüphaneden çıkarır; diskteki dosyalara dokunmaz.
+#[tauri::command]
+pub async fn library_remove_folder(
+    id: i64,
+    library: State<'_, LibraryState>,
+) -> Result<LibraryStatus, String> {
+    let service = library.get()?;
+    service.remove_folder(id).map_err(|e| e.to_string())?;
+    service.status().map_err(|e| e.to_string())
+}
+
+/// Bütün klasörleri yeniden tarar (değişmeyen dosyalar atlanır).
+#[tauri::command]
+pub async fn library_rescan(library: State<'_, LibraryState>) -> Result<LibraryStatus, String> {
+    let service = library.get()?;
+    service.request_scan();
+    service.status().map_err(|e| e.to_string())
+}
+
+/// Kütüphanede arar; boş arama bütün şarkıları döndürür.
+#[tauri::command]
+pub async fn library_search(
+    query: String,
+    limit: Option<usize>,
+    library: State<'_, LibraryState>,
+) -> Result<Vec<TrackRow>, String> {
+    library
+        .get()?
+        .search(&query, limit)
+        .map_err(|e| e.to_string())
 }
 
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.

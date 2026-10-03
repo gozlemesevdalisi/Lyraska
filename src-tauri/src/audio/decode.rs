@@ -31,6 +31,10 @@ pub struct TrackInfo {
     pub file_name: String,
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
     /// Kodek adı (ör. "flac", "mp3").
     pub codec: String,
     pub sample_rate: u32,
@@ -101,7 +105,7 @@ impl Decoder {
             .filter(|&c| c > 0)
             .ok_or_else(|| AudioError::Unsupported("kanal sayısı bilinmiyor".to_owned()))?;
 
-        let (title, artist) = read_tags(format.as_mut());
+        let tags = read_tags(format.as_mut());
         let file_name = path
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -110,8 +114,12 @@ impl Decoder {
         let info = TrackInfo {
             path: path.to_path_buf(),
             file_name,
-            title,
-            artist,
+            title: tags.title,
+            artist: tags.artist,
+            album: tags.album,
+            album_artist: tags.album_artist,
+            track_number: tags.track_number,
+            disc_number: tags.disc_number,
             codec: decoder.codec_info().short_name.to_owned(),
             sample_rate,
             channels,
@@ -216,10 +224,21 @@ impl Decoder {
     }
 }
 
-/// Başlık ve sanatçı etiketlerini okur (ID3, Vorbis yorumları, MP4 vb.).
-fn read_tags(format: &mut dyn FormatReader) -> (Option<String>, Option<String>) {
-    let mut title = None;
-    let mut artist = None;
+/// Kütüphane ve ekran için okunan etiketler.
+#[derive(Default)]
+struct Tags {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    album_artist: Option<String>,
+    track_number: Option<u32>,
+    disc_number: Option<u32>,
+}
+
+/// Etiketleri okur (ID3, Vorbis yorumları, MP4 vb.). Aynı etiket birden çok
+/// kez varsa ilki alınır.
+fn read_tags(format: &mut dyn FormatReader) -> Tags {
+    let mut tags = Tags::default();
     let mut metadata = format.metadata();
     if let Some(revision) = metadata.skip_to_latest() {
         let track_tags = revision
@@ -228,17 +247,29 @@ fn read_tags(format: &mut dyn FormatReader) -> (Option<String>, Option<String>) 
             .flat_map(|t| t.metadata.tags.iter());
         for tag in revision.media.tags.iter().chain(track_tags) {
             match &tag.std {
-                Some(StandardTag::TrackTitle(value)) if title.is_none() => {
-                    title = non_empty(value);
+                Some(StandardTag::TrackTitle(v)) if tags.title.is_none() => {
+                    tags.title = non_empty(v);
                 }
-                Some(StandardTag::Artist(value)) if artist.is_none() => {
-                    artist = non_empty(value);
+                Some(StandardTag::Artist(v)) if tags.artist.is_none() => {
+                    tags.artist = non_empty(v);
+                }
+                Some(StandardTag::Album(v)) if tags.album.is_none() => {
+                    tags.album = non_empty(v);
+                }
+                Some(StandardTag::AlbumArtist(v)) if tags.album_artist.is_none() => {
+                    tags.album_artist = non_empty(v);
+                }
+                Some(StandardTag::TrackNumber(n)) if tags.track_number.is_none() => {
+                    tags.track_number = u32::try_from(*n).ok().filter(|&n| n > 0);
+                }
+                Some(StandardTag::DiscNumber(n)) if tags.disc_number.is_none() => {
+                    tags.disc_number = u32::try_from(*n).ok().filter(|&n| n > 0);
                 }
                 _ => {}
             }
         }
     }
-    (title, artist)
+    tags
 }
 
 fn non_empty(value: &str) -> Option<String> {
