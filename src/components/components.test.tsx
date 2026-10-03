@@ -107,6 +107,7 @@ const playing: PlaybackStatus = {
   underruns: 0,
   error: null,
   bpm: null,
+  output: null,
 };
 
 beforeEach(() => {

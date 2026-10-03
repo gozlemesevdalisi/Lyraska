@@ -634,10 +634,40 @@ body {
   flex-direction: column;
 }
 
+.deck__bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  min-width: 0;
+}
+
 .deck__tabs {
   display: flex;
+  flex: none;
   gap: 4px;
   padding: 0 14px;
+}
+
+/* Sinyal yolu: sekmelerin sağında, sesin aygıta giden yolu. */
+.signal-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 14px 8px 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.signal-path__label {
+  margin-right: 6px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vfd);
+  opacity: 0.8;
 }
 
 .deck__tab {

@@ -20,7 +20,7 @@ import {
 } from "../lib/backend";
 import { splitDropped } from "../lib/drop";
 import { loadScene, nextScene, saveScene, sceneName, type Scene } from "../lib/scene";
-import { formatBpm, formatTime, trackTechLine, trackTitle } from "../lib/format";
+import { formatBpm, formatTime, signalPathText, trackTechLine, trackTitle } from "../lib/format";
 import {
   EMPTY_QUEUE,
   RESTART_THRESHOLD_SECONDS,
@@ -178,6 +178,7 @@ export function PlayerScreen() {
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
   const hasTrack = status.track !== null;
+  const signalPath = signalPathText(status);
   const headlineLabel = hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska";
   // VU ve gece göğü sahnelerinde süre ortada/önde gösterilir.
   const headlineMatrix = (
@@ -331,29 +332,39 @@ export function PlayerScreen() {
       </section>
 
       <div className="deck">
-        <div className="deck__tabs" role="tablist" aria-label="Alt panel">
-          {(
-            [
-              ["library", "Kütüphane"],
-              ["eq", "Ekolayzer"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`deck-tab-${id}`}
-              aria-controls={`deck-panel-${id}`}
-              aria-selected={deck === id}
-              className={`deck__tab${deck === id ? " is-selected" : ""}`}
-              onClick={() => setDeck(id)}
+        <div className="deck__bar">
+          <div className="deck__tabs" role="tablist" aria-label="Alt panel">
+            {(
+              [
+                ["library", "Kütüphane"],
+                ["eq", "Ekolayzer"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`deck-tab-${id}`}
+                aria-controls={`deck-panel-${id}`}
+                aria-selected={deck === id}
+                className={`deck__tab${deck === id ? " is-selected" : ""}`}
+                onClick={() => setDeck(id)}
+              >
+                {label}
+                {id === "eq" && (
+                  <span className={`deck__led${equalizer.active ? " is-on" : ""}`} aria-hidden />
+                )}
+              </button>
+            ))}
+          </div>
+          {signalPath && (
+            <p
+              className="signal-path"
+              title="Sinyal yolu: sesin şarkı dosyasından hoparlöre nasıl gittiği. Şarkı, ses aygıtının kendi hızına Lyraska'nın stüdyo kalitesindeki dönüştürücüsüyle çevrilir; Windows sese dokunmaz. Taşma koruması, yüksek kayıtlardaki tepelerin cızırtı yapmasını önler."
             >
-              {label}
-              {id === "eq" && (
-                <span className={`deck__led${equalizer.active ? " is-on" : ""}`} aria-hidden />
-              )}
-            </button>
-          ))}
+              <span className="signal-path__label">Sinyal yolu</span> {signalPath}
+            </p>
+          )}
         </div>
         {/* İki panel de bağlı kalır: geçişte liste konumu ve seçim kaybolmaz. */}
         <div

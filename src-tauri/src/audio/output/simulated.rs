@@ -4,6 +4,7 @@
 //! tamponu hızlandırılmış zamanda tüketir. Böylece oynatıcının bütün akışı
 //! (aç, duraklat, sar, durdur, şarkı sonu) her makinede test edilebilir.
 
+use std::cell::Cell;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -11,7 +12,7 @@ use std::time::Duration;
 
 use rtrb::Consumer;
 
-use super::OutputSpec;
+use super::{DeviceInfo, OutputSpec};
 use crate::audio::player::SharedState;
 use crate::audio::render::Renderer;
 use crate::audio::{AudioError, Sample};
@@ -20,6 +21,24 @@ use crate::audio::{AudioError, Sample};
 /// 50 ms ses / 1 ms → yaklaşık 50 kat hız.
 const STEP_SECONDS: f64 = 0.05;
 const STEP_SLEEP: Duration = Duration::from_millis(1);
+
+thread_local! {
+    /// Testin seçtiği sanal aygıt hızı; `None` ise aygıt bilgisi yok sayılır.
+    static DEVICE_RATE: Cell<Option<u32>> = const { Cell::new(None) };
+}
+
+/// Bu iş parçacığındaki testler için sanal aygıtın örnekleme hızını ayarlar.
+pub fn set_device_rate(rate: Option<u32>) {
+    DEVICE_RATE.with(|r| r.set(rate));
+}
+
+pub fn device_info() -> Option<DeviceInfo> {
+    DEVICE_RATE.with(Cell::get).map(|sample_rate| DeviceInfo {
+        name: "Sanal aygıt".to_owned(),
+        sample_rate,
+        channels: 2,
+    })
+}
 
 pub fn spawn(
     spec: OutputSpec,
@@ -44,7 +63,7 @@ pub fn spawn(
                 consumed += outcome.frames_consumed as u64;
                 shared
                     .frames_played
-                    .store(shared.start_frame + consumed, Ordering::Release);
+                    .store(shared.song_frame(consumed), Ordering::Release);
                 std::thread::sleep(STEP_SLEEP);
             }
         })

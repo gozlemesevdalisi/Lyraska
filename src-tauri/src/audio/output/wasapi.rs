@@ -15,7 +15,7 @@ use wasapi::{
     initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WasapiError, WaveFormat,
 };
 
-use super::OutputSpec;
+use super::{DeviceInfo, OutputSpec};
 use crate::audio::player::SharedState;
 use crate::audio::render::Renderer;
 use crate::audio::{AudioError, Sample};
@@ -32,6 +32,21 @@ type Ready = SyncSender<Result<(), AudioError>>;
 /// WASAPI hatasını kullanıcıya gösterilecek Türkçe bir mesajla sarar.
 fn fail(context: &'static str) -> impl FnOnce(WasapiError) -> AudioError {
     move |error| AudioError::Output(format!("{context}: {error}"))
+}
+
+/// Varsayılan çıkış aygıtının adı ve paylaşımlı mod biçimi (mix format).
+pub fn device_info() -> Option<DeviceInfo> {
+    // COM bu iş parçacığında başka kipte başlatılmış olabilir; aygıt sorgusu yine çalışır.
+    let _ = initialize_mta();
+    let enumerator = DeviceEnumerator::new().ok()?;
+    let device = enumerator.get_default_device(&Direction::Render).ok()?;
+    let name = device.get_friendlyname().unwrap_or_default();
+    let format = device.get_iaudioclient().ok()?.get_mixformat().ok()?;
+    Some(DeviceInfo {
+        name,
+        sample_rate: format.get_samplespersec(),
+        channels: usize::from(format.get_nchannels()),
+    })
 }
 
 pub fn spawn(
@@ -123,6 +138,8 @@ fn run(
     let mut renderer = Renderer::new(spec.channels, spec.sample_rate, Arc::clone(&shared.eq));
     let mut consumed: u64 = 0;
     let mut started = false;
+    // Şarkı bitince taşma korumasının gecikme hattında kalan son kareler de yazılır.
+    let mut tail_left = renderer.latency_frames();
 
     if let Some(tx) = ready.take() {
         let _ = tx.send(Ok(()));
@@ -136,13 +153,19 @@ fn run(
         // Şarkı tamamen çözüldü ve tampon boşaldıysa yeni veri yazma; aygıtta
         // kalan son örneklerin çalınmasını bekle. (Sessizlik yazmaya devam etseydik
         // arabellek hiç boşalmaz, "bitti" durumuna geçilemezdi.)
-        let draining = shared.decode_done.load(Ordering::Acquire) && source.is_empty();
+        let source_done = shared.decode_done.load(Ordering::Acquire) && source.is_empty();
+        let draining = source_done && tail_left == 0;
 
         if !draining {
             let space = client
                 .get_available_space_in_frames()
                 .map_err(fail("Ses aygıtı okunamadı"))? as usize;
-            let frames = space.min(buffer_frames);
+            let mut frames = space.min(buffer_frames);
+            if source_done {
+                // Sona sessizlik ekleme: yalnızca gecikme hattındaki son kareler.
+                frames = frames.min(tail_left);
+                tail_left -= frames;
+            }
             if frames > 0 {
                 let out = &mut floats[..frames * spec.channels];
                 let paused = shared.paused.load(Ordering::Acquire);
@@ -169,19 +192,25 @@ fn run(
         }
 
         // Duyulan konum ≈ oturumun başladığı kare + halka tampondan alınan -
-        // henüz aygıtta bekleyen. Duraklatmada aygıta sessizlik yazıldığı için bu
+        // henüz aygıtta bekleyen - taşma korumasının gecikmesi (aygıt kareleri
+        // şarkı karesine çevrilir). Duraklatmada aygıta sessizlik yazıldığı için bu
         // tahmin bir an geriye kayabilir; oturum içinde geri gidiş olmadığından
         // (sarma yeni oturum açar) konum hiç azaltılmaz.
         let padding = client
             .get_current_padding()
             .map_err(fail("Ses aygıtı okunamadı"))? as u64;
+        let latency = padding + renderer.latency_frames() as u64;
         shared.frames_played.fetch_max(
-            shared.start_frame + consumed.saturating_sub(padding),
+            shared.song_frame(consumed.saturating_sub(latency)),
             Ordering::AcqRel,
         );
 
         if draining {
             if padding == 0 {
+                // Her şey çalındı: konum tam şarkı sonu.
+                shared
+                    .frames_played
+                    .fetch_max(shared.song_frame(consumed), Ordering::AcqRel);
                 shared.ended.store(true, Ordering::Release);
                 break Ok(());
             }

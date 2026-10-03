@@ -37,6 +37,19 @@ export interface PlaybackStatus {
   error: string | null;
   /** Şarkının temposu; analiz bitene kadar ya da belirgin ritim yoksa `null`. */
   bpm: number | null;
+  /** Sesin aygıta giden yolu; şarkı açık değilse `null`. */
+  output: SignalPath | null;
+}
+
+/** Rust tarafındaki `audio::player::SignalPath`. */
+export interface SignalPath {
+  /** Aygıtın adı; bilinmiyorsa boş. */
+  deviceName: string;
+  /** Aygıta giden örnekleme hızı ve kanal sayısı. */
+  sampleRate: number;
+  channels: number;
+  /** Şarkı aygıtın hızına Lyraska'nın dönüştürücüsüyle çevriliyor mu? */
+  resampled: boolean;
 }
 
 /** Rust tarafındaki `visual_bridge::VisualFrame`. */
@@ -129,6 +142,7 @@ export const IDLE_STATUS: PlaybackStatus = {
   underruns: 0,
   error: null,
   bpm: null,
+  output: null,
 };
 
 /** Tarayıcıda (Tauri dışında) geliştirme yaparken kullanılan yedek bilgi. */

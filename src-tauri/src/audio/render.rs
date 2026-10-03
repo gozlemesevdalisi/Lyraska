@@ -8,6 +8,7 @@ use std::sync::Arc;
 use rtrb::Consumer;
 
 use super::eq::{EqControl, EqProcessor};
+use super::limiter::Limiter;
 use super::Sample;
 
 /// Duraklat/devam geçişinin süresi. Ani kesilme "tık" sesine yol açar.
@@ -22,8 +23,8 @@ pub struct RenderOutcome {
     pub frames_missing: usize,
 }
 
-/// Halka tampondaki 64-bit örnekleri ekolayzerden geçirip aygıtın 32-bit kayan
-/// nokta biçimine yazar.
+/// Halka tampondaki 64-bit örnekleri ekolayzerden ve taşma korumasından geçirip
+/// aygıtın 32-bit kayan nokta biçimine yazar.
 pub struct Renderer {
     channels: usize,
     /// Anlık kazanç (0 = sessiz, 1 = tam).
@@ -31,6 +32,9 @@ pub struct Renderer {
     /// Her karede kazancın değiştiği miktar.
     fade_step: f64,
     eq: EqProcessor,
+    limiter: Limiter,
+    /// Bir karelik çalışma alanı (bellek bir kez ayrılır).
+    frame: Vec<Sample>,
 }
 
 impl Renderer {
@@ -42,7 +46,14 @@ impl Renderer {
             gain: 0.0,
             fade_step: 1.0 / fade_frames,
             eq: EqProcessor::new(eq, channels, sample_rate),
+            limiter: Limiter::new(channels, sample_rate),
+            frame: vec![0.0; channels],
         }
+    }
+
+    /// Taşma korumasının gecikmesi (kare).
+    pub fn latency_frames(&self) -> usize {
+        self.limiter.latency_frames()
     }
 
     /// Anlık kazanç (testler ve tanılama için).
@@ -65,23 +76,28 @@ impl Renderer {
         self.eq.begin_block();
 
         for frame in out.chunks_exact_mut(self.channels) {
+            // Sessiz karelerde de taşma korumasının gecikme hattı ilerler: duraklatma
+            // anındaki son milisaniyeler de çalınır.
             if paused && self.gain <= 0.0 {
-                frame.fill(0.0);
+                self.frame.fill(0.0);
+                self.write_frame(frame);
                 continue;
             }
             // Yarım kare okumamak için bütün kanallar hazır olmalı.
             if source.slots() < self.channels {
-                frame.fill(0.0);
+                self.frame.fill(0.0);
+                self.write_frame(frame);
                 if !paused {
                     outcome.frames_missing += 1;
                 }
                 continue;
             }
             self.eq.advance_frame();
-            for (channel, slot) in frame.iter_mut().enumerate() {
+            for (channel, value) in self.frame.iter_mut().enumerate() {
                 let sample = source.pop().unwrap_or(0.0);
-                *slot = to_device(self.eq.process(channel, sample) * self.gain);
+                *value = self.eq.process(channel, sample) * self.gain;
             }
+            self.write_frame(frame);
             outcome.frames_consumed += 1;
 
             // Kayan nokta birikim hatası hedefi bir adım geciktirmesin diye
@@ -97,7 +113,18 @@ impl Renderer {
     }
 }
 
-/// 64-bit iç örneği aygıt biçimine çevirir; taşmaları kırpar.
+impl Renderer {
+    /// Çalışma alanındaki kareyi taşma korumasından geçirip aygıt arabelleğine yazar.
+    fn write_frame(&mut self, out: &mut [f32]) {
+        self.limiter.process_frame(&mut self.frame);
+        for (slot, &value) in out.iter_mut().zip(&self.frame) {
+            *slot = to_device(value);
+        }
+    }
+}
+
+/// 64-bit iç örneği aygıt biçimine çevirir. Taşma koruması tepeleri zaten sınırın
+/// altına indirir; bu kırpma yalnızca son güvenlik önlemidir.
 fn to_device(sample: Sample) -> f32 {
     sample.clamp(-1.0, 1.0) as f32
 }
@@ -125,14 +152,15 @@ mod tests {
     #[test]
     fn baslangicta_sesi_yumusakca_acar() {
         let mut renderer = Renderer::new(1, RATE, flat());
-        let mut source = filled(&[1.0; 20]);
+        let mut source = filled(&[0.8; 20]);
         let mut out = [0.0f32; 20];
         let outcome = renderer.render(&mut source, &mut out, false);
 
+        let d = renderer.latency_frames(); // taşma korumasının gecikmesi
         assert_eq!(outcome.frames_consumed, 20);
         assert_eq!(out[0], 0.0); // ilk kare sessiz başlar
-        assert!(out[5] > 0.4 && out[5] < 0.6);
-        assert_eq!(out[19], 1.0); // geçiş bitti
+        assert!(out[5 + d] > 0.3 && out[5 + d] < 0.5);
+        assert_eq!(out[19], 0.8); // geçiş bitti (sınırın altında: aynen)
         assert!(
             out.windows(2).all(|w| w[0] <= w[1]),
             "kazanç yalnızca artmalı"
@@ -177,8 +205,10 @@ mod tests {
         let outcome = renderer.render(&mut source, &mut out, false);
         assert_eq!(outcome.frames_consumed, 30);
         // İlk kare, duraklatmadan önce kalınan örnektir (0,40), sessiz başlar.
+        // Çıkış, taşma korumasının gecikmesi kadar geriden gelir.
+        let d = renderer.latency_frames();
         assert_eq!(out[0], 0.0);
-        assert!((out[29] - 0.69).abs() < 1e-6);
+        assert!((out[29] - (0.69 - 0.01 * d as f32)).abs() < 1e-6);
     }
 
     #[test]
@@ -190,7 +220,10 @@ mod tests {
         assert_eq!(outcome.frames_consumed, 2);
         assert_eq!(outcome.frames_missing, 2);
         assert_eq!(source.slots(), 1, "yarım kare tamponda kalır");
-        assert!(out[4..].iter().all(|&s| s == 0.0));
+        // Gecikme hattındaki son veri çıktıktan sonra yalnızca sessizlik gelir.
+        let mut out = [9.0f32; 8];
+        renderer.render(&mut source, &mut out, false);
+        assert!(out.iter().all(|&s| s == 0.0), "{out:?}");
     }
 
     #[test]

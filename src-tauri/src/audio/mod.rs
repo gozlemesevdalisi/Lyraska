@@ -19,9 +19,11 @@
 
 pub mod decode;
 pub mod eq;
+pub mod limiter;
 pub mod output;
 pub mod player;
 pub mod render;
+pub mod resample;
 
 use thiserror::Error;
 
