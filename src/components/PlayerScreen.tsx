@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
 import { Marquee } from "./Marquee";
+import { EqualizerPanel } from "./EqualizerPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
@@ -26,10 +27,12 @@ import {
   queueFrom,
   type Queue,
 } from "../lib/queue";
+import { useEqualizer } from "../hooks/useEqualizer";
 import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
 
 const TITLE = "LYRASKA";
+type Deck = "library" | "eq";
 const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
@@ -68,6 +71,8 @@ export function marqueeText(status: PlaybackStatus, error: string | null): strin
 export function PlayerScreen() {
   const [info, setInfo] = useState<AppInfo>(BROWSER_FALLBACK);
   const library = useLibrary();
+  const equalizer = useEqualizer();
+  const [deck, setDeck] = useState<Deck>("library");
   const [queue, setQueue] = useState<Queue>(EMPTY_QUEUE);
 
   // Sıradaki şarkıyı çalmak için oynatıcıya ihtiyaç var; oynatıcı da şarkı bitince
@@ -167,7 +172,7 @@ export function PlayerScreen() {
     { label: "ST", on: (status.track?.channels ?? 2) >= 2 && hasTrack },
     { label: playing ? "PLAY" : "PAUSE", on: hasTrack && status.state !== "ended" },
     { label: "64-BIT", on: true },
-    { label: "EQ", on: false },
+    { label: "EQ", on: equalizer.active },
     { label: "BIT-PERFECT", on: false },
     { label: "SYNC", on: false },
   ];
@@ -293,13 +298,57 @@ export function PlayerScreen() {
         </div>
       </section>
 
-      <LibraryPanel
-        library={library}
-        available={player.available}
-        currentPath={status.track?.path ?? null}
-        playing={playing}
-        onPlay={playFromLibrary}
-      />
+      <div className="deck">
+        <div className="deck__tabs" role="tablist" aria-label="Alt panel">
+          {(
+            [
+              ["library", "Kütüphane"],
+              ["eq", "Ekolayzer"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`deck-tab-${id}`}
+              aria-controls={`deck-panel-${id}`}
+              aria-selected={deck === id}
+              className={`deck__tab${deck === id ? " is-selected" : ""}`}
+              onClick={() => setDeck(id)}
+            >
+              {label}
+              {id === "eq" && (
+                <span className={`deck__led${equalizer.active ? " is-on" : ""}`} aria-hidden />
+              )}
+            </button>
+          ))}
+        </div>
+        {/* İki panel de bağlı kalır: geçişte liste konumu ve seçim kaybolmaz. */}
+        <div
+          className="deck__panel"
+          role="tabpanel"
+          id="deck-panel-library"
+          aria-labelledby="deck-tab-library"
+          hidden={deck !== "library"}
+        >
+          <LibraryPanel
+            library={library}
+            available={player.available}
+            currentPath={status.track?.path ?? null}
+            playing={playing}
+            onPlay={playFromLibrary}
+          />
+        </div>
+        <div
+          className="deck__panel"
+          role="tabpanel"
+          id="deck-panel-eq"
+          aria-labelledby="deck-tab-eq"
+          hidden={deck !== "eq"}
+        >
+          <EqualizerPanel equalizer={equalizer} />
+        </div>
+      </div>
 
       <footer className="status" aria-live="polite">
         <span>
