@@ -105,7 +105,7 @@ fn run(path: &Path) -> Result<(), Outcome> {
         (seeked - 0.9).abs() < 0.005,
         format!("sarma konumu {seeked:.3}"),
     )?;
-    check(player.visual_now().is_some(), "görsel verisi yok")?;
+    check(player.spectrum_now().is_some(), "spektrum verisi yok")?;
 
     // Devam et; çalarken ekolayzeri değiştir (gerçek zamanlı yolda yeniden tasarım),
     // sonra kapat. Bunlar takılmaya yol açmamalı.

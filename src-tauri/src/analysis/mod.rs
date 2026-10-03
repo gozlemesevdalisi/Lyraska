@@ -1,13 +1,11 @@
 //! Şarkı haritası analizi.
 //!
-//! - [`spectrogram`]: şarkının her anı için frekans bantları ve kanal seviyeleri (Faz 1).
-//! - [`levels`]: VU ibreleri için sol/sağ seviyeler ve şarkıya göre 0 VU referansı.
+//! - [`spectrogram`]: şarkının her anı için frekans bantları (Faz 1).
 //!
 //! Faz 2'de burada şunlar olacak: beat ve ölçü takibi, bölüm sınırları,
 //! drop tespiti ve enerji eğrisi. Analiz şarkı çalmadan önce yapılır ve
 //! sonuç SQLite'ta saklanır; böylece görseller şarkıyı "önceden bilir".
 
-pub mod levels;
 pub mod spectrogram;
 
 /// Analiz modülünün durumu.
