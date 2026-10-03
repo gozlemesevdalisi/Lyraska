@@ -50,7 +50,7 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
-│   ├── hooks/                # usePlayer (oynatma, akıcı saat, kısayollar), useLibrary, useEqualizer
+│   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useVisualFeed (görsel verisi)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont), Rust köprüsü (backend.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
@@ -65,12 +65,13 @@ lyraska/
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
-│   │   │   ├── db.rs         #   klasör/şarkı tabloları, Türkçe duyarlı arama, sıralama
+│   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
-│   │   │   └── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant)
+│   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
+│   │   │   └── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)

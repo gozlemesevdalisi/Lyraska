@@ -6,6 +6,7 @@ import { LibraryPanel } from "./LibraryPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
+import { VuScene } from "./VuScene";
 import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
 import { textToColumns } from "../lib/dotFont";
 import {
@@ -17,6 +18,7 @@ import {
   type PlaybackStatus,
 } from "../lib/backend";
 import { splitDropped } from "../lib/drop";
+import { loadScene, nextScene, saveScene, sceneName, type Scene } from "../lib/scene";
 import { formatTime, trackTechLine, trackTitle } from "../lib/format";
 import {
   EMPTY_QUEUE,
@@ -73,6 +75,12 @@ export function PlayerScreen() {
   const library = useLibrary();
   const equalizer = useEqualizer();
   const [deck, setDeck] = useState<Deck>("library");
+  const [scene, setScene] = useState<Scene>(loadScene);
+  const changeScene = () => {
+    const next = nextScene(scene);
+    setScene(next);
+    saveScene(next);
+  };
   const [queue, setQueue] = useState<Queue>(EMPTY_QUEUE);
 
   // Sıradaki şarkıyı çalmak için oynatıcıya ihtiyaç var; oynatıcı da şarkı bitince
@@ -194,33 +202,48 @@ export function PlayerScreen() {
             ))}
           </ul>
 
-          <div className="display__main">
-            {/* Esneme oranları sütun sayılarına eşit: böylece başlık ve spektrum
-                noktaları ekranda aynı boyutta görünür. */}
-            <h1
-              className="display__title"
-              style={{ flexGrow: Math.max(headlineColumns.length, 41) }}
-            >
-              <DotMatrix
-                columns={headlineColumns}
-                label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
-                className="vfd vfd--primary"
+          {scene === "vu" ? (
+            <div className="display__main display__main--vu">
+              <VuScene
+                playing={playing}
+                center={
+                  <DotMatrix
+                    columns={headlineColumns}
+                    label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
+                    className="vfd vfd--primary"
+                  />
+                }
               />
-            </h1>
-            <div className="display__spectrum" style={{ flexGrow: SPECTRUM_COLUMNS }}>
-              {/* Şarkı açıkken gerçek spektrum; boştayken gösteri animasyonu. */}
-              {hasTrack ? (
-                <SpectrumView
-                  bands={SPECTRUM_BANDS}
-                  rows={8}
-                  playing={playing}
-                  className="vfd vfd--accent"
-                />
-              ) : (
-                <SpectrumDemo bands={SPECTRUM_BANDS} rows={8} className="vfd vfd--accent" />
-              )}
             </div>
-          </div>
+          ) : (
+            <div className="display__main">
+              {/* Esneme oranları sütun sayılarına eşit: böylece başlık ve spektrum
+                  noktaları ekranda aynı boyutta görünür. */}
+              <h1
+                className="display__title"
+                style={{ flexGrow: Math.max(headlineColumns.length, 41) }}
+              >
+                <DotMatrix
+                  columns={headlineColumns}
+                  label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
+                  className="vfd vfd--primary"
+                />
+              </h1>
+              <div className="display__spectrum" style={{ flexGrow: SPECTRUM_COLUMNS }}>
+                {/* Şarkı açıkken gerçek spektrum; boştayken gösteri animasyonu. */}
+                {hasTrack ? (
+                  <SpectrumView
+                    bands={SPECTRUM_BANDS}
+                    rows={8}
+                    playing={playing}
+                    className="vfd vfd--accent"
+                  />
+                ) : (
+                  <SpectrumDemo bands={SPECTRUM_BANDS} rows={8} className="vfd vfd--accent" />
+                )}
+              </div>
+            </div>
+          )}
 
           <Marquee
             key={scrolling}
@@ -294,7 +317,14 @@ export function PlayerScreen() {
               <span>Durdur</span>
             </button>
           </div>
-          <span className="knob" aria-hidden />
+          <button
+            type="button"
+            className="knob knob--button"
+            data-scene={scene}
+            onClick={changeScene}
+            aria-label={`Sahne: ${sceneName(scene)}. Değiştirmek için basın.`}
+            title={`Sahne: ${sceneName(scene)} (değiştirmek için basın)`}
+          />
         </div>
       </section>
 
@@ -334,6 +364,7 @@ export function PlayerScreen() {
           <LibraryPanel
             library={library}
             available={player.available}
+            extensions={info.supportedExtensions}
             currentPath={status.track?.path ?? null}
             playing={playing}
             onPlay={playFromLibrary}

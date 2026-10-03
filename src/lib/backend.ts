@@ -42,6 +42,12 @@ export interface VisualFrame {
   positionSecs: number;
   /** Logaritmik aralıklı frekans bantları (bastan tize), 0..1. */
   bands: number[];
+  /** Sol/sağ etkin (RMS) seviye, dBFS; sessizlik −60. */
+  rmsDb: [number, number];
+  /** Sol/sağ tepe seviye, dBFS; sessizlik −60. */
+  peakDb: [number, number];
+  /** 0 VU'ya denk gelen seviye (dBFS), şarkıya göre; analiz bitene kadar `null`. */
+  vuReferenceDb: number | null;
 }
 
 /** Rust tarafındaki `library::FolderRow`. */
@@ -167,6 +173,21 @@ export function getVisualFrame(): Promise<VisualFrame | null> {
 
 export function getPlaybackStatus(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("playback_status");
+}
+
+/**
+ * Şarkı seçme penceresini gösterir (birden fazla seçilebilir); seçilen dosyaların
+ * yollarını döndürür (vazgeçilirse boş liste).
+ */
+export async function pickAudioFiles(extensions: string[]): Promise<string[]> {
+  const selected = await open({
+    title: "Kütüphaneye eklenecek şarkıları seçin (birden fazla seçebilirsiniz)",
+    multiple: true,
+    directory: false,
+    filters: extensions.length > 0 ? [{ name: "Ses dosyaları", extensions }] : undefined,
+  });
+  if (Array.isArray(selected)) return selected;
+  return typeof selected === "string" ? [selected] : [];
 }
 
 /**

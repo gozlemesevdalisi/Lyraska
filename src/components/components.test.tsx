@@ -18,6 +18,7 @@ const backend = vi.hoisted(() => ({
   addFolder: vi.fn(),
   removeFolder: vi.fn(),
   pickFolder: vi.fn(),
+  pickFiles: vi.fn(),
   open: vi.fn(),
   pick: vi.fn(),
   drop: null as ((paths: string[]) => void) | null,
@@ -65,8 +66,10 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return backend.tracks;
     },
     pickFolder: async () => backend.pickFolder(),
+    pickAudioFiles: async (extensions: string[]) => backend.pickFiles(extensions),
     addLibraryFolder: async (path: string) => {
       backend.addFolder(path);
+      if (path.includes("zaten")) throw 'Bu zaten kütüphanede: "C:\\Müzik" klasörünün içinde.';
       return backend.library ?? actual.EMPTY_LIBRARY;
     },
     removeLibraryFolder: async (id: number) => {
@@ -268,16 +271,37 @@ describe("kütüphane", () => {
     backend.desktop = true;
     backend.pickFolder.mockResolvedValue("D:\\Arşiv");
     render(<App />);
-    expect(await screen.findByText("Müzik klasörünüzü ekleyin")).toBeInTheDocument();
+    expect(await screen.findByText("Müziğinizi ekleyin")).toBeInTheDocument();
     const [, add] = screen.getAllByRole("button", { name: /Klasör ekle/ });
     await act(async () => fireEvent.click(add!));
     expect(backend.addFolder).toHaveBeenCalledWith("D:\\Arşiv");
   });
 
+  it("şarkı ekle: seçilen mp3'leri tek tek ekler, eklenemeyeni bildirir", async () => {
+    backend.desktop = true;
+    backend.pickFiles.mockResolvedValue([
+      "C:\\İndirilenler\\Gülümse.mp3",
+      "C:\\Müzik\\zaten.MP3",
+      "C:\\İndirilenler\\Bu Akşam.mp3",
+    ]);
+    render(<App />);
+    await screen.findByText("Müziğinizi ekleyin");
+    // Uzantılar yüklenince pencere ses dosyalarını gösterir.
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /Şarkı ekle/ })).toHaveLength(2),
+    );
+    const [add] = screen.getAllByRole("button", { name: /Şarkı ekle/ });
+    await act(async () => fireEvent.click(add!));
+    await waitFor(() => expect(backend.addFolder).toHaveBeenCalledTimes(3));
+    expect(backend.pickFiles).toHaveBeenCalledWith(["mp3", "flac"]);
+    expect(backend.addFolder).toHaveBeenLastCalledWith("C:\\İndirilenler\\Bu Akşam.mp3");
+    expect(await screen.findByText(/Bu zaten kütüphanede/)).toBeInTheDocument();
+  });
+
   it("pencereye bırakılan klasörü kütüphaneye ekler, şarkıları sırayla çalar", async () => {
     backend.desktop = true;
     render(<App />);
-    await screen.findByText("Müzik klasörünüzü ekleyin");
+    await screen.findByText("Müziğinizi ekleyin");
     // Desteklenen uzantılar yüklendikten sonra bırakılır.
     await waitFor(() => expect(backend.drop).not.toBeNull());
     await act(async () => {
@@ -329,7 +353,7 @@ describe("kütüphane", () => {
     await act(async () => fireEvent.change(search, { target: { value: "sebnem" } }));
     await waitFor(() => expect(backend.search).toHaveBeenLastCalledWith("sebnem"));
     await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: /Klasörü kütüphaneden çıkar/ })),
+      fireEvent.click(screen.getByRole("button", { name: /Kütüphaneden çıkar/ })),
     );
     expect(backend.removeFolder).toHaveBeenCalledWith(7);
   });
@@ -396,6 +420,44 @@ describe("ekolayzer", () => {
     expect(pointerToGain(200, 100, 200)).toBe(0);
     expect(pointerToGain(0, 100, 200)).toBe(12);
     expect(pointerToGain(5, 0, 0)).toBe(0);
+  });
+});
+
+describe("sahneler", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("sağdaki düğme VU ibrelerine geçer ve seçimi hatırlar", async () => {
+    render(<App />);
+    const knob = screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ });
+    await act(async () => fireEvent.click(knob));
+    expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sağ kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sahne: VU ibreleri/ })).toBeInTheDocument();
+    expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
+  });
+
+  it("VU ölçerler sese göre ilerler, susunca dinlenmeye döner", async () => {
+    const { stepMeters } = await import("./VuScene");
+    const frame = {
+      positionSecs: 1,
+      bands: [],
+      rmsDb: [-14, -60] as [number, number],
+      peakDb: [-3, -60] as [number, number],
+      vuReferenceDb: -14,
+    };
+    let meters: Parameters<typeof stepMeters>[0] = {
+      needles: [
+        { position: 0, velocity: 0 },
+        { position: 0, velocity: 0 },
+      ],
+      lamps: [0, 0],
+    };
+    for (let i = 0; i < 90; i++) meters = stepMeters(meters, frame, 1 / 60);
+    // Sol kanal şarkının referans seviyesinde: 0 VU (ölçeğin ~%71'i). Sağ kanal sessiz.
+    expect(meters.needles[0].position).toBeCloseTo(0.708, 2);
+    expect(meters.needles[1].position).toBe(0);
+    for (let i = 0; i < 90; i++) meters = stepMeters(meters, null, 1 / 60);
+    expect(meters.needles[0].position).toBeLessThan(0.01);
   });
 });
 

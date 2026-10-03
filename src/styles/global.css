@@ -20,6 +20,18 @@
   --accent-ghost: rgba(255, 181, 76, 0.08);
   --accent-glow: rgba(255, 181, 76, 0.5);
 
+  /* VU ölçer (arkadan aydınlatılmış kehribar yüz) */
+  --vu-face-hot: #ffe9b8;
+  --vu-face: #e7b867;
+  --vu-face-edge: #8a5a1f;
+  --vu-ink: #2a1a08;
+  --vu-red: #b3301b;
+  --vu-needle: #160d05;
+  --vu-hood: #111214;
+  --vu-lamp-off: #3a1510;
+  --vu-lamp-on: #ff5a36;
+  --vu-lamp-glow: rgba(255, 90, 54, 0.75);
+
   color-scheme: dark;
   font-family:
     "Segoe UI Variable",
@@ -382,6 +394,183 @@ body {
   filter: drop-shadow(0 0 2px var(--accent-glow)) drop-shadow(0 0 8px var(--accent-glow));
 }
 
+/* ---------- VU ibreleri sahnesi ---------- */
+
+.display__main--vu {
+  align-items: center;
+}
+
+.vu-scene {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.62fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 3%;
+  min-width: 0;
+}
+
+.vu-scene__center {
+  line-height: 0;
+}
+
+.vu-scene__center .dot-matrix {
+  width: 100%;
+  height: auto;
+}
+
+.vu-meter {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 0 14px rgba(255, 190, 90, 0.18));
+}
+
+.vu-meter__face-hot {
+  stop-color: var(--vu-face-hot);
+}
+
+.vu-meter__face-mid {
+  stop-color: var(--vu-face);
+}
+
+.vu-meter__face-edge {
+  stop-color: var(--vu-face-edge);
+}
+
+.vu-meter__arc {
+  fill: none;
+  stroke: var(--vu-ink);
+  stroke-width: 1.4;
+}
+
+.vu-meter__arc--red {
+  stroke: var(--vu-red);
+  stroke-width: 5;
+}
+
+.vu-meter__mark line {
+  stroke: var(--vu-ink);
+  stroke-width: 1.4;
+}
+
+.vu-meter__mark text,
+.vu-meter__sign,
+.vu-meter__channel {
+  fill: var(--vu-ink);
+  font-family: "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.vu-meter__mark--red line {
+  stroke: var(--vu-red);
+}
+
+.vu-meter__mark--red text,
+.vu-meter__sign--red {
+  fill: var(--vu-red);
+}
+
+.vu-meter__sign {
+  font-size: 16px;
+}
+
+.vu-meter__unit {
+  fill: var(--vu-ink);
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 20px;
+  font-style: italic;
+  letter-spacing: 0.06em;
+}
+
+.vu-meter__channel {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.vu-meter__needle {
+  fill: none;
+  stroke: var(--vu-needle);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.vu-meter__needle-shadow {
+  fill: none;
+  stroke: rgba(40, 20, 0, 0.28);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.vu-meter__hood {
+  fill: var(--vu-hood);
+}
+
+.vu-meter__lamp {
+  fill: var(--vu-lamp-off);
+  stroke: #000;
+  stroke-width: 0.8;
+}
+
+.vu-meter__lamp.is-on {
+  fill: var(--vu-lamp-on);
+  filter: drop-shadow(0 0 3px var(--vu-lamp-glow));
+}
+
+.vu-meter__lamp-label {
+  fill: #6b6f75;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  dominant-baseline: central;
+}
+
+.vu-meter__glass {
+  pointer-events: none;
+}
+
+.vu-meter__bezel {
+  fill: none;
+  stroke: #050505;
+  stroke-width: 1;
+}
+
+/* Sahne düğmesi: sağdaki döner düğme; göstergesi seçili sahneyi gösterir. */
+.knob--button {
+  position: relative;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.knob--button::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent-glow);
+  transform-origin: 50% 12px;
+  transform: translateX(-50%) rotate(-40deg);
+  transition: transform 0.25s ease;
+}
+
+.knob--button[data-scene="vu"]::after {
+  transform: translateX(-50%) rotate(40deg);
+}
+
+.knob--button:hover {
+  filter: brightness(1.25);
+}
+
+.knob--button:focus-visible {
+  outline: 2px solid var(--vfd);
+  outline-offset: 3px;
+}
+
 /* ---------- Alt panel (kütüphane / ekolayzer) ---------- */
 
 .deck {
@@ -729,6 +918,13 @@ body {
   text-align: center;
   line-height: 1.5;
   color: var(--text-muted);
+}
+
+.library__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 .library__empty p {
@@ -1107,7 +1303,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seekbar__thumb {
+  .seekbar__thumb,
+  .knob--button::after {
     transition: none;
   }
 }

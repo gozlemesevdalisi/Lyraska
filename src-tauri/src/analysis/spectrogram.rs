@@ -11,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 
+use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use crate::audio::decode::Decoder;
 use crate::audio::Sample;
 
@@ -30,10 +31,14 @@ const CEIL_DB: f64 = -6.0;
 /// 1 kHz üstünde oktav başına bu kadar desibel eklenir (altında çıkarılır).
 const TILT_DB_PER_OCTAVE: f64 = 3.0;
 
-/// Bir şarkının spektrogramı. Analiz sürerken de okunabilir.
+/// Bir şarkının spektrogramı ve kanal seviyeleri. Analiz sürerken de okunabilir.
 pub struct Spectrogram {
     /// Her kare için `BANDS` adet 0..255 seviye (art arda).
     levels: RwLock<Vec<u8>>,
+    /// Her kare için kanal seviyeleri ([`levels`] modülünün saklama biçimi).
+    meters: RwLock<Vec<u8>>,
+    /// Analiz bitince hesaplanan VU referansı (dBFS).
+    vu_reference: RwLock<Option<f32>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -44,6 +49,8 @@ impl Spectrogram {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             levels: RwLock::new(Vec::new()),
+            meters: RwLock::new(Vec::new()),
+            vu_reference: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -81,11 +88,45 @@ impl Spectrogram {
         Some(out)
     }
 
-    fn push(&self, frames: &[u8]) {
+    /// Verilen saniyedeki kanal seviyeleri. O an henüz analiz edilmediyse `None`.
+    pub fn meters_at(&self, seconds: f64) -> Option<ChannelLevels> {
+        if !seconds.is_finite() || seconds < 0.0 {
+            return None;
+        }
+        let index = (seconds * FRAMES_PER_SECOND).floor() as usize;
+        if index >= self.ready_frames() {
+            return None;
+        }
+        let meters = self.meters.read().ok()?;
+        levels::decode_frame(meters.get(index * VALUES_PER_FRAME..(index + 1) * VALUES_PER_FRAME)?)
+    }
+
+    /// 0 VU'ya denk gelen seviye (dBFS); analiz bitene kadar `None`.
+    pub fn vu_reference_db(&self) -> Option<f32> {
+        self.vu_reference.read().ok().and_then(|r| *r)
+    }
+
+    fn push(&self, frames: &[u8], meters: &[u8]) {
+        // Önce seviyeler: hazır kare sayısı arttığında ikisi de okunabilir olsun.
+        if let Ok(mut stored) = self.meters.write() {
+            stored.extend_from_slice(meters);
+        }
         if let Ok(mut levels) = self.levels.write() {
             levels.extend_from_slice(frames);
             self.ready.store(levels.len() / BANDS, Ordering::Release);
         }
+    }
+
+    fn finish(&self) {
+        let reference = self
+            .meters
+            .read()
+            .ok()
+            .and_then(|m| levels::vu_reference_db(&m, FRAMES_PER_SECOND));
+        if let Ok(mut stored) = self.vu_reference.write() {
+            *stored = reference;
+        }
+        self.done.store(true, Ordering::Release);
     }
 }
 
@@ -103,6 +144,8 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
     let mut filled = 0usize;
     let mut since_last = 0usize;
     let mut batch: Vec<u8> = Vec::with_capacity(BANDS * 64);
+    let mut meters = LevelAccumulator::default();
+    let mut meter_batch: Vec<u8> = Vec::with_capacity(VALUES_PER_FRAME * 64);
 
     loop {
         if target.cancelled.load(Ordering::Acquire) {
@@ -113,6 +156,7 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
             Ok(None) | Err(_) => break,
         };
         for frame in chunk.chunks_exact(channels) {
+            meters.add(frame);
             let mono = frame.iter().sum::<Sample>() / channels as Sample;
             window[head] = mono;
             head = (head + 1) % FFT_SIZE;
@@ -129,15 +173,17 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
                     analyzer.process(&window, head)
                 };
                 batch.extend_from_slice(&levels);
+                meter_batch.extend_from_slice(&meters.finish());
                 if batch.len() >= BANDS * 64 {
-                    target.push(&batch);
+                    target.push(&batch, &meter_batch);
                     batch.clear();
+                    meter_batch.clear();
                 }
             }
         }
     }
-    target.push(&batch);
-    target.done.store(true, Ordering::Release);
+    target.push(&batch, &meter_batch);
+    target.finish();
 }
 
 /// Bir pencereyi frekans bantlarına ayıran FFT çözümleyici.
@@ -242,6 +288,8 @@ pub fn band_edges(bands: usize, sample_rate: f64) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::test_util::{sine, temp_path, write_wav};
+    use std::path::Path;
 
     #[test]
     fn seviye_kaydirma_desibel_olcegine_uyar() {
@@ -254,8 +302,6 @@ mod tests {
         assert!(centers[0] > 30.0 && centers[BANDS - 1] < 16_000.0);
         assert!(centers.windows(2).all(|w| w[0] < w[1]));
     }
-    use crate::audio::test_util::{sine, temp_path, write_wav};
-    use std::path::Path;
 
     fn analyze_file(path: &Path) -> Arc<Spectrogram> {
         let spectrogram = Spectrogram::new();
@@ -315,6 +361,30 @@ mod tests {
     }
 
     #[test]
+    fn kanal_seviyeleri_ve_vu_referansi_hesaplanir() {
+        let path = temp_path("seviye-stereo.wav");
+        let rate = 44_100;
+        // Sol kanal -6 dB tepeli sinüs, sağ kanal sessiz; 2 saniye.
+        write_wav(&path, rate, 2, 2 * rate as usize, |f, ch| {
+            if ch == 0 {
+                0.5 * sine(440.0, rate, f)
+            } else {
+                0.0
+            }
+        });
+        let spectrogram = analyze_file(&path);
+        let levels = spectrogram.meters_at(1.0).unwrap();
+        assert!((levels.peak_db[0] + 6.0).abs() < 0.3, "{levels:?}");
+        assert!((levels.rms_db[0] + 9.0).abs() < 0.3, "{levels:?}");
+        assert_eq!(levels.rms_db[1], levels::FLOOR_DB);
+        // Sabit seviyeli şarkıda 0 VU, o seviyedir.
+        let reference = spectrogram.vu_reference_db().unwrap();
+        assert!((reference + 9.0).abs() < 0.3, "{reference}");
+        assert!(spectrogram.meters_at(2.5).is_none());
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
     fn sessizlik_sifir_seviye_verir_ve_kare_sayisi_dogru() {
         let path = temp_path("spektrum-sessiz.wav");
         write_wav(&path, 48_000, 1, 96_000, |_, _| 0.0); // 2 saniye
@@ -326,6 +396,11 @@ mod tests {
             "şarkı sonrası kare yok"
         );
         assert!(spectrogram.frame_at(-1.0).is_none());
+        assert_eq!(
+            spectrogram.meters_at(1.0).unwrap().peak_db,
+            [levels::FLOOR_DB; 2]
+        );
+        assert_eq!(spectrogram.vu_reference_db(), None);
         std::fs::remove_file(path).ok();
     }
 

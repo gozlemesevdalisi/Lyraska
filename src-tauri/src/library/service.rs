@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::db::MAX_RESULTS;
 use super::scan::{self, ScanProgress, ScanState};
-use super::{FolderRow, Library, LibraryError, TrackRow};
+use super::{path_covers, FolderRow, Library, LibraryError, TrackRow};
 
 /// Arayüzün gösterdiği kütüphane durumu.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -66,19 +66,40 @@ impl LibraryService {
         self.lock()?.search(query, limit.unwrap_or(MAX_RESULTS))
     }
 
-    /// Klasörü ekler ve taramayı başlatır.
+    /// Kaynak ekler — bir klasör ya da tek bir şarkı — ve taramayı başlatır.
+    ///
+    /// Zaten kütüphanedeki bir klasörün içindeyse eklenmez (şarkılar iki kez
+    /// görünmesin). Yeni klasör daha önce eklenmiş kaynakları kapsıyorsa onların
+    /// yerini alır; şarkıları bu klasörün taramasıyla geri gelir.
     pub fn add_folder(&self, path: &Path) -> Result<FolderRow, LibraryError> {
-        if path.is_file() {
-            return Err(LibraryError::NotAFolder(
-                path.to_string_lossy().into_owned(),
-            ));
+        let text = path.to_string_lossy().into_owned();
+        if path.is_file() && !scan::is_audio(path) {
+            return Err(LibraryError::UnsupportedFile(text));
         }
-        if !path.is_dir() {
-            return Err(LibraryError::FolderMissing(
-                path.to_string_lossy().into_owned(),
-            ));
+        if !path.exists() {
+            return Err(LibraryError::FolderMissing(text));
         }
-        let folder = self.lock()?.add_folder(&path.to_string_lossy())?;
+        let folder = {
+            let lib = self.lock()?;
+            let existing = lib.folders()?;
+            if let Some(parent) = existing
+                .iter()
+                .find(|f| path_covers(Path::new(&f.path), path))
+            {
+                return Err(if path_covers(path, Path::new(&parent.path)) {
+                    LibraryError::FolderExists
+                } else {
+                    LibraryError::AlreadyCovered(parent.path.clone())
+                });
+            }
+            for covered in existing
+                .iter()
+                .filter(|f| path_covers(path, Path::new(&f.path)))
+            {
+                lib.remove_folder(covered.id)?;
+            }
+            lib.add_folder(&text)?
+        };
         self.request_scan();
         Ok(folder)
     }
@@ -212,15 +233,76 @@ mod tests {
     }
 
     #[test]
-    fn dosya_klasor_olarak_eklenemez() {
+    fn desteklenmeyen_dosya_eklenemez() {
         // Pencereye ses dosyası olmayan bir dosya bırakılınca anlaşılır bir hata verilir.
         let service = LibraryService::new(Library::open_in_memory().unwrap());
         let file = folder_with_songs().join("notlar.txt");
         std::fs::write(&file, "merhaba").unwrap();
         let error = service.add_folder(&file).unwrap_err();
-        assert!(matches!(error, LibraryError::NotAFolder(_)));
+        assert!(matches!(error, LibraryError::UnsupportedFile(_)));
         assert!(error.to_string().contains("notlar.txt"));
         assert!(service.status().unwrap().folders.is_empty());
+    }
+
+    #[test]
+    fn tek_sarki_eklenir_taranir_ve_cikarilir() {
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let dir = folder_with_songs();
+        // Windows'ta sık görülen büyük harfli uzantı.
+        let song = dir.join("Gülümse.MP3");
+        std::fs::rename(dir.join("uc-uc-ton.mp3"), &song).unwrap();
+        let source = service.add_folder(&song).unwrap();
+        wait_idle(&service);
+        let status = service.status().unwrap();
+        assert_eq!(status.track_count, 1, "yalnızca seçilen şarkı");
+        assert!(status.problems.is_empty(), "{:?}", status.problems);
+        assert_eq!(
+            service.search("", None).unwrap()[0].path,
+            song.to_string_lossy()
+        );
+
+        // Yeniden tarama şarkıyı korur; kaynak çıkarılınca şarkı da çıkar.
+        service.request_scan();
+        wait_idle(&service);
+        assert_eq!(service.status().unwrap().track_count, 1);
+        service.remove_folder(source.id).unwrap();
+        assert_eq!(service.status().unwrap().track_count, 0);
+    }
+
+    #[test]
+    fn ayni_sarki_iki_kez_eklenmez() {
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let dir = folder_with_songs();
+        service.add_folder(&dir).unwrap();
+        wait_idle(&service);
+
+        // Klasörü zaten kütüphanede olan şarkı ayrıca eklenmez.
+        let error = service.add_folder(&dir.join("uc-uc-ton.flac")).unwrap_err();
+        assert!(matches!(error, LibraryError::AlreadyCovered(_)), "{error}");
+        assert!(error.to_string().contains(&*dir.to_string_lossy()));
+        // Aynı klasör de iki kez eklenmez.
+        assert!(matches!(
+            service.add_folder(&dir).unwrap_err(),
+            LibraryError::FolderExists
+        ));
+        assert_eq!(service.status().unwrap().folders.len(), 1);
+    }
+
+    #[test]
+    fn klasor_icindeki_tek_sarkilarin_yerini_alir() {
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let dir = folder_with_songs();
+        service.add_folder(&dir.join("uc-uc-ton.mp3")).unwrap();
+        wait_idle(&service);
+        assert_eq!(service.status().unwrap().track_count, 1);
+
+        // Sonra bütün klasör eklenince tek şarkı kaynağı kalkar, şarkılar klasörden gelir.
+        service.add_folder(&dir).unwrap();
+        wait_idle(&service);
+        let status = service.status().unwrap();
+        assert_eq!(status.folders.len(), 1);
+        assert_eq!(status.folders[0].path, dir.to_string_lossy());
+        assert_eq!(status.track_count, 2);
     }
 
     #[test]
