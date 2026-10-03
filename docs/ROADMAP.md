@@ -26,7 +26,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Dosya aç, çal/duraklat (yumuşak geçişli), durdur; sürükle-bırak; konum ve takılma sayacı
 - [x] Sarma (ilerleme çubuğu, ←/→); önceden analiz edilen gerçek spektrum (60 kare/sn, 32 bant)
 - [x] Müzik kütüphanesi (SQLite): klasör tarama, etiketler, Türkçe duyarlı arama; çalma sırası, önceki/sonraki, otomatik geçiş
-- [ ] 10 bantlı ekolayzer
+- [x] 10 bantlı ekolayzer (sürgüler gerçekten duyulan eğri; bozulma koruması; hazır ayarlar; ayarlar kalıcı)
 - [ ] 3 sahne: nokta matris spektrum, VU ibreleri, bir shader sahnesi
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)

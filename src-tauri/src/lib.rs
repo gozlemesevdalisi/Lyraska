@@ -5,12 +5,14 @@
 //! - [`analysis`]: şarkı haritası analizi (beat, ölçü, bölümler, drop, enerji)
 //! - [`visual_bridge`]: analiz ve çalma zamanını arayüzdeki görsellere taşıyan köprü
 //! - [`library`]: müzik kütüphanesi (SQLite, klasör tarama, arama)
+//! - [`settings`]: kalıcı kullanıcı ayarları (ekolayzer vb.)
 //! - [`commands`]: arayüzün çağırabildiği Tauri komutları
 
 pub mod analysis;
 pub mod audio;
 pub mod commands;
 pub mod library;
+pub mod settings;
 pub mod visual_bridge;
 
 use tauri::Manager;
@@ -35,6 +37,14 @@ pub fn run() {
                 service.request_scan();
             }
             app.manage(commands::LibraryState::new(service));
+
+            // Ayarlar (ekolayzer) kaldığı gibi geri yüklenir.
+            let store = match app.path().app_data_dir() {
+                Ok(dir) => settings::SettingsStore::open(&dir.join("settings.json")),
+                Err(_) => settings::SettingsStore::in_memory(),
+            };
+            commands::restore_settings(&app.state::<commands::PlayerState>(), &store);
+            app.manage(store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,6 +60,8 @@ pub fn run() {
             commands::library_remove_folder,
             commands::library_rescan,
             commands::library_search,
+            commands::equalizer_get,
+            commands::equalizer_set,
         ])
         .build(tauri::generate_context!())
         .expect("Lyraska başlatılamadı")

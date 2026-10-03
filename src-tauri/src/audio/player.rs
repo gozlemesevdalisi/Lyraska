@@ -21,6 +21,7 @@ use rtrb::{Producer, RingBuffer};
 use serde::Serialize;
 
 use super::decode::{Decoder, TrackInfo};
+use super::eq::{Design, EqControl, EqSettings};
 use super::output::{self, OutputSpec};
 use super::{AudioError, Sample};
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
@@ -57,13 +58,16 @@ pub struct SharedState {
     pub frames_played: AtomicU64,
     /// Çalma sırasında veri yetişmediği tur sayısı (hedef: her zaman 0).
     pub underruns: AtomicU64,
+    /// Ekolayzer ayarları (oynatıcı boyunca aynı; her oturum paylaşır).
+    pub eq: Arc<EqControl>,
     error: Mutex<Option<String>>,
 }
 
 impl SharedState {
-    fn new(paused: bool, start_frame: u64) -> Self {
+    fn new(paused: bool, start_frame: u64, eq: Arc<EqControl>) -> Self {
         let state = Self {
             start_frame,
+            eq,
             ..Self::default()
         };
         state.paused.store(paused, Ordering::Release);
@@ -117,7 +121,12 @@ struct Session {
 
 impl Session {
     /// Oturumu başlatır. `start_secs` verilirse şarkının o noktasından başlar.
-    fn start(path: &Path, autoplay: bool, start_secs: Option<f64>) -> Result<Self, AudioError> {
+    fn start(
+        path: &Path,
+        autoplay: bool,
+        start_secs: Option<f64>,
+        eq: &Arc<EqControl>,
+    ) -> Result<Self, AudioError> {
         let mut decoder = Decoder::open(path)?;
         let start_frame = match start_secs {
             Some(secs) if secs > 0.0 => decoder.seek(secs)?,
@@ -130,7 +139,7 @@ impl Session {
         };
         let capacity = info.sample_rate as usize * info.channels * RING_SECONDS;
         let (producer, consumer) = RingBuffer::new(capacity);
-        let shared = Arc::new(SharedState::new(!autoplay, start_frame));
+        let shared = Arc::new(SharedState::new(!autoplay, start_frame, Arc::clone(eq)));
 
         let decode_shared = Arc::clone(&shared);
         let decode = std::thread::Builder::new()
@@ -233,6 +242,11 @@ pub struct Player {
     analysis: Option<Analysis>,
     /// Son açma girişimi başarısız olduysa nedeni.
     last_error: Option<String>,
+    /// Ekolayzer ayarları; bütün oturumların ses çıkışı buradan okur.
+    eq: Arc<EqControl>,
+    /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
+    /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
+    visual_eq: Option<(u64, u32, [f64; BANDS])>,
 }
 
 impl Player {
@@ -262,7 +276,7 @@ impl Player {
         // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
         self.session = None;
         self.last_error = None;
-        match Session::start(path, autoplay, start_secs) {
+        match Session::start(path, autoplay, start_secs, &self.eq) {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
@@ -342,13 +356,53 @@ impl Player {
         }
     }
 
+    /// Ekolayzer ayarları.
+    pub fn equalizer(&self) -> EqSettings {
+        self.eq.settings()
+    }
+
+    /// Ekolayzer ayarlarını değiştirir; çalan ses ~40 ms içinde yumuşakça uyar.
+    /// Düzeltilmiş (±12 dB'ye kırpılmış) ayarları döndürür.
+    pub fn set_equalizer(&mut self, settings: EqSettings) -> EqSettings {
+        self.eq.set(settings)
+    }
+
     /// Şu an duyulan anın frekans bantları (0..1). Analiz o ana yetişmediyse `None`.
-    pub fn spectrum_now(&self) -> Option<(f64, [f32; BANDS])> {
+    /// Spektrum ekolayzerden önce çıkarıldığı için ekolayzerin etkisi burada eklenir:
+    /// görseller duyulanı gösterir.
+    pub fn spectrum_now(&mut self) -> Option<(f64, [f32; BANDS])> {
         let session = self.session.as_ref()?;
+        let rate = session.info.sample_rate;
         let frames = session.shared.frames_played.load(Ordering::Acquire);
-        let seconds = frames as f64 / f64::from(session.info.sample_rate);
-        let bands = self.analysis.as_ref()?.spectrogram.frame_at(seconds)?;
+        let seconds = frames as f64 / f64::from(rate);
+        let mut bands = self.analysis.as_ref()?.spectrogram.frame_at(seconds)?;
+        let offsets = self.visual_eq_offsets(rate);
+        for (level, &db) in bands.iter_mut().zip(&offsets) {
+            *level = spectrogram::shift_level(*level, db);
+        }
         Some((seconds, bands))
+    }
+
+    /// Ekolayzerin spektrum bantlarındaki toplam kazancı (ön kazanç dahil, dB).
+    /// Ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
+    fn visual_eq_offsets(&mut self, rate: u32) -> [f64; BANDS] {
+        let version = self.eq.version();
+        if let Some((v, r, offsets)) = self.visual_eq {
+            if v == version && r == rate {
+                return offsets;
+            }
+        }
+        let settings = self.eq.settings();
+        let offsets = if settings.is_active() {
+            let rate_hz = f64::from(rate);
+            let design = Design::new(&settings.gains_db, rate_hz);
+            spectrogram::band_centers(rate_hz)
+                .map(|hz| design.response_db(hz, rate_hz) + design.preamp_db)
+        } else {
+            [0.0; BANDS]
+        };
+        self.visual_eq = Some((version, rate, offsets));
+        offsets
     }
 
     pub fn status(&self) -> PlaybackStatus {
@@ -469,7 +523,7 @@ mod tests {
 
         // Küçük tampon: geri basınç (tampon dolu → bekle) yolunu da sınar.
         let (producer, mut consumer) = RingBuffer::<Sample>::new(1_001);
-        let shared = Arc::new(SharedState::new(false, 0));
+        let shared = Arc::new(SharedState::new(false, 0, Arc::default()));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
 
@@ -501,7 +555,7 @@ mod tests {
         write_wav(&path, 8_000, 1, 80_000, |_, _| 0.1);
         let decoder = Decoder::open(&path).unwrap();
         let (producer, _consumer) = RingBuffer::<Sample>::new(100); // hiç boşalmayacak
-        let shared = Arc::new(SharedState::new(false, 0));
+        let shared = Arc::new(SharedState::new(false, 0, Arc::default()));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::spawn(move || decode_loop(decoder, producer, &thread_shared));
 
@@ -646,5 +700,42 @@ mod tests {
         ));
         std::fs::remove_file(path).ok();
         std::fs::remove_file(other).ok();
+    }
+    #[test]
+    fn ekolayzer_her_oturuma_ulasir_ve_gorsellere_yansir() {
+        use crate::audio::eq::BANDS as EQ_BANDS;
+        let path = temp_path("eq-sinus.wav");
+        let w = 2.0 * std::f64::consts::PI * 1000.0 / 44_100.0;
+        write_wav(&path, 44_100, 1, 88_200, |frame, _| {
+            0.5 * (w * frame as f64).sin()
+        });
+        let mut player = Player::new();
+        player.load(&path, false).unwrap();
+        let analysis = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| analysis.is_done()));
+        player.seek(1.0).unwrap();
+        let (_, before) = player.spectrum_now().unwrap();
+        let loudest = (0..BANDS)
+            .max_by(|&a, &b| before[a].total_cmp(&before[b]))
+            .unwrap();
+
+        // 1 kHz bandını 12 dB kıs: ses yolu ve görseller aynı ayarı kullanır.
+        let mut gains = [0.0; EQ_BANDS];
+        gains[5] = -12.0;
+        let applied = player.set_equalizer(EqSettings {
+            enabled: true,
+            gains_db: gains,
+        });
+        assert_eq!(player.equalizer(), applied);
+        let (_, after) = player.spectrum_now().unwrap();
+        let drop_db = f64::from(before[loudest] - after[loudest]) * 60.0;
+        assert!((drop_db - 12.0).abs() < 1.5, "görsel düşüş {drop_db:.1} dB");
+
+        // Sarma yeni bir oturum açar; ekolayzer ayarı yine aynıdır.
+        player.seek(0.5).unwrap();
+        let session = player.session.as_ref().unwrap();
+        assert!(Arc::ptr_eq(&session.shared.eq, &player.eq));
+        assert_eq!(session.shared.eq.settings().gains_db[5], -12.0);
+        std::fs::remove_file(path).ok();
     }
 }

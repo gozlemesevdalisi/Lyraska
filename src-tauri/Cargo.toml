@@ -1,6 +1,6 @@
 [package]
 name = "lyraska"
-version = "0.0.7"
+version = "0.0.8"
 description = "Görselleri şarkıyı önceden bilen, çevrimdışı müzik çalar"
 authors = ["Lyraska geliştiricileri"]
 license = "GPL-3.0-only"
@@ -26,8 +26,6 @@ tauri-plugin-dialog = "2"
 rustfft = "6"
 rusqlite = { version = "0.40", features = ["bundled"] }
 walkdir = "2"
-
-[dev-dependencies]
 serde_json = "1"
 
 [profile.release]

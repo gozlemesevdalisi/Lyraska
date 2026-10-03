@@ -214,6 +214,21 @@ fn to_level(db: f64) -> u8 {
     (x * 255.0).round() as u8
 }
 
+/// Her bandın orta frekansı (Hz, geometrik orta).
+pub fn band_centers(sample_rate: f64) -> [f64; BANDS] {
+    let edges = band_edges(BANDS, sample_rate);
+    std::array::from_fn(|i| (edges[i] * edges[i + 1]).sqrt())
+}
+
+/// Seviyeyi (0..1) verilen desibel kadar kaydırır: ekolayzer gibi sonradan
+/// uygulanan kazançlar görsellerde de görünsün. Sessiz (0) bantlar sessiz kalır.
+pub fn shift_level(level: f32, db: f64) -> f32 {
+    if level <= 0.0 {
+        return 0.0;
+    }
+    (f64::from(level) + db / (CEIL_DB - FLOOR_DB)).clamp(0.0, 1.0) as f32
+}
+
 /// Logaritmik aralıklı bant sınırları (Hz). `bands + 1` değer döner.
 /// Üst sınır Nyquist frekansını aşmaz.
 pub fn band_edges(bands: usize, sample_rate: f64) -> Vec<f64> {
@@ -227,6 +242,18 @@ pub fn band_edges(bands: usize, sample_rate: f64) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seviye_kaydirma_desibel_olcegine_uyar() {
+        // 60 dB'lik ölçekte +6 dB = 0,1 seviye.
+        assert!((shift_level(0.5, 6.0) - 0.6).abs() < 1e-6);
+        assert!((shift_level(0.5, -12.0) - 0.3).abs() < 1e-6);
+        assert_eq!(shift_level(0.95, 12.0), 1.0);
+        assert_eq!(shift_level(0.0, 12.0), 0.0, "sessizlik yükseltilmez");
+        let centers = band_centers(44100.0);
+        assert!(centers[0] > 30.0 && centers[BANDS - 1] < 16_000.0);
+        assert!(centers.windows(2).all(|w| w[0] < w[1]));
+    }
     use crate::audio::test_util::{sine, temp_path, write_wav};
     use std::path::Path;
 

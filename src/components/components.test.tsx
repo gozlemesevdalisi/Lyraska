@@ -21,6 +21,7 @@ const backend = vi.hoisted(() => ({
   open: vi.fn(),
   pick: vi.fn(),
   drop: null as ((paths: string[]) => void) | null,
+  setEq: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -73,6 +74,10 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return backend.library ?? actual.EMPTY_LIBRARY;
     },
     rescanLibrary: async () => backend.library ?? actual.EMPTY_LIBRARY,
+    setEqualizer: async (settings: import("../lib/backend").EqSettings) => {
+      backend.setEq(settings);
+      return actual.setEqualizer(settings);
+    },
   };
 });
 
@@ -327,6 +332,70 @@ describe("kütüphane", () => {
       fireEvent.click(screen.getByRole("button", { name: /Klasörü kütüphaneden çıkar/ })),
     );
     expect(backend.removeFolder).toHaveBeenCalledWith(7);
+  });
+});
+
+describe("ekolayzer", () => {
+  const openEq = async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Ekolayzer/ })));
+  };
+
+  it("sekmeyle açılır; hazır ayar sürgüleri ve ekrandaki EQ ışığını değiştirir", async () => {
+    await openEq();
+    expect(screen.getByRole("tab", { name: /Ekolayzer/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Düz" })).toHaveAttribute("aria-pressed", "true");
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Bas" })));
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith({
+        enabled: true,
+        gainsDb: [6, 5.5, 4.5, 2.5, 0.5, 0, 0, 0, 0, 0],
+      }),
+    );
+    expect(screen.getByRole("slider", { name: "31 Hz" })).toHaveAttribute("aria-valuenow", "6");
+    expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("EQ")).toHaveClass("is-on");
+    expect(await screen.findByText(/Bozulma koruması: −6 dB/)).toBeInTheDocument();
+  });
+
+  it("sürgü klavyeyle ayarlanır, ok tuşları şarkıyı sarmaz", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    await openEq();
+    const slider = screen.getByRole("slider", { name: "1kHz" });
+    slider.focus();
+    await act(async () => fireEvent.keyDown(slider, { key: "ArrowUp" }));
+    await act(async () => fireEvent.keyDown(slider, { key: "PageUp" }));
+    expect(slider).toHaveAttribute("aria-valuenow", "3.5");
+    expect(screen.getByText("Özel ayar")).toBeInTheDocument();
+
+    // ← / → komşu banda geçer; şarkı sarılmaz.
+    await act(async () => fireEvent.keyDown(slider, { key: "ArrowRight" }));
+    expect(screen.getByRole("slider", { name: "2kHz" })).toHaveFocus();
+    expect(backend.seek).not.toHaveBeenCalled();
+
+    // Çift tıklama sıfırlar; kapatınca ayar korunur ama ışık söner.
+    await act(async () => fireEvent.doubleClick(slider));
+    expect(slider).toHaveAttribute("aria-valuenow", "0");
+    await act(async () => fireEvent.keyDown(slider, { key: "Home" }));
+    expect(slider).toHaveAttribute("aria-valuenow", "12");
+    await act(async () => fireEvent.click(screen.getByRole("switch")));
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(slider).toHaveAttribute("aria-valuenow", "12");
+    expect(screen.getByText("EQ")).not.toHaveClass("is-on");
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false })),
+    );
+  });
+
+  it("işaretçinin konumunu kazanca çevirir", async () => {
+    const { pointerToGain } = await import("./EqualizerPanel");
+    expect(pointerToGain(100, 100, 200)).toBe(12);
+    expect(pointerToGain(300, 100, 200)).toBe(-12);
+    expect(pointerToGain(200, 100, 200)).toBe(0);
+    expect(pointerToGain(0, 100, 200)).toBe(12);
+    expect(pointerToGain(5, 0, 0)).toBe(0);
   });
 });
 

@@ -50,7 +50,7 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
-│   ├── hooks/                # usePlayer (oynatma, akıcı saat, kısayollar), useLibrary (kütüphane)
+│   ├── hooks/                # usePlayer (oynatma, akıcı saat, kısayollar), useLibrary, useEqualizer
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont), Rust köprüsü (backend.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
@@ -59,7 +59,8 @@ lyraska/
 │   │   ├── commands.rs       # Arayüzün çağırdığı ince Tauri komutları
 │   │   ├── audio/            # Ses motoru
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
-│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, duraklatma geçişi (ayırma/kilit yok)
+│   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
+│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, duraklatma geçişi (ayırma/kilit yok)
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
@@ -67,6 +68,7 @@ lyraska/
 │   │   │   ├── db.rs         #   klasör/şarkı tabloları, Türkçe duyarlı arama, sıralama
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
+│   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   └── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi

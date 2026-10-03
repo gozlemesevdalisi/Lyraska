@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { previewEqState } from "./eq";
 
 /** Rust tarafındaki `commands::AppInfo` yapısının TypeScript karşılığı. */
 export interface AppInfo {
@@ -75,6 +76,24 @@ export interface LibraryStatus {
   trackCount: number;
   scan: ScanProgress;
   problems: string[];
+}
+
+/** Rust tarafındaki `audio::eq::EqSettings`. */
+export interface EqSettings {
+  enabled: boolean;
+  /** Bant başına kazanç (dB, ±12), bastan tize 10 bant. */
+  gainsDb: number[];
+}
+
+/** Rust tarafındaki `audio::eq::EqState`. */
+export interface EqState extends EqSettings {
+  bandsHz: number[];
+  maxGainDb: number;
+  /** Kırpılmayı önlemek için düşürülen kazanç (dB, ≤ 0). */
+  preampDb: number;
+  /** Gerçekten uygulanan eğri (ön kazanç hariç). */
+  curveHz: number[];
+  curveDb: number[];
 }
 
 export const EMPTY_LIBRARY: LibraryStatus = {
@@ -182,6 +201,18 @@ export function rescanLibrary(): Promise<LibraryStatus> {
 
 export function searchLibrary(query: string): Promise<LibraryTrack[]> {
   return invoke<LibraryTrack[]>("library_search", { query });
+}
+
+/** Ekolayzer durumu. Tarayıcı önizlemesinde yaklaşık bir eğri hesaplanır. */
+export async function getEqualizer(): Promise<EqState> {
+  if (!isTauri()) return previewEqState({ enabled: true, gainsDb: Array(10).fill(0) });
+  return invoke<EqState>("equalizer_get");
+}
+
+/** Ekolayzer ayarlarını uygular ve kaydeder; uygulanan eğriyi döndürür. */
+export async function setEqualizer(settings: EqSettings): Promise<EqState> {
+  if (!isTauri()) return previewEqState(settings);
+  return invoke<EqState>("equalizer_set", { settings });
 }
 
 /** Pencereye bırakılan dosyaları dinler. Dinlemeyi bırakmak için dönen fonksiyon çağrılır. */

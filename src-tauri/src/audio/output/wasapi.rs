@@ -120,7 +120,7 @@ fn run(
     // Bütün bellek burada, bir kez ayrılır; döngüde ayırma yapılmaz.
     let mut floats = vec![0.0f32; buffer_frames * spec.channels];
     let mut bytes = vec![0u8; buffer_frames * block_align];
-    let mut renderer = Renderer::new(spec.channels, spec.sample_rate);
+    let mut renderer = Renderer::new(spec.channels, spec.sample_rate, Arc::clone(&shared.eq));
     let mut consumed: u64 = 0;
     let mut started = false;
 

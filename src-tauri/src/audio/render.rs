@@ -3,8 +3,11 @@
 //! Bu kod ses çıkış iş parçacığında çalışır. Kurallar: bellek ayırma yok,
 //! kilit bekleme yok, dosya erişimi yok, panic yok.
 
+use std::sync::Arc;
+
 use rtrb::Consumer;
 
+use super::eq::{EqControl, EqProcessor};
 use super::Sample;
 
 /// Duraklat/devam geçişinin süresi. Ani kesilme "tık" sesine yol açar.
@@ -19,22 +22,26 @@ pub struct RenderOutcome {
     pub frames_missing: usize,
 }
 
-/// Halka tampondaki 64-bit örnekleri aygıtın 32-bit kayan nokta biçimine yazar.
+/// Halka tampondaki 64-bit örnekleri ekolayzerden geçirip aygıtın 32-bit kayan
+/// nokta biçimine yazar.
 pub struct Renderer {
     channels: usize,
     /// Anlık kazanç (0 = sessiz, 1 = tam).
     gain: f64,
     /// Her karede kazancın değiştiği miktar.
     fade_step: f64,
+    eq: EqProcessor,
 }
 
 impl Renderer {
-    pub fn new(channels: usize, sample_rate: u32) -> Self {
+    pub fn new(channels: usize, sample_rate: u32, eq: Arc<EqControl>) -> Self {
         let fade_frames = (FADE_SECONDS * f64::from(sample_rate)).max(1.0);
+        let channels = channels.max(1);
         Self {
-            channels: channels.max(1),
+            channels,
             gain: 0.0,
             fade_step: 1.0 / fade_frames,
+            eq: EqProcessor::new(eq, channels, sample_rate),
         }
     }
 
@@ -55,6 +62,7 @@ impl Renderer {
     ) -> RenderOutcome {
         let target = if paused { 0.0 } else { 1.0 };
         let mut outcome = RenderOutcome::default();
+        self.eq.begin_block();
 
         for frame in out.chunks_exact_mut(self.channels) {
             if paused && self.gain <= 0.0 {
@@ -69,9 +77,10 @@ impl Renderer {
                 }
                 continue;
             }
-            for slot in frame.iter_mut() {
+            self.eq.advance_frame();
+            for (channel, slot) in frame.iter_mut().enumerate() {
                 let sample = source.pop().unwrap_or(0.0);
-                *slot = to_device(sample * self.gain);
+                *slot = to_device(self.eq.process(channel, sample) * self.gain);
             }
             outcome.frames_consumed += 1;
 
@@ -101,6 +110,10 @@ mod tests {
     /// 1000 Hz örnekleme: geçiş 10 kare sürer, hesaplar kolay olur.
     const RATE: u32 = 1000;
 
+    fn flat() -> Arc<EqControl> {
+        Arc::new(EqControl::default())
+    }
+
     fn filled(samples: &[Sample]) -> Consumer<Sample> {
         let (mut producer, consumer) = RingBuffer::new(samples.len().max(1));
         for &s in samples {
@@ -111,7 +124,7 @@ mod tests {
 
     #[test]
     fn baslangicta_sesi_yumusakca_acar() {
-        let mut renderer = Renderer::new(1, RATE);
+        let mut renderer = Renderer::new(1, RATE, flat());
         let mut source = filled(&[1.0; 20]);
         let mut out = [0.0f32; 20];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -128,7 +141,7 @@ mod tests {
 
     #[test]
     fn duraklatinca_yumusakca_susar_ve_veri_tuketmez() {
-        let mut renderer = Renderer::new(2, RATE);
+        let mut renderer = Renderer::new(2, RATE, flat());
         let mut source = filled(&[0.5; 200]);
         let mut out = [0.0f32; 40];
         renderer.render(&mut source, &mut out, false); // tam sese ulaş
@@ -153,7 +166,7 @@ mod tests {
     #[test]
     fn devam_edince_kaldigi_yerden_surer() {
         let samples: Vec<Sample> = (0..100).map(|i| f64::from(i) / 100.0).collect();
-        let mut renderer = Renderer::new(1, RATE);
+        let mut renderer = Renderer::new(1, RATE, flat());
         let mut source = filled(&samples);
         let mut out = [0.0f32; 30];
         renderer.render(&mut source, &mut out, false);
@@ -170,7 +183,7 @@ mod tests {
 
     #[test]
     fn veri_yetismezse_sessizlik_yazar_ve_sayar() {
-        let mut renderer = Renderer::new(2, RATE);
+        let mut renderer = Renderer::new(2, RATE, flat());
         let mut source = filled(&[0.3; 5]); // 2,5 kare: son yarım kare okunmamalı
         let mut out = [9.0f32; 8];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -178,6 +191,29 @@ mod tests {
         assert_eq!(outcome.frames_missing, 2);
         assert_eq!(source.slots(), 1, "yarım kare tamponda kalır");
         assert!(out[4..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn ekolayzer_ses_yolundadir() {
+        use crate::audio::eq::{EqSettings, BANDS};
+        // Bütün bantlar -12 dB: ses ~-12 dB'ye iner (ön kazanç 0, çünkü yükseltme yok;
+        // tasarım sapması ±1 dB içinde).
+        let eq = Arc::new(EqControl::new(EqSettings {
+            enabled: true,
+            gains_db: [-12.0; BANDS],
+        }));
+        let rate = 48_000;
+        let mut renderer = Renderer::new(1, rate, eq);
+        let w = 2.0 * std::f64::consts::PI * 1000.0 / f64::from(rate);
+        let samples: Vec<Sample> = (0..rate).map(|i| (w * f64::from(i)).sin()).collect();
+        let mut source = filled(&samples);
+        let mut out = vec![0.0f32; rate as usize];
+        renderer.render(&mut source, &mut out, false);
+        let tail = &out[rate as usize / 2..];
+        let rms =
+            (tail.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
+        let db = 20.0 * (rms * 2f64.sqrt()).log10();
+        assert!((db + 12.0).abs() < 1.0, "{db:.2} dB");
     }
 
     #[test]

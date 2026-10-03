@@ -3,11 +3,13 @@
 //! Veri akışı:
 //!
 //! ```text
-//! dosya ──► decode (symphonia, ayrı iş parçacığı) ──► halka tampon (f64) ──► render ──► output (WASAPI)
+//! dosya ──► decode (symphonia, ayrı iş parçacığı) ──► halka tampon (f64) ──► render (+ eq) ──► output (WASAPI)
 //! ```
 //!
 //! - [`decode`]: symphonia ile dosyayı açar ve 64-bit örneklere çözer.
-//! - [`render`]: halka tampondan aygıt arabelleğini doldurur; duraklatmada yumuşak geçiş yapar.
+//! - [`eq`]: 10 bantlı grafik ekolayzer (bantlar arası taşmayı düzelten tasarım, kilitsiz ayar).
+//! - [`render`]: halka tampondan aygıt arabelleğini doldurur; ekolayzeri uygular,
+//!   duraklatmada yumuşak geçiş yapar.
 //!   Gerçek zamanlı iş parçacığında çalışır: bellek ayırmaz, kilit beklemez.
 //! - [`output`]: Windows WASAPI paylaşımlı mod çıkışı.
 //! - [`player`]: yukarıdakileri bir araya getiren, arayüzün kullandığı oynatıcı.
@@ -16,6 +18,7 @@
 //! biçimine (32-bit kayan nokta) dönüştürülür.
 
 pub mod decode;
+pub mod eq;
 pub mod output;
 pub mod player;
 pub mod render;
