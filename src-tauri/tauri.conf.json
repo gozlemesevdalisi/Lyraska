@@ -14,9 +14,9 @@
       {
         "title": "Lyraska",
         "width": 1200,
-        "height": 760,
+        "height": 840,
         "minWidth": 720,
-        "minHeight": 480,
+        "minHeight": 560,
         "center": true,
         "backgroundColor": "#040506"
       }

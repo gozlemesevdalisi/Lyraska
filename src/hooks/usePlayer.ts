@@ -44,7 +44,12 @@ const now = () => performance.now();
  *
  * Kısayollar: Boşluk = çal/duraklat, ←/→ = 5 sn geri/ileri, Ctrl+O = dosya aç.
  */
-export function usePlayer(extensions: string[]): PlayerControls {
+export interface PlayerOptions {
+  /** Şarkı sonuna kadar çalınınca bir kez çağrılır (sıradaki şarkıya geçmek için). */
+  onEnded?: (status: PlaybackStatus) => void;
+}
+
+export function usePlayer(extensions: string[], options: PlayerOptions = {}): PlayerControls {
   const available = isDesktop();
   const [status, setStatus] = useState<PlaybackStatus>(IDLE_STATUS);
   const [position, setPosition] = useState(0);
@@ -55,6 +60,10 @@ export function usePlayer(extensions: string[]): PlayerControls {
   const busy = useRef(false);
   const seekInFlight = useRef(false);
   const pendingSeek = useRef<number | null>(null);
+  const onEnded = useRef(options.onEnded);
+  useEffect(() => {
+    onEnded.current = options.onEnded;
+  }, [options.onEnded]);
 
   /** Şu anki tahmini konum (saniye). */
   const positionNow = useCallback(() => {
@@ -71,6 +80,13 @@ export function usePlayer(extensions: string[]): PlayerControls {
     const previous = statusRef.current;
     statusRef.current = next;
     setStatus(next);
+    if (
+      previous.state !== "ended" &&
+      next.state === "ended" &&
+      previous.track?.path === next.track?.path
+    ) {
+      onEnded.current?.(next);
+    }
 
     // Sarma sürerken gelen eski konumlar ekranı geri çekmesin.
     if (seekInFlight.current && !exact) return;
