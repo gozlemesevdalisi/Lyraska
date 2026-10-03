@@ -4,7 +4,6 @@ import {
   errorMessage,
   getPlaybackStatus,
   isDesktop,
-  onFileDrop,
   openTrack,
   pickAudioFile,
   seekPlayback,
@@ -39,8 +38,8 @@ const now = () => performance.now();
 
 /**
  * Oynatıcıyı yöneten hook: komutları Rust çekirdeğine iletir, durumu düzenli
- * aralıklarla sorar, konumu akıcı bir saatle gösterir, klavye kısayollarını ve
- * sürükle-bırak ile dosya açmayı bağlar.
+ * aralıklarla sorar, konumu akıcı bir saatle gösterir ve klavye kısayollarını bağlar.
+ * (Sürükle-bırak ana ekranda ele alınır: şarkılar sıraya, klasörler kütüphaneye.)
  *
  * Kısayollar: Boşluk = çal/duraklat, ←/→ = 5 sn geri/ileri, Ctrl+O = dosya aç.
  */
@@ -235,24 +234,6 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [available, toggle, openFile, seek, positionNow]);
-
-  // Pencereye bırakılan ilk dosyayı aç.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    onFileDrop((paths) => {
-      const first = paths[0];
-      if (first) void openPath(first);
-    })
-      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
-      .catch(() => {
-        /* Sürükle-bırak isteğe bağlı bir kolaylıktır. */
-      });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [openPath]);
 
   return { status, position, available, error, openFile, openPath, toggle, stop, seek };
 }

@@ -68,6 +68,11 @@ impl LibraryService {
 
     /// Klasörü ekler ve taramayı başlatır.
     pub fn add_folder(&self, path: &Path) -> Result<FolderRow, LibraryError> {
+        if path.is_file() {
+            return Err(LibraryError::NotAFolder(
+                path.to_string_lossy().into_owned(),
+            ));
+        }
         if !path.is_dir() {
             return Err(LibraryError::FolderMissing(
                 path.to_string_lossy().into_owned(),
@@ -203,6 +208,18 @@ mod tests {
         let service = LibraryService::new(Library::open_in_memory().unwrap());
         let error = service.add_folder(Path::new("/olmayan/yer")).unwrap_err();
         assert!(matches!(error, LibraryError::FolderMissing(_)));
+        assert!(service.status().unwrap().folders.is_empty());
+    }
+
+    #[test]
+    fn dosya_klasor_olarak_eklenemez() {
+        // Pencereye ses dosyası olmayan bir dosya bırakılınca anlaşılır bir hata verilir.
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let file = folder_with_songs().join("notlar.txt");
+        std::fs::write(&file, "merhaba").unwrap();
+        let error = service.add_folder(&file).unwrap_err();
+        assert!(matches!(error, LibraryError::NotAFolder(_)));
+        assert!(error.to_string().contains("notlar.txt"));
         assert!(service.status().unwrap().folders.is_empty());
     }
 

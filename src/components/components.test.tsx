@@ -20,6 +20,7 @@ const backend = vi.hoisted(() => ({
   pickFolder: vi.fn(),
   open: vi.fn(),
   pick: vi.fn(),
+  drop: null as ((paths: string[]) => void) | null,
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -51,7 +52,12 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return current().track;
     },
     pickAudioFile: async (extensions: string[]) => backend.pick(extensions),
-    onFileDrop: async () => () => {},
+    onFileDrop: async (handler: (paths: string[]) => void) => {
+      backend.drop = handler;
+      return () => {
+        if (backend.drop === handler) backend.drop = null;
+      };
+    },
     getLibraryStatus: async () => backend.library ?? actual.EMPTY_LIBRARY,
     searchLibrary: async (query: string) => {
       backend.search(query);
@@ -100,6 +106,7 @@ beforeEach(() => {
   backend.bands = null;
   backend.library = null;
   backend.tracks = [];
+  backend.drop = null;
   vi.clearAllMocks();
 });
 
@@ -260,6 +267,21 @@ describe("kütüphane", () => {
     const [, add] = screen.getAllByRole("button", { name: /Klasör ekle/ });
     await act(async () => fireEvent.click(add!));
     expect(backend.addFolder).toHaveBeenCalledWith("D:\\Arşiv");
+  });
+
+  it("pencereye bırakılan klasörü kütüphaneye ekler, şarkıları sırayla çalar", async () => {
+    backend.desktop = true;
+    render(<App />);
+    await screen.findByText("Müzik klasörünüzü ekleyin");
+    // Desteklenen uzantılar yüklendikten sonra bırakılır.
+    await waitFor(() => expect(backend.drop).not.toBeNull());
+    await act(async () => {
+      backend.drop!(["C:\\Müzik\\Rock", "C:\\İndirilenler\\a.mp3", "C:\\İndirilenler\\b.MP3"]);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(backend.addFolder).toHaveBeenCalledWith("C:\\Müzik\\Rock"));
+    await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
+    expect(backend.open).toHaveBeenCalledTimes(1);
   });
 
   it("şarkıları listeler, çift tıklayınca çalar, bitince sıradakine geçer", async () => {
