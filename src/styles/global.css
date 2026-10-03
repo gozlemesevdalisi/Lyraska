@@ -289,11 +289,6 @@ body {
   transform: scaleY(1.5);
 }
 
-.seekbar.is-dragging .display__progress-fill,
-.seekbar.is-dragging .seekbar__thumb {
-  transition: none;
-}
-
 /* Sürüklenebilir tutamaç: parlayan bir nokta */
 .seekbar__thumb {
   position: absolute;
@@ -306,8 +301,8 @@ body {
   box-shadow:
     0 0 6px var(--vfd-glow),
     0 0 14px var(--vfd-glow);
+  /* Konum her karede güncellenir; geçiş efekti yalnızca boyut için. */
   transition:
-    left 0.25s linear,
     width 0.15s,
     height 0.15s;
 }
@@ -349,7 +344,6 @@ body {
   transform-origin: left center;
   background: var(--vfd);
   box-shadow: 0 0 6px var(--vfd-glow);
-  transition: transform 0.25s linear;
 }
 
 /* Hata durumunda ekran kehribar rengine döner (yanıp sönmez). */
@@ -446,7 +440,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .display__progress-fill,
   .seekbar__thumb {
     transition: none;
   }

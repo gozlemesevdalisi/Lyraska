@@ -34,6 +34,8 @@ vi.mock("../lib/backend", async (importOriginal) => {
     },
     seekPlayback: async (seconds: number) => {
       backend.seek(seconds);
+      // Gerçek çekirdek gibi: yeni konumdan devam eder.
+      if (backend.status) backend.status = { ...backend.status, positionSecs: seconds };
       return current();
     },
     getVisualFrame: async () =>
@@ -120,16 +122,48 @@ describe("oynatıcı ekranı", () => {
 });
 
 describe("sarma ve spektrum", () => {
-  it("ok tuşları 5 saniye ileri/geri sarar", async () => {
+  it("ok tuşları ekranda görülen konumdan 5 saniye ileri/geri sarar", async () => {
     backend.desktop = true;
-    backend.status = playing;
+    backend.status = { ...playing, state: "paused" };
     render(<App />);
-    // Durum ilk komutla gelir; Boşluk ile oynatıcıyı uyandır.
+    // Durum ilk komutla gelir; oynatıcıyı uyandırmak için bir kez Boşluk.
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
     await act(async () => fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" }));
-    expect(backend.seek).toHaveBeenLastCalledWith(83.4 + 5);
+    expect(backend.seek).toHaveBeenLastCalledWith(88.4);
     await act(async () => fireEvent.keyDown(window, { key: "ArrowLeft", code: "ArrowLeft" }));
-    expect(backend.seek).toHaveBeenLastCalledWith(83.4 - 5);
+    expect(backend.seek).toHaveBeenLastCalledWith(83.4);
+  });
+
+  it("art arda ok basışları birikir, hiçbiri kaybolmaz", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    // Üç basış, ilk sarma cevabı gelmeden: ekran hemen 83,4 + 15 sn'yi göstermeli.
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
+      fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
+      fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
+    });
+    await waitFor(() => expect(backend.seek).toHaveBeenLastCalledWith(98.4));
+    expect(screen.getByText("01:38 / 03:45")).toBeInTheDocument();
+  });
+
+  it("çubuğa tıklayınca süre ses motorunu beklemeden hemen değişir", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const bar = await screen.findByRole("slider", { name: "Şarkıda konum" });
+    bar.getBoundingClientRect = () => ({ left: 0, width: 225 }) as DOMRect;
+    act(() => {
+      fireEvent.pointerDown(bar, { button: 0, clientX: 150, pointerId: 1 });
+      fireEvent.pointerUp(bar, { button: 0, clientX: 150, pointerId: 1 });
+    });
+    // Henüz ses motoru cevap vermeden: ekran 02:30'u göstermeli, eski yere sekmemeli.
+    expect(screen.getByText("02:30 / 03:45")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Konum 02:30" })).toBeInTheDocument();
+    await waitFor(() => expect(backend.seek).toHaveBeenCalledWith(150));
   });
 
   it("ilerleme çubuğuna tıklayınca o noktaya atlar", async () => {

@@ -12,58 +12,97 @@ import {
   togglePlayback,
   type PlaybackStatus,
 } from "../lib/backend";
+import { positionAt, reanchor, type ClockAnchor } from "../lib/clock";
 
-/** Durum sorgulama aralığı. Ekranda saniye gösterildiği için 4 kez/sn yeterli. */
+/** Durum sorgulama aralığı. Ekrandaki süre arada saatle akıcı ilerler. */
 const POLL_MS = 250;
 /** Ok tuşlarıyla sarma adımı (saniye). */
 export const SEEK_STEP_SECONDS = 5;
 
 export interface PlayerControls {
   status: PlaybackStatus;
+  /** Ekranda gösterilecek konum: her karede akıcı ilerler, sarmada anında değişir. */
+  position: number;
   /** Ses çalınabilir mi? (Tarayıcı önizlemesinde hayır.) */
   available: boolean;
-  /** Bir komut sürüyor (ör. dosya açılıyor). */
-  busy: boolean;
   /** Son komut hatası; bir sonraki başarılı komutta temizlenir. */
   error: string | null;
   openFile: () => Promise<void>;
   openPath: (path: string) => Promise<void>;
   toggle: () => Promise<void>;
   stop: () => Promise<void>;
-  /** Şarkıda verilen saniyeye atlar. */
+  /** Şarkıda verilen saniyeye atlar. Ekran beklemeden yeni konumu gösterir. */
   seek: (seconds: number) => Promise<void>;
 }
 
+const now = () => performance.now();
+
 /**
  * Oynatıcıyı yöneten hook: komutları Rust çekirdeğine iletir, durumu düzenli
- * aralıklarla sorar, klavye kısayollarını ve sürükle-bırak ile dosya açmayı bağlar.
+ * aralıklarla sorar, konumu akıcı bir saatle gösterir, klavye kısayollarını ve
+ * sürükle-bırak ile dosya açmayı bağlar.
  *
  * Kısayollar: Boşluk = çal/duraklat, ←/→ = 5 sn geri/ileri, Ctrl+O = dosya aç.
  */
 export function usePlayer(extensions: string[]): PlayerControls {
   const available = isDesktop();
   const [status, setStatus] = useState<PlaybackStatus>(IDLE_STATUS);
-  const [busy, setBusy] = useState(false);
+  const [position, setPosition] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const busyRef = useRef(false);
+
+  const statusRef = useRef(status);
+  const anchor = useRef<ClockAnchor | null>(null);
+  const busy = useRef(false);
+  const seekInFlight = useRef(false);
+  const pendingSeek = useRef<number | null>(null);
+
+  /** Şu anki tahmini konum (saniye). */
+  const positionNow = useCallback(() => {
+    const current = statusRef.current;
+    if (!anchor.current) return current.positionSecs;
+    return positionAt(anchor.current, now(), current.track?.durationSecs ?? null);
+  }, []);
+
+  /**
+   * Ses motorundan gelen durumu uygular. `exact` ise konum olduğu gibi alınır
+   * (komut cevapları); değilse küçük sapmalar yumuşakça düzeltilir (düzenli sorgular).
+   */
+  const applyStatus = useCallback((next: PlaybackStatus, exact: boolean) => {
+    const previous = statusRef.current;
+    statusRef.current = next;
+    setStatus(next);
+
+    // Sarma sürerken gelen eski konumlar ekranı geri çekmesin.
+    if (seekInFlight.current && !exact) return;
+
+    const running = next.state === "playing";
+    const duration = next.track?.durationSecs ?? null;
+    const trackChanged = previous.track?.path !== next.track?.path;
+    anchor.current =
+      exact || trackChanged
+        ? { position: next.positionSecs, at: now(), running }
+        : reanchor(anchor.current, next.positionSecs, running, now(), duration);
+    setPosition(positionAt(anchor.current, now(), duration));
+  }, []);
 
   /** Komutları sıraya koyar: aynı anda iki komut gönderilmez. */
-  const run = useCallback(async (command: () => Promise<PlaybackStatus | void>) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    try {
-      const next = await command();
-      setStatus(next ?? (await getPlaybackStatus()));
-      setError(null);
-    } catch (e) {
-      setError(errorMessage(e));
-      setStatus(await getPlaybackStatus().catch(() => IDLE_STATUS));
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }, []);
+  const run = useCallback(
+    async (command: () => Promise<PlaybackStatus | void>) => {
+      if (busy.current) return;
+      busy.current = true;
+      try {
+        const next = await command();
+        applyStatus(next ?? (await getPlaybackStatus()), true);
+        setError(null);
+      } catch (e) {
+        setError(errorMessage(e));
+        applyStatus(await getPlaybackStatus().catch(() => IDLE_STATUS), true);
+      } finally {
+        busy.current = false;
+      }
+    },
+    [applyStatus],
+  );
 
   const openPath = useCallback(
     (path: string) =>
@@ -74,7 +113,7 @@ export function usePlayer(extensions: string[]): PlayerControls {
   );
 
   const openFile = useCallback(async () => {
-    if (!available || busyRef.current) return;
+    if (!available || busy.current) return;
     try {
       const path = await pickAudioFile(extensions);
       if (path) await openPath(path);
@@ -85,16 +124,46 @@ export function usePlayer(extensions: string[]): PlayerControls {
 
   const toggle = useCallback(() => run(togglePlayback), [run]);
   const stop = useCallback(() => run(stopPlayback), [run]);
-  const seek = useCallback(
-    (seconds: number) => run(() => seekPlayback(Math.max(0, seconds))),
-    [run],
-  );
 
-  // Ok tuşlarında güncel konuma göre sarabilmek için son durumu sakla.
-  const statusRef = useRef(status);
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
+  const seek = useCallback(
+    async (seconds: number) => {
+      const current = statusRef.current;
+      if (!current.track) return;
+      const duration = current.track.durationSecs ?? Infinity;
+      const target = Math.min(Math.max(0, seconds), duration);
+
+      // Ekranı hemen yeni konuma taşı; ses motoru arkadan yetişir.
+      anchor.current = { position: target, at: now(), running: current.state === "playing" };
+      setPosition(target);
+
+      // Bir sarma sürüyorsa yalnızca en son hedefi hatırla (art arda basışlar birikir).
+      if (seekInFlight.current) {
+        pendingSeek.current = target;
+        return;
+      }
+      seekInFlight.current = true;
+      try {
+        let next = target;
+        for (;;) {
+          const result = await seekPlayback(next);
+          if (pendingSeek.current === null) {
+            seekInFlight.current = false;
+            applyStatus(result, true);
+            break;
+          }
+          next = pendingSeek.current;
+          pendingSeek.current = null;
+        }
+        setError(null);
+      } catch (e) {
+        seekInFlight.current = false;
+        pendingSeek.current = null;
+        setError(errorMessage(e));
+        applyStatus(await getPlaybackStatus().catch(() => IDLE_STATUS), true);
+      }
+    },
+    [applyStatus],
+  );
 
   // Şarkı açıkken durumu düzenli sor (konum, şarkı sonu, aygıt hataları).
   const hasTrack = status.track !== null;
@@ -102,13 +171,26 @@ export function usePlayer(extensions: string[]): PlayerControls {
     if (!available || !hasTrack) return;
     const timer = window.setInterval(() => {
       getPlaybackStatus()
-        .then(setStatus)
+        .then((next) => applyStatus(next, false))
         .catch(() => {
           /* Geçici hata: bir sonraki turda yeniden denenir. */
         });
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [available, hasTrack]);
+  }, [available, hasTrack, applyStatus]);
+
+  // Çalarken konumu her ekran karesinde ilerlet.
+  const playing = status.state === "playing";
+  useEffect(() => {
+    if (!playing || typeof window.requestAnimationFrame !== "function") return;
+    let raf = 0;
+    const tick = () => {
+      setPosition(positionNow());
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [playing, positionNow]);
 
   // Klavye kısayolları
   useEffect(() => {
@@ -127,7 +209,8 @@ export function usePlayer(extensions: string[]): PlayerControls {
       ) {
         event.preventDefault();
         const direction = event.key === "ArrowRight" ? 1 : -1;
-        void seek(statusRef.current.positionSecs + direction * SEEK_STEP_SECONDS);
+        // Ekranda görülen konumdan say: art arda basışlar birikir.
+        void seek(positionNow() + direction * SEEK_STEP_SECONDS);
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
         event.preventDefault();
         void openFile();
@@ -135,7 +218,7 @@ export function usePlayer(extensions: string[]): PlayerControls {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [available, toggle, openFile, seek]);
+  }, [available, toggle, openFile, seek, positionNow]);
 
   // Pencereye bırakılan ilk dosyayı aç.
   useEffect(() => {
@@ -155,5 +238,5 @@ export function usePlayer(extensions: string[]): PlayerControls {
     };
   }, [openPath]);
 
-  return { status, available, busy, error, openFile, openPath, toggle, stop, seek };
+  return { status, position, available, error, openFile, openPath, toggle, stop, seek };
 }
