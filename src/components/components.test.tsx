@@ -423,6 +423,44 @@ describe("ekolayzer", () => {
   });
 });
 
+describe("sahneler", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("sağdaki düğme VU ibrelerine geçer ve seçimi hatırlar", async () => {
+    render(<App />);
+    const knob = screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ });
+    await act(async () => fireEvent.click(knob));
+    expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sağ kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sahne: VU ibreleri/ })).toBeInTheDocument();
+    expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
+  });
+
+  it("VU ölçerler sese göre ilerler, susunca dinlenmeye döner", async () => {
+    const { stepMeters } = await import("./VuScene");
+    const frame = {
+      positionSecs: 1,
+      bands: [],
+      rmsDb: [-14, -60] as [number, number],
+      peakDb: [-3, -60] as [number, number],
+      vuReferenceDb: -14,
+    };
+    let meters: Parameters<typeof stepMeters>[0] = {
+      needles: [
+        { position: 0, velocity: 0 },
+        { position: 0, velocity: 0 },
+      ],
+      lamps: [0, 0],
+    };
+    for (let i = 0; i < 90; i++) meters = stepMeters(meters, frame, 1 / 60);
+    // Sol kanal şarkının referans seviyesinde: 0 VU (ölçeğin ~%71'i). Sağ kanal sessiz.
+    expect(meters.needles[0].position).toBeCloseTo(0.708, 2);
+    expect(meters.needles[1].position).toBe(0);
+    for (let i = 0; i < 90; i++) meters = stepMeters(meters, null, 1 / 60);
+    expect(meters.needles[0].position).toBeLessThan(0.01);
+  });
+});
+
 describe("pointerRatio", () => {
   it("işaretçi konumunu 0..1 aralığına çevirir", () => {
     expect(pointerRatio(150, 100, 200)).toBe(0.25);

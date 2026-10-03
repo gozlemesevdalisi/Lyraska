@@ -77,6 +77,7 @@ export const VuMeter = memo(function VuMeter({ channel, position, lamp }: VuMete
   const id = useId();
   const face = `${id}-face`;
   const clip = `${id}-clip`;
+  const glass = `${id}-glass`;
   const angle = positionToAngle(position);
   const [nx, ny] = polar(angle, NEEDLE_RADIUS);
   const needle = `M${CX},${CY}L${nx.toFixed(2)},${ny.toFixed(2)}`;
@@ -94,6 +95,11 @@ export const VuMeter = memo(function VuMeter({ channel, position, lamp }: VuMete
           <stop offset="55%" className="vu-meter__face-mid" />
           <stop offset="100%" className="vu-meter__face-edge" />
         </radialGradient>
+        <linearGradient id={glass} x1="0" y1="0" x2="0.35" y2="1">
+          <stop offset="0%" stopColor="#fff" stopOpacity={0.22} />
+          <stop offset="45%" stopColor="#fff" stopOpacity={0.04} />
+          <stop offset="100%" stopColor="#fff" stopOpacity={0} />
+        </linearGradient>
         <clipPath id={clip}>
           <rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={8} />
         </clipPath>
@@ -126,7 +132,14 @@ export const VuMeter = memo(function VuMeter({ channel, position, lamp }: VuMete
         <text className="vu-meter__lamp-label" x={WIDTH - 32} y={HEIGHT - 12} textAnchor="end">
           PEAK
         </text>
-        <rect className="vu-meter__glass" x={0} y={0} width={WIDTH} height={HEIGHT} />
+        <rect
+          className="vu-meter__glass"
+          x={0}
+          y={0}
+          width={WIDTH}
+          height={HEIGHT}
+          fill={`url(#${glass})`}
+        />
       </g>
       <rect
         className="vu-meter__bezel"
