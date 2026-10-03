@@ -5,6 +5,7 @@ import {
   errorMessage,
   getLibraryStatus,
   isDesktop,
+  pickAudioFiles,
   pickFolder,
   removeLibraryFolder,
   rescanLibrary,
@@ -27,6 +28,8 @@ export interface LibraryControls {
   loading: boolean;
   error: string | null;
   addFolder: () => Promise<void>;
+  /** Şarkı seçme penceresini açar; seçilen şarkıları tek tek kütüphaneye ekler. */
+  addFiles: (extensions: string[]) => Promise<void>;
   /** Yolu bilinen klasörü ekler (ör. pencereye sürüklenen). */
   addFolderPath: (path: string) => Promise<void>;
   removeFolder: (id: number) => Promise<void>;
@@ -107,6 +110,30 @@ export function useLibrary(): LibraryControls {
 
   const addFolderPath = useCallback((path: string) => apply(() => addLibraryFolder(path)), [apply]);
 
+  const addFiles = useCallback(
+    async (extensions: string[]) => {
+      if (!available) return;
+      let paths: string[];
+      try {
+        paths = await pickAudioFiles(extensions);
+      } catch (e) {
+        setError(errorMessage(e));
+        return;
+      }
+      // Biri eklenemese de (ör. zaten kütüphanede) diğerleri eklenir; son sorun gösterilir.
+      let problem: string | null = null;
+      for (const path of paths) {
+        try {
+          setStatus(await addLibraryFolder(path));
+        } catch (e) {
+          problem = errorMessage(e);
+        }
+      }
+      if (paths.length > 0) setError(problem);
+    },
+    [available],
+  );
+
   const removeFolder = useCallback((id: number) => apply(() => removeLibraryFolder(id)), [apply]);
   const rescan = useCallback(() => apply(rescanLibrary), [apply]);
 
@@ -118,6 +145,7 @@ export function useLibrary(): LibraryControls {
     loading,
     error,
     addFolder,
+    addFiles,
     addFolderPath,
     removeFolder,
     rescan,

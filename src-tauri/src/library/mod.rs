@@ -1,7 +1,10 @@
 //! Müzik kütüphanesi.
 //!
-//! - [`db`]: SQLite veritabanı (klasörler, şarkılar, arama).
-//! - [`scan`]: klasörleri tarayıp veritabanını güncel tutan tarama.
+//! - [`db`]: SQLite veritabanı (kaynaklar, şarkılar, arama).
+//! - [`scan`]: kaynakları tarayıp veritabanını güncel tutan tarama.
+//!
+//! Kütüphaneye "kaynak" eklenir: bir klasör (alt klasörleriyle birlikte) ya da
+//! tek bir şarkı dosyası. İkisi de aynı şekilde taranır, güncellenir ve çıkarılır.
 //! - [`service`]: veritabanı + arka plan taraması; Tauri komutlarının kullandığı katman.
 //!
 //! Veritabanı kullanıcının bilgisayarında, uygulama veri klasöründe durur
@@ -10,6 +13,8 @@
 pub mod db;
 pub mod scan;
 pub mod service;
+
+use std::path::{Component, Path};
 
 use thiserror::Error;
 
@@ -23,12 +28,37 @@ pub enum LibraryError {
     Database(#[from] rusqlite::Error),
     #[error("Klasör okunamadı: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Bu klasör zaten kütüphanede.")]
+    #[error("Bu zaten kütüphanede.")]
     FolderExists,
-    #[error("Klasör bulunamadı: {0}")]
+    #[error("Bu zaten kütüphanede: \"{0}\" klasörünün içinde.")]
+    AlreadyCovered(String),
+    #[error("Bulunamadı (taşınmış ya da silinmiş olabilir): {0}")]
     FolderMissing(String),
-    #[error("Bu bir klasör ya da desteklenen bir ses dosyası değil: {0}")]
-    NotAFolder(String),
+    #[error("Bu dosya türü desteklenmiyor: {0}")]
+    UnsupportedFile(String),
+}
+
+/// `parent` yolu `child` yolunu kapsıyor mu (aynı yol ya da onun içinde mi)?
+/// Bileşen bileşen karşılaştırılır: "D:/Müzik", "D:/Müzik 2" klasörünü kapsamaz.
+/// Windows'ta büyük/küçük harf farkı yok sayılır.
+pub fn path_covers(parent: &Path, child: &Path) -> bool {
+    let mut child_parts = child.components().filter(|c| *c != Component::CurDir);
+    parent
+        .components()
+        .filter(|c| *c != Component::CurDir)
+        .all(|p| child_parts.next().is_some_and(|c| same_component(p, c)))
+}
+
+fn same_component(a: Component<'_>, b: Component<'_>) -> bool {
+    let (a, b) = (
+        a.as_os_str().to_string_lossy(),
+        b.as_os_str().to_string_lossy(),
+    );
+    if cfg!(windows) {
+        a.to_lowercase() == b.to_lowercase()
+    } else {
+        a == b
+    }
 }
 
 /// Aramada kullanılan sadeleştirilmiş metin: küçük harf, Türkçe harfler ve
@@ -66,6 +96,20 @@ pub fn search_key(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yol_kapsama_bilesen_bilesen_karsilastirilir() {
+        let covers = |a: &str, b: &str| path_covers(Path::new(a), Path::new(b));
+        assert!(covers("/muzik", "/muzik"));
+        assert!(covers("/muzik", "/muzik/rock/a.mp3"));
+        assert!(covers("/muzik/", "/muzik/a.mp3"));
+        assert!(
+            !covers("/muzik", "/muzik 2/a.mp3"),
+            "benzer adlı kardeş klasör"
+        );
+        assert!(!covers("/muzik/rock", "/muzik"));
+        assert!(!covers("/muzik/a.mp3", "/muzik/a.mp3.bak"));
+    }
 
     #[test]
     fn turkce_harfler_ve_aksanlar_sadelesir() {

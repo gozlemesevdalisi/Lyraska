@@ -731,6 +731,13 @@ body {
   color: var(--text-muted);
 }
 
+.library__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
 .library__empty p {
   margin: 0;
 }

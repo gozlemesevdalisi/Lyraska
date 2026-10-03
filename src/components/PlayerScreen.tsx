@@ -334,6 +334,7 @@ export function PlayerScreen() {
           <LibraryPanel
             library={library}
             available={player.available}
+            extensions={info.supportedExtensions}
             currentPath={status.track?.path ?? null}
             playing={playing}
             onPlay={playFromLibrary}

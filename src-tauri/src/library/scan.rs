@@ -119,7 +119,7 @@ pub fn scan_folders(
     result.map(|()| total)
 }
 
-/// Tek bir klasörü tarar ve kütüphaneyi günceller.
+/// Tek bir kaynağı (klasör ya da tek şarkı) tarar ve kütüphaneyi günceller.
 pub fn scan_folder(
     library: &Mutex<Library>,
     folder: &FolderRow,
@@ -127,7 +127,7 @@ pub fn scan_folder(
 ) -> Result<ScanSummary, LibraryError> {
     state.begin(&folder.path);
     let root = Path::new(&folder.path);
-    if !root.is_dir() {
+    if !(root.is_dir() || root.is_file() && is_audio(root)) {
         return Err(LibraryError::FolderMissing(folder.path.clone()));
     }
 
@@ -228,7 +228,8 @@ fn find_audio_files(root: &Path) -> Vec<(PathBuf, FileStamp)> {
         .collect()
 }
 
-fn is_audio(path: &Path) -> bool {
+/// Uzantısı desteklenen bir ses dosyası mı? (Büyük/küçük harf fark etmez.)
+pub fn is_audio(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
         SUPPORTED_EXTENSIONS
             .iter()

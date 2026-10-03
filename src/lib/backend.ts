@@ -170,6 +170,21 @@ export function getPlaybackStatus(): Promise<PlaybackStatus> {
 }
 
 /**
+ * Şarkı seçme penceresini gösterir (birden fazla seçilebilir); seçilen dosyaların
+ * yollarını döndürür (vazgeçilirse boş liste).
+ */
+export async function pickAudioFiles(extensions: string[]): Promise<string[]> {
+  const selected = await open({
+    title: "Kütüphaneye eklenecek şarkıları seçin (birden fazla seçebilirsiniz)",
+    multiple: true,
+    directory: false,
+    filters: extensions.length > 0 ? [{ name: "Ses dosyaları", extensions }] : undefined,
+  });
+  if (Array.isArray(selected)) return selected;
+  return typeof selected === "string" ? [selected] : [];
+}
+
+/**
  * Klasör seçme penceresinin başlığı. Windows bu pencerede dosyaları göstermez;
  * yalnızca şarkı içeren bir klasöre girince "öğe yok" yazar. Kullanıcı bunu hata
  * sanmasın diye ne yapacağı başlıkta yazar.

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CloseIcon, FolderPlusIcon, PauseIcon, PlayIcon, RefreshIcon, SearchIcon } from "./icons";
+import {
+  CloseIcon,
+  FolderPlusIcon,
+  MusicPlusIcon,
+  PauseIcon,
+  PlayIcon,
+  RefreshIcon,
+  SearchIcon,
+} from "./icons";
 import type { LibraryTrack } from "../lib/backend";
 import { formatTime } from "../lib/format";
 import { scrollToRow, visibleRange } from "../lib/virtual";
@@ -13,6 +21,8 @@ const NUMBER = new Intl.NumberFormat("tr-TR");
 export interface LibraryPanelProps {
   library: LibraryControls;
   available: boolean;
+  /** "Şarkı ekle" penceresinde gösterilecek uzantılar. */
+  extensions: string[];
   /** Çalan şarkının yolu (listede vurgulanır). */
   currentPath: string | null;
   playing: boolean;
@@ -29,6 +39,7 @@ export function folderName(path: string): string {
 export function LibraryPanel({
   library,
   available,
+  extensions,
   currentPath,
   playing,
   onPlay,
@@ -109,31 +120,44 @@ export function LibraryPanel({
           className="hw-button hw-button--small"
           onClick={() => void library.addFolder()}
           disabled={!available}
+          title="Klasördeki bütün şarkıları ekleyin"
+          aria-label="Klasör ekle"
         >
           <FolderPlusIcon />
           <span>Klasör ekle</span>
         </button>
         <button
           type="button"
+          className="hw-button hw-button--small"
+          onClick={() => void library.addFiles(extensions)}
+          disabled={!available}
+          title="Tek tek şarkı seçip ekleyin (birden fazla seçebilirsiniz)"
+          aria-label="Şarkı ekle"
+        >
+          <MusicPlusIcon />
+          <span>Şarkı ekle</span>
+        </button>
+        <button
+          type="button"
           className="hw-button hw-button--small hw-button--icon"
           onClick={() => void library.rescan()}
           disabled={!available || noFolders || scan.scanning}
-          title="Klasörleri yeniden tara"
-          aria-label="Klasörleri yeniden tara"
+          title="Kütüphaneyi yeniden tara"
+          aria-label="Kütüphaneyi yeniden tara"
         >
           <RefreshIcon />
         </button>
       </header>
 
       {status.folders.length > 0 && (
-        <ul className="library__folders" aria-label="Klasörler">
+        <ul className="library__folders" aria-label="Eklenen klasörler ve şarkılar">
           {status.folders.map((folder) => (
             <li key={folder.id} className="chip" title={folder.path}>
               <span>{folderName(folder.path)}</span>
               <button
                 type="button"
                 onClick={() => void library.removeFolder(folder.id)}
-                aria-label={`Klasörü kütüphaneden çıkar: ${folder.path}`}
+                aria-label={`Kütüphaneden çıkar: ${folder.path}`}
                 title="Kütüphaneden çıkar (dosyalar silinmez)"
               >
                 <CloseIcon />
@@ -161,24 +185,36 @@ export function LibraryPanel({
 
       {noFolders ? (
         <div className="library__empty">
-          <p className="library__empty-title">Müzik klasörünüzü ekleyin</p>
+          <p className="library__empty-title">Müziğinizi ekleyin</p>
           <p>
-            Lyraska klasördeki (alt klasörler dahil) bütün şarkıları bulur; sanatçı, albüm ve şarkı
-            adlarıyla listeler. Dosyalarınız yerinden oynamaz, internet gerekmez.
+            <strong>Klasör ekle:</strong> klasördeki (alt klasörler dahil) bütün şarkılar eklenir.
+            Bu pencerede şarkılar görünmez; klasörün içine girip "Klasör seç"e basmanız yeterli.
           </p>
           <p>
-            Klasörü bu pencereye sürükleyip bırakabilirsiniz. "Klasör ekle" penceresinde şarkılar
-            görünmez; klasörün içine girip "Klasör seç" düğmesine basmanız yeterli.
+            <strong>Şarkı ekle:</strong> şarkıları (ör. mp3) tek tek ya da birkaçını birden seçip
+            eklersiniz. Klasörleri bu pencereye sürükleyip de bırakabilirsiniz. Dosyalarınız
+            yerinden oynamaz, internet gerekmez.
           </p>
-          <button
-            type="button"
-            className="hw-button hw-button--primary"
-            onClick={() => void library.addFolder()}
-            disabled={!available}
-          >
-            <FolderPlusIcon />
-            <span>Klasör ekle</span>
-          </button>
+          <div className="library__empty-actions">
+            <button
+              type="button"
+              className="hw-button hw-button--primary"
+              onClick={() => void library.addFolder()}
+              disabled={!available}
+            >
+              <FolderPlusIcon />
+              <span>Klasör ekle</span>
+            </button>
+            <button
+              type="button"
+              className="hw-button hw-button--primary"
+              onClick={() => void library.addFiles(extensions)}
+              disabled={!available}
+            >
+              <MusicPlusIcon />
+              <span>Şarkı ekle</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="library__table" role="grid" aria-rowcount={tracks.length}>

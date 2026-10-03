@@ -68,6 +68,15 @@ export function FolderPlusIcon() {
   );
 }
 
+export function MusicPlusIcon() {
+  return (
+    <svg {...base}>
+      <path d="M14 3v10.55A3.5 3.5 0 1 0 16 16.5V7h4V3h-6Z" />
+      <path d="M3 6h8v2H3zM3 10h8v2H3zM3 14h6v2H3z" />
+    </svg>
+  );
+}
+
 export function RefreshIcon() {
   return (
     <svg {...base} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
