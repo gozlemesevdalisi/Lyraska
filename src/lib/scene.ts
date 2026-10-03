@@ -1,9 +1,10 @@
 /** Ekrandaki görsel sahneler. */
-export type Scene = "spectrum" | "vu";
+export type Scene = "spectrum" | "vu" | "sky";
 
 export const SCENES: { id: Scene; name: string }[] = [
   { id: "spectrum", name: "Nokta matris spektrum" },
   { id: "vu", name: "VU ibreleri" },
+  { id: "sky", name: "Gece göğü" },
 ];
 
 const STORAGE_KEY = "lyraska.scene";

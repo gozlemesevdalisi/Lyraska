@@ -51,7 +51,8 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
 │   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useVisualFeed (görsel verisi)
-│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont), Rust köprüsü (backend.ts)
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky), Rust köprüsü (backend.ts),
+│   │                         # WebGL2 çizimi (skyRenderer.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
 │   ├── src/

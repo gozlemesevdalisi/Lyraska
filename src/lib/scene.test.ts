@@ -9,14 +9,18 @@ describe("sahneler", () => {
 
   it("sırayla döner", () => {
     expect(nextScene("spectrum")).toBe("vu");
-    expect(nextScene("vu")).toBe("spectrum");
+    expect(nextScene("vu")).toBe("sky");
+    expect(nextScene("sky")).toBe("spectrum");
     expect(sceneName("vu")).toBe("VU ibreleri");
+    expect(sceneName("sky")).toBe("Gece göğü");
   });
 
   it("seçimi hatırlar; bozuk kayıt ya da erişim hatasında spektrumla başlar", () => {
     expect(loadScene()).toBe("spectrum");
     saveScene("vu");
     expect(loadScene()).toBe("vu");
+    saveScene("sky");
+    expect(loadScene()).toBe("sky");
     window.localStorage.setItem("lyraska.scene", "bilinmeyen");
     expect(loadScene()).toBe("spectrum");
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
