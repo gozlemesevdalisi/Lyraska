@@ -6,6 +6,7 @@ import { LibraryPanel } from "./LibraryPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
+import { SkyScene } from "./SkyScene";
 import { VuScene } from "./VuScene";
 import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
 import { textToColumns } from "../lib/dotFont";
@@ -176,6 +177,11 @@ export function PlayerScreen() {
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
   const hasTrack = status.track !== null;
+  const headlineLabel = hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska";
+  // VU ve gece göğü sahnelerinde süre ortada/önde gösterilir.
+  const headlineMatrix = (
+    <DotMatrix columns={headlineColumns} label={headlineLabel} className="vfd vfd--primary" />
+  );
   const indicators = [
     { label: "ST", on: (status.track?.channels ?? 2) >= 2 && hasTrack },
     { label: playing ? "PLAY" : "PAUSE", on: hasTrack && status.state !== "ended" },
@@ -204,16 +210,11 @@ export function PlayerScreen() {
 
           {scene === "vu" ? (
             <div className="display__main display__main--vu">
-              <VuScene
-                playing={playing}
-                center={
-                  <DotMatrix
-                    columns={headlineColumns}
-                    label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
-                    className="vfd vfd--primary"
-                  />
-                }
-              />
+              <VuScene playing={playing} center={headlineMatrix} />
+            </div>
+          ) : scene === "sky" ? (
+            <div className="display__main display__main--sky">
+              <SkyScene playing={playing} center={headlineMatrix} />
             </div>
           ) : (
             <div className="display__main">
@@ -225,7 +226,7 @@ export function PlayerScreen() {
               >
                 <DotMatrix
                   columns={headlineColumns}
-                  label={hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska"}
+                  label={headlineLabel}
                   className="vfd vfd--primary"
                 />
               </h1>

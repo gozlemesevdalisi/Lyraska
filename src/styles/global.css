@@ -32,6 +32,14 @@
   --vu-lamp-on: #ff5a36;
   --vu-lamp-glow: rgba(255, 90, 54, 0.75);
 
+  /* Gece göğü sahnesi (WebGL gölgelendiricisi bu değerleri okur; yalnızca #rrggbb) */
+  --sky-zenith: #02040b;
+  --sky-horizon: #0b1b2c;
+  --sky-aurora-low: #46f0a6;
+  --sky-aurora-high: #7c5cff;
+  --sky-star: #e8f0ff;
+  --sky-ground: #010203;
+
   color-scheme: dark;
   font-family:
     "Segoe UI Variable",
@@ -535,6 +543,47 @@ body {
   stroke-width: 1;
 }
 
+/* ---------- Gece göğü sahnesi ---------- */
+
+.display__main--sky {
+  align-items: stretch;
+}
+
+.sky-scene {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  line-height: 0;
+}
+
+.sky-scene__canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3.4 / 1;
+  border-radius: 4px;
+  /* WebGL2 yoksa ya da ilk kare çizilene kadar görünen durgun gök. */
+  background: linear-gradient(
+    to top,
+    var(--sky-ground) 12%,
+    var(--sky-horizon) 13%,
+    var(--sky-zenith)
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.sky-scene__center {
+  position: absolute;
+  left: 3%;
+  bottom: 6%;
+  width: 30%;
+  pointer-events: none;
+}
+
+.sky-scene__center .dot-matrix {
+  width: 100%;
+  height: auto;
+}
+
 /* Sahne düğmesi: sağdaki döner düğme; göstergesi seçili sahneyi gösterir. */
 .knob--button {
   position: relative;
@@ -559,6 +608,10 @@ body {
 }
 
 .knob--button[data-scene="vu"]::after {
+  transform: translateX(-50%) rotate(0deg);
+}
+
+.knob--button[data-scene="sky"]::after {
   transform: translateX(-50%) rotate(40deg);
 }
 

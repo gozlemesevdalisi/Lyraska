@@ -436,6 +436,27 @@ describe("sahneler", () => {
     expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
   });
 
+  it("üçüncü basış gece göğüne geçer; WebGL2 yoksa durgun gök gösterir", async () => {
+    // jsdom'da WebGL yok: tuval bağlamı alınamaz, sahne çökmeden durgun göğe düşer.
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation(() => null);
+    render(<App />);
+    const knob = screen.getByRole("button", { name: /Sahne:/ });
+    await act(async () => fireEvent.click(knob));
+    await act(async () => fireEvent.click(knob));
+    const sky = screen.getByRole("img", { name: /Gece göğü/ });
+    expect(sky).toHaveAttribute("data-webgl", "off");
+    expect(getContext).toHaveBeenCalledWith("webgl2", expect.anything());
+    expect(screen.getByRole("button", { name: /Sahne: Gece göğü/ })).toBeInTheDocument();
+    expect(window.localStorage.getItem("lyraska.scene")).toBe("sky");
+    await act(async () => fireEvent.click(knob));
+    expect(
+      screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ }),
+    ).toBeInTheDocument();
+    getContext.mockRestore();
+  });
+
   it("VU ölçerler sese göre ilerler, susunca dinlenmeye döner", async () => {
     const { stepMeters } = await import("./VuScene");
     const frame = {
