@@ -7,6 +7,7 @@ import { MarkerPanel } from "./MarkerPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
+import { HighwayScene } from "./HighwayScene";
 import { SkyScene } from "./SkyScene";
 import { VuScene } from "./VuScene";
 import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
@@ -246,6 +247,10 @@ export function PlayerScreen() {
           ) : scene === "sky" ? (
             <div className="display__main display__main--sky">
               <SkyScene playing={playing} safe={visualSafe.safe} center={headlineMatrix} />
+            </div>
+          ) : scene === "highway" ? (
+            <div className="display__main display__main--sky">
+              <HighwayScene playing={playing} safe={visualSafe.safe} center={headlineMatrix} />
             </div>
           ) : (
             <div className="display__main">

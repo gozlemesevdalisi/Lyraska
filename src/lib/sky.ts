@@ -30,7 +30,7 @@ export interface SkyState {
   /** Drop açılımı (0..1; parlaklığı etkiler, hız sınırlı). */
   bloom: number;
   /** Renk teması geçişi: eski tema, yeni tema ve karışım (0 → 1). */
-  palette: { from: number; to: number; mix: number };
+  palette: Palette;
   /** Son ölçü başından beri geçen süre (saniye; perdedeki dalga için). */
   rippleTime: number;
   /** Son karede okunan ölçü vurgusu (yeni vurguyu ayırt etmek için). */
@@ -147,13 +147,7 @@ export function stepSky(
   );
   const bloom = slew(prev.bloom, clamp01(playingDirector?.release ?? 0), slewRate);
 
-  // Tema geçişi: yeni tema gelince eskisinden yumuşakça geçilir.
-  const theme = playingDirector
-    ? Math.abs(Math.trunc(playingDirector.theme)) % SKY_THEMES
-    : prev.palette.to;
-  let palette = prev.palette;
-  if (theme !== palette.to) palette = { from: blendedTheme(palette), to: theme, mix: 0 };
-  palette = { ...palette, mix: Math.min(1, palette.mix + step / PALETTE_SECONDS) };
+  const palette = stepPalette(prev.palette, playingDirector?.theme ?? null, step);
 
   // Ölçü başı dalgası: yeni vurgu gelince baştan başlar ("animasyonları azalt"ta yok).
   const accent = playingDirector?.accent ?? 0;
@@ -181,9 +175,25 @@ export function stepSky(
   };
 }
 
-/** Geçiş yarıda kesilirse hangi temadan devam edileceği (çoğunluktaki tema). */
-function blendedTheme(palette: SkyState["palette"]): number {
-  return palette.mix >= 0.5 ? palette.to : palette.from;
+/** Renk teması geçişi: eski tema, yeni tema ve karışım (0 → 1). */
+export interface Palette {
+  from: number;
+  to: number;
+  mix: number;
+}
+
+/**
+ * Tema geçişini `dt` saniye ilerletir: yeni tema gelince eskisinden
+ * `PALETTE_SECONDS` içinde yumuşakça geçilir. `theme` `null` ise tema korunur.
+ */
+export function stepPalette(prev: Palette, theme: number | null, dt: number): Palette {
+  const target = theme === null ? prev.to : Math.abs(Math.trunc(theme)) % SKY_THEMES;
+  let palette = prev;
+  // Geçiş yarıda kesilirse çoğunluktaki temadan devam edilir.
+  if (target !== palette.to) {
+    palette = { from: palette.mix >= 0.5 ? palette.to : palette.from, to: target, mix: 0 };
+  }
+  return { ...palette, mix: Math.min(1, palette.mix + Math.max(0, dt) / PALETTE_SECONDS) };
 }
 
 /** İki tema rengi arasındaki karışım (0..1 RGB). */
@@ -259,15 +269,17 @@ function contrast(level: number): number {
   return clamp01((level - 0.2) / 0.6);
 }
 
-function smooth(current: number, target: number, dt: number): number {
+/** Enerji yumuşatma: yükselişte hızlı, düşüşte yavaş. */
+export function smooth(current: number, target: number, dt: number): number {
   const tau = target > current ? ENERGY_ATTACK_SECONDS : ENERGY_RELEASE_SECONDS;
   return current + (target - current) * (1 - Math.exp(-dt / tau));
 }
 
-function slew(current: number, target: number, maxStep: number): number {
+/** `target`'a doğru en fazla `maxStep` kadar ilerler (parlaklık hız sınırı). */
+export function slew(current: number, target: number, maxStep: number): number {
   return current + Math.max(-maxStep, Math.min(maxStep, target - current));
 }
 
-function clamp01(x: number): number {
+export function clamp01(x: number): number {
   return Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0;
 }

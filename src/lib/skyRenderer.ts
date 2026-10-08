@@ -8,6 +8,7 @@ import {
   parseHexColor,
   type SkyState,
 } from "./sky";
+import { fitCanvas, getWebGl2, linkFullscreenProgram } from "./gl";
 
 /**
  * "Gece göğü" sahnesinin WebGL2 çizimi. Tüm gök tek bir tam ekran
@@ -42,12 +43,6 @@ const AURORA_FALLBACK: { low: Rgb; high: Rgb } = {
 /** Takımyıldızın ekrandaki yeri ve boyu (ekran yüksekliğine oranla). */
 const LYRA_ANCHOR = { x: 0.84, y: 0.86 };
 const LYRA_SCALE = 0.052; // derece başına
-
-const VERTEX_SHADER = `#version 300 es
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
 
 const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
@@ -185,7 +180,7 @@ ${LYRA_LINES.map(
  * `null` döner (sahne o zaman CSS ile çizilmiş durgun göğü gösterir).
  */
 export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null {
-  const ctx = getContext(canvas);
+  const ctx = getWebGl2(canvas);
   if (!ctx) return null;
 
   let resources = setup(ctx, canvas);
@@ -209,13 +204,7 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
   return {
     draw(state) {
       if (lost || !resources) return;
-      const pixel = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.round(canvas.clientWidth * pixel));
-      const height = Math.max(1, Math.round(canvas.clientHeight * pixel));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
+      const { width, height, pixel } = fitCanvas(canvas);
       const { program, uniforms, vao } = resources;
       ctx.viewport(0, 0, width, height);
       ctx.useProgram(program);
@@ -251,14 +240,6 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
   };
 }
 
-function getContext(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
-  try {
-    return canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false });
-  } catch {
-    return null;
-  }
-}
-
 type UniformName =
   | "uResolution"
   | "uPixel"
@@ -285,7 +266,7 @@ interface Resources {
 }
 
 function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources | null {
-  const program = linkProgram(gl);
+  const program = linkFullscreenProgram(gl, FRAGMENT_SHADER, "Gece göğü");
   const vao = gl.createVertexArray();
   if (!program || !vao) return null;
 
@@ -318,37 +299,6 @@ function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources
     high: parseHexColor(style.getPropertyValue(`--sky-theme-${i}-high`), AURORA_FALLBACK.high),
   }));
   return { program, vao, uniforms, themes };
-}
-
-function linkProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
-  const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-  const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
-  const program = gl.createProgram();
-  if (!vertex || !fragment || !program) return null;
-  gl.attachShader(program, vertex);
-  gl.attachShader(program, fragment);
-  gl.linkProgram(program);
-  gl.deleteShader(vertex);
-  gl.deleteShader(fragment);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error("Gece göğü gölgelendiricisi bağlanamadı:", gl.getProgramInfoLog(program));
-    gl.deleteProgram(program);
-    return null;
-  }
-  return program;
-}
-
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
-  const shader = gl.createShader(type);
-  if (!shader) return null;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error("Gece göğü gölgelendiricisi derlenemedi:", gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
-  }
-  return shader;
 }
 
 /** Takımyıldızın gölgelendiriciye giden konumları (x, y ekran birimi; z parlaklık). */

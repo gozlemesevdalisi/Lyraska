@@ -10,7 +10,8 @@ describe("sahneler", () => {
   it("sırayla döner", () => {
     expect(nextScene("spectrum")).toBe("vu");
     expect(nextScene("vu")).toBe("sky");
-    expect(nextScene("sky")).toBe("spectrum");
+    expect(nextScene("sky")).toBe("highway");
+    expect(nextScene("highway")).toBe("spectrum");
     expect(sceneName("vu")).toBe("VU ibreleri");
     expect(sceneName("sky")).toBe("Gece göğü");
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { countFlashes } from "./flash";
 import {
   AURORA_BASE,
   AURORA_MAX_LUMINANCE,
@@ -23,32 +24,6 @@ function run(state: SkyState, targets: Energies | null, seconds: number, reduced
   let s = state;
   for (let i = 0; i < Math.round(seconds / DT); i++) s = stepSky(s, targets, DT, reduced);
   return s;
-}
-
-/**
- * WCAG 2.3.1'e göre parlama: bağıl parlaklıkta en az %10'luk, birbirine zıt iki
- * değişim. Parlaklık eğrisindeki bu tür dönüşleri sayar.
- */
-function countFlashes(luminance: number[]): number {
-  // Yükselirken en yüksek, düşerken en düşük değer izlenir; ondan %10 dönüş bir değişimdir.
-  let min = luminance[0] ?? 0;
-  let max = min;
-  let direction = 0;
-  let changes = 0;
-  for (const l of luminance) {
-    min = direction > 0 ? min : Math.min(min, l);
-    max = direction < 0 ? max : Math.max(max, l);
-    if (direction >= 0 && max - l >= 0.1) {
-      direction = -1;
-      changes++;
-      min = l;
-    } else if (direction <= 0 && l - min >= 0.1) {
-      direction = 1;
-      changes++;
-      max = l;
-    }
-  }
-  return Math.floor(changes / 2);
 }
 
 describe("bant enerjileri", () => {

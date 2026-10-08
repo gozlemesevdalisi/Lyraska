@@ -37,8 +37,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       şarkılarda doğruluk işaretleme aracıyla ölçülecek
 - [ ] Gecikme telafisi ve kalibrasyon
 - [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
-      bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu bağlanacak
-- [ ] "Gece otoyolu" sahnesi
+      bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu
+      bağlandı (0.0.19). Sıradaki: spektrum ve VU sahneleri, doku katmanı
+- [x] "Gece otoyolu" sahnesi (0.0.19): şerit çizgileri vuruşlara, sokak lambaları ölçü başlarına kilitli; ufuk
+      parıltısı bölüm temasıyla renklenir; drop öncesi ufka çekilir, drop'ta yükselir ve yol iki kat hızlanır
 - [x] Epilepsi güvenli modu (0.0.18): her zaman saniyede en fazla 3 parlama (testle sınanır); güvenli modda
       saniyede en fazla 1 nabız ve yarı hızda parlaklık değişimi. Ayar kaydedilir, ekranda SAFE ışığı yanar
 
