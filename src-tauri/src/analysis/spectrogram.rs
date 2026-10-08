@@ -16,6 +16,7 @@ use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use super::structure::{self, SongMap};
 use crate::audio::decode::Decoder;
 use crate::audio::Sample;
+use crate::director::Choreography;
 
 /// Saniyedeki analiz karesi sayısı (ekran tazeleme hızıyla aynı).
 pub const FRAMES_PER_SECOND: f64 = 60.0;
@@ -47,6 +48,8 @@ pub struct Spectrogram {
     beats: RwLock<Option<Arc<BeatGrid>>>,
     /// Analiz bitince çıkarılan şarkı yapısı (ölçü, bölüm, drop, enerji).
     song_map: RwLock<Option<Arc<SongMap>>>,
+    /// Analiz bitince kurulan koreografi (Görsel Yönetmen).
+    choreography: RwLock<Option<Arc<Choreography>>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -62,6 +65,7 @@ impl Spectrogram {
             vu_reference: RwLock::new(None),
             beats: RwLock::new(None),
             song_map: RwLock::new(None),
+            choreography: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -117,6 +121,11 @@ impl Spectrogram {
         self.vu_reference.read().ok().and_then(|r| *r)
     }
 
+    /// Şarkının koreografisi; analiz bitene kadar ya da ritim yoksa `None`.
+    pub fn choreography(&self) -> Option<Arc<Choreography>> {
+        self.choreography.read().ok().and_then(|c| c.clone())
+    }
+
     /// Şarkının yapısı; analiz bitene kadar ya da ritim yoksa `None`.
     pub fn song_map(&self) -> Option<Arc<SongMap>> {
         self.song_map.read().ok().and_then(|m| m.clone())
@@ -166,8 +175,21 @@ impl Spectrogram {
                 .collect();
             structure::map_song(&levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
         });
+        let choreography = match (&grid, &map) {
+            (Some(grid), Some(map)) => {
+                let levels = self.levels.read().ok();
+                let onset = self.onset.read().ok();
+                levels.zip(onset).map(|(levels, onset)| {
+                    Choreography::build(grid, map, &levels, BANDS, &onset, FRAMES_PER_SECOND)
+                })
+            }
+            _ => None,
+        };
         if let Ok(mut stored) = self.beats.write() {
             *stored = grid.map(Arc::new);
+        }
+        if let Ok(mut stored) = self.choreography.write() {
+            *stored = choreography.map(Arc::new);
         }
         if let Ok(mut stored) = self.song_map.write() {
             *stored = map.map(Arc::new);

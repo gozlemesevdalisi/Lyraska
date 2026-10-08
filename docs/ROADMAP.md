@@ -36,7 +36,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Şarkı haritası analizi: beat (tempo ve vuruşlar), ölçü başı (4/4–3/4), bölümler, drop, enerji — gerçek
       şarkılarda doğruluk işaretleme aracıyla ölçülecek
 - [ ] Gecikme telafisi ve kalibrasyon
-- [ ] Koreografi: atmosfer, ritim ve doku katmanları
+- [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); sahneler bağlanacak
 - [ ] "Gece otoyolu" sahnesi
 - [ ] Epilepsi güvenli modu (saniyede en fazla 3 parlama)
 

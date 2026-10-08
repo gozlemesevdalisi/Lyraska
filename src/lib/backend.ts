@@ -69,6 +69,39 @@ export interface VisualFrame {
   energy: number | null;
   /** O anki bölümün sırası; analiz bitene kadar `null`. */
   section: number | null;
+  /** Görsel Yönetmen'in o anki notu; analiz bitene kadar `null`. */
+  director: DirectorFrame | null;
+}
+
+/**
+ * Rust tarafındaki `director::DirectorFrame`: Görsel Yönetmen'in bir anın notu.
+ * Bütün değerler 0..1. Nabız olayları (`pulse`, `accent`, `release`) arasında en az
+ * 0,34 sn (güvenli modda `pulse` için 1 sn) vardır; diğerleri yumuşak değişir.
+ */
+export interface DirectorFrame {
+  atmosphere: {
+    section: number;
+    /** Benzer bölümler (ör. her nakarat) aynı temayı alır. */
+    theme: number;
+    /** 0 sakin … 1 yoğun. */
+    mood: number;
+    /** 0 soğuk … 1 sıcak. */
+    warmth: number;
+  };
+  rhythm: {
+    pulse: number;
+    accent: number;
+    beatPhase: number;
+    barPhase: number;
+    /** Droptan önceki gerilim (drop anında 1). */
+    anticipation: number;
+    /** Drop anındaki açılım (1 → 0). */
+    release: number;
+  };
+  texture: {
+    detail: number;
+    motion: number;
+  };
 }
 
 /** Rust tarafındaki `visual_bridge::BeatFrame`. */

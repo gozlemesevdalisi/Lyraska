@@ -58,6 +58,8 @@ pub struct Section {
     pub end: f64,
     /// Bölümün ortalama enerjisi (0..1).
     pub energy: f32,
+    /// Benzer bölümler aynı etiketi alır (ör. her nakarat): 0, 1, 2… ilk görülme sırasıyla.
+    pub label: usize,
 }
 
 impl SongMap {
@@ -231,9 +233,26 @@ pub fn map_song(
                 bar_time(end_bar)
             };
             let energy = mean(&bar_energy[k..end_bar.max(k + 1).min(bar_energy.len())]) as f32;
-            Section { start, end, energy }
+            Section {
+                start,
+                end,
+                energy,
+                label: 0,
+            }
         })
         .collect();
+    let mut sections = sections;
+    let section_features: Vec<Vec<f64>> = cuts
+        .iter()
+        .enumerate()
+        .map(|(i, &k)| {
+            let end_bar = cuts.get(i + 1).copied().unwrap_or(bars.len()).max(k + 1);
+            average(&bar_features[k..end_bar.min(bar_features.len())])
+        })
+        .collect();
+    for (section, label) in sections.iter_mut().zip(label_sections(&section_features)) {
+        section.label = label;
+    }
 
     let drops = find_drops(&bar_bass, &bar_energy)
         .into_iter()
@@ -331,6 +350,58 @@ fn section_boundaries(features: &[Vec<f64>]) -> Vec<usize> {
         .collect();
     peaks.dedup();
     peaks
+}
+
+/// Benzer bölümlere aynı etiket: bölümler sırayla, mevcut etiketlerin ilk
+/// örneğine yakınsa o etiketi, değilse yeni etiket alır. "Yakın": bölümler arası
+/// uzaklıkların ortalamasının yarısından az.
+fn label_sections(features: &[Vec<f64>]) -> Vec<usize> {
+    let n = features.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    // Boyutları bölümler arasında standartlaştır.
+    let dims = features[0].len();
+    let mut normalized = features.to_vec();
+    for d in 0..dims {
+        let column: Vec<f64> = features.iter().map(|f| f[d]).collect();
+        for (row, value) in normalized.iter_mut().zip(zscores(&column)) {
+            row[d] = value;
+        }
+    }
+    let mut pairs = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            pairs.push(distance(&normalized[i], &normalized[j]));
+        }
+    }
+    let threshold = 0.5 * mean(&pairs);
+    let mut prototypes: Vec<usize> = Vec::new();
+    (0..n)
+        .map(|i| {
+            let nearest = prototypes
+                .iter()
+                .enumerate()
+                .map(|(label, &p)| (label, distance(&normalized[i], &normalized[p])))
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            match nearest {
+                Some((label, d)) if d < threshold => label,
+                _ => {
+                    prototypes.push(i);
+                    prototypes.len() - 1
+                }
+            }
+        })
+        .collect()
+}
+
+fn average(rows: &[Vec<f64>]) -> Vec<f64> {
+    let Some(first) = rows.first() else {
+        return Vec::new();
+    };
+    (0..first.len())
+        .map(|d| rows.iter().map(|r| r[d]).sum::<f64>() / rows.len() as f64)
+        .collect()
 }
 
 /// Drop olan ölçüler (sırası).
@@ -542,10 +613,14 @@ mod tests {
             map.drops,
             map.sections
                 .iter()
-                .map(|s| (s.start, s.energy))
+                .map(|s| (s.start, s.energy, s.label))
                 .collect::<Vec<_>>()
         );
         assert_eq!(map.drops.len(), 1, "tek drop: {:?}", map.drops);
+        // Benzer bölümler aynı etiketi alır: ana kısım ve drop aynı, sakin kısım farklı.
+        let label_at = |t: f64| map.sections[map.section_at(t).unwrap()].label;
+        assert_eq!(label_at(5.0), label_at(drop_time + 5.0));
+        assert_ne!(label_at(20.0), label_at(drop_time + 5.0));
         assert!(
             (map.drops[0] - drop_time).abs() < 0.6 * bar / 4.0 * 4.0,
             "drop {:?}",
@@ -567,6 +642,23 @@ mod tests {
         let energy_at = |t: f64| map.sections[map.section_at(t).unwrap()].energy;
         assert!(energy_at(drop_time + 2.0) > energy_at(drop_time - 10.0) + 0.2);
         assert!(map.energy_at(drop_time + 2.0).unwrap() > 0.6);
+
+        // Görsel Yönetmen aynı analizden kurulur: droptan önce gerilim, drop'ta açılım.
+        let director = spectrogram.choreography().expect("koreografi kurulmalı");
+        let before = director.frame_at(drop_time - 0.5, false).rhythm;
+        let after = director.frame_at(drop_time + 0.1, false).rhythm;
+        assert!(
+            before.anticipation > 0.8 && before.release == 0.0,
+            "{before:?}"
+        );
+        assert!(after.release > 0.9, "{after:?}");
+        assert_eq!(
+            director
+                .frame_at(drop_time - 20.0, false)
+                .rhythm
+                .anticipation,
+            0.0
+        );
     }
 
     #[test]

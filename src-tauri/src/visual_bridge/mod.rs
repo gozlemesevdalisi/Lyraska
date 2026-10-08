@@ -29,6 +29,8 @@ pub struct VisualFrame {
     pub energy: Option<f32>,
     /// O anki bölümün sırası; analiz bitene kadar `null`.
     pub section: Option<usize>,
+    /// Görsel Yönetmen'in o anki notu (atmosfer, ritim, doku); analiz bitene kadar `null`.
+    pub director: Option<crate::director::DirectorFrame>,
 }
 
 /// O anın vuruş ızgarasındaki yeri.
@@ -61,6 +63,7 @@ impl From<VisualData> for VisualFrame {
             }),
             energy: data.structure.and_then(|s| s.energy),
             section: data.structure.and_then(|s| s.section),
+            director: data.director,
         }
     }
 }
@@ -113,6 +116,7 @@ mod tests {
                 energy: Some(0.75),
                 section: Some(2),
             }),
+            director: None,
         });
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["positionSecs"], 1.5);
@@ -125,6 +129,7 @@ mod tests {
         assert_eq!(json["beat"]["barBeat"], 4);
         assert_eq!(json["energy"], 0.75);
         assert_eq!(json["section"], 2);
+        assert!(json["director"].is_null());
         assert_eq!(json["bands"].as_array().unwrap().len(), 32);
     }
 }
