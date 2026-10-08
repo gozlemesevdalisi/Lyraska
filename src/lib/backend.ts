@@ -65,6 +65,10 @@ export interface VisualFrame {
   vuReferenceDb: number | null;
   /** Tempo ve vuruş konumu; analiz bitene kadar ya da ritim yoksa `null`. */
   beat: BeatFrame | null;
+  /** Şarkının o anki enerjisi (0..1, şarkıya göre); analiz bitene kadar `null`. */
+  energy: number | null;
+  /** O anki bölümün sırası; analiz bitene kadar `null`. */
+  section: number | null;
 }
 
 /** Rust tarafındaki `visual_bridge::BeatFrame`. */
@@ -74,6 +78,26 @@ export interface BeatFrame {
   index: number;
   /** Son vuruştan bu yana geçen süre, vuruş aralığına oranla (0..1). */
   phase: number;
+  /** Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`. */
+  barBeat: number | null;
+}
+
+/** Rust tarafındaki `analysis::structure::SongMap`. */
+export interface SongMap {
+  /** Ölçüdeki vuruş sayısı (3 ya da 4). */
+  meter: number;
+  downbeatPhase: number;
+  downbeats: number[];
+  sections: { start: number; end: number; energy: number }[];
+  drops: number[];
+  /** Saniyede bir enerji (0..1). */
+  energy: number[];
+}
+
+/** Çalan şarkının yapısı; analiz bitmediyse `null`. */
+export async function getSongMap(): Promise<SongMap | null> {
+  if (!isTauri()) return null;
+  return invoke<SongMap | null>("song_map");
 }
 
 /** Rust tarafındaki `library::FolderRow`. */
@@ -199,6 +223,11 @@ export interface BeatEvaluation {
   markedBpm: number | null;
   detectedCount: number;
   markedCount: number;
+  /** Programın bulduğu droplar (saniye). */
+  detectedDrops: number[];
+  /** İşaretlenen droplardan programın ±1 sn içinde bulduğu. */
+  dropHits: number;
+  markedDrops: number;
 }
 
 /** Rust tarafındaki `analysis::annotation::Annotation` (yalnızca arayüzün kullandığı alanlar). */

@@ -25,6 +25,10 @@ pub struct VisualFrame {
     pub vu_reference_db: Option<f32>,
     /// Tempo ve vuruş konumu; analiz bitene kadar ya da ritim yoksa `null`.
     pub beat: Option<BeatFrame>,
+    /// Şarkının o anki enerjisi (0..1, şarkıya göre); analiz bitene kadar `null`.
+    pub energy: Option<f32>,
+    /// O anki bölümün sırası; analiz bitene kadar `null`.
+    pub section: Option<usize>,
 }
 
 /// O anın vuruş ızgarasındaki yeri.
@@ -37,6 +41,8 @@ pub struct BeatFrame {
     pub index: usize,
     /// Son vuruştan bu yana geçen süre, vuruş aralığına oranla (0..1).
     pub phase: f64,
+    /// Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`.
+    pub bar_beat: Option<usize>,
 }
 
 impl From<VisualData> for VisualFrame {
@@ -51,7 +57,10 @@ impl From<VisualData> for VisualFrame {
                 bpm,
                 index: position.index,
                 phase: position.phase,
+                bar_beat: data.structure.and_then(|s| s.bar_beat),
             }),
+            energy: data.structure.and_then(|s| s.energy),
+            section: data.structure.and_then(|s| s.section),
         }
     }
 }
@@ -99,6 +108,11 @@ mod tests {
                     phase: 0.25,
                 },
             )),
+            structure: Some(crate::audio::player::StructureNow {
+                bar_beat: Some(4),
+                energy: Some(0.75),
+                section: Some(2),
+            }),
         });
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["positionSecs"], 1.5);
@@ -108,6 +122,9 @@ mod tests {
         assert_eq!(json["beat"]["bpm"], 128.0);
         assert_eq!(json["beat"]["index"], 7);
         assert_eq!(json["beat"]["phase"], 0.25);
+        assert_eq!(json["beat"]["barBeat"], 4);
+        assert_eq!(json["energy"], 0.75);
+        assert_eq!(json["section"], 2);
         assert_eq!(json["bands"].as_array().unwrap().len(), 32);
     }
 }

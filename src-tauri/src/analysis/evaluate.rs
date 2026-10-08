@@ -34,7 +34,18 @@ pub struct BeatEvaluation {
     pub marked_bpm: Option<f64>,
     pub detected_count: usize,
     pub marked_count: usize,
+    /// Programın bulduğu droplar (saniye).
+    #[serde(default)]
+    pub detected_drops: Vec<f64>,
+    /// İşaretlenen droplardan, programın ±`DROP_TOLERANCE` içinde bulduğu.
+    #[serde(default)]
+    pub drop_hits: usize,
+    #[serde(default)]
+    pub marked_drops: usize,
 }
+
+/// Drop eşleşme toleransı (saniye): drop bir ölçü başıdır; parmak ve ölçü payı.
+pub const DROP_TOLERANCE: f64 = 1.0;
 
 /// Bulunan vuruşları (`detected`) işaretlere (`marked`) göre değerlendirir.
 pub fn evaluate_beats(
@@ -52,21 +63,40 @@ pub fn evaluate_beats(
         marked_bpm: interval_bpm(marked),
         detected_count: detected.len(),
         marked_count: marked.len(),
+        detected_drops: Vec::new(),
+        drop_hits: 0,
+        marked_drops: 0,
     }
 }
 
 /// Şarkıyı baştan analiz eder ve bulunan vuruşları işaretlere göre değerlendirir.
 /// Birkaç saniye sürer; arayüz iş parçacığında çağrılmaz.
-pub fn evaluate_file(path: &Path, marked: &[f64]) -> Result<BeatEvaluation, AudioError> {
+pub fn evaluate_file(
+    path: &Path,
+    marked: &[f64],
+    marked_drops: &[f64],
+) -> Result<BeatEvaluation, AudioError> {
     let spectrogram = Spectrogram::new();
     analyze(Decoder::open(path)?, &spectrogram);
     let grid = spectrogram.beat_grid();
     let detected = grid.as_ref().map_or(&[][..], |g| &g.beats[..]);
-    Ok(evaluate_beats(
-        detected,
-        grid.as_ref().map(|g| g.bpm),
-        marked,
-    ))
+    let mut result = evaluate_beats(detected, grid.as_ref().map(|g| g.bpm), marked);
+    let drops = spectrogram
+        .song_map()
+        .map(|m| m.drops.clone())
+        .unwrap_or_default();
+    result.drop_hits = drop_hits(&drops, marked_drops);
+    result.marked_drops = marked_drops.len();
+    result.detected_drops = drops;
+    Ok(result)
+}
+
+/// İşaretli droplardan kaçı, programın bulduğu bir dropa ±`DROP_TOLERANCE` içinde.
+pub fn drop_hits(detected: &[f64], marked: &[f64]) -> usize {
+    marked
+        .iter()
+        .filter(|&&m| detected.iter().any(|&d| (d - m).abs() <= DROP_TOLERANCE))
+        .count()
 }
 
 /// F-ölçüsü: her gerçek vuruşa en fazla bir tahmin, `tolerance` saniye içinde.
@@ -200,13 +230,28 @@ mod tests {
         write_wav(&path, rate, 1, samples.len(), |f, _| 0.8 * samples[f]);
         // İnsan gibi: 40 ms geç basılmış işaretler.
         let marked: Vec<f64> = truth.iter().map(|t| t + 0.04).collect();
-        let e = evaluate_file(&path, &marked).unwrap();
+        let e = evaluate_file(&path, &marked, &[10.0]).unwrap();
         assert!(e.f_measure > 0.95, "{e:?}");
         assert!((e.tap_offset_ms - 40.0).abs() < 8.0, "{e:?}");
         assert!(e.f_measure_aligned > 0.95, "{e:?}");
         assert!((e.detected_bpm.unwrap() - 120.0).abs() < 0.5, "{e:?}");
-        assert!(evaluate_file(&path.with_extension("yok"), &marked).is_err());
+        assert_eq!(e.marked_drops, 1);
+        assert_eq!(e.drop_hits, 0, "düz davul kaydında drop yok");
+        assert!(evaluate_file(&path.with_extension("yok"), &marked, &[]).is_err());
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn drop_isabeti() {
+        assert_eq!(drop_hits(&[30.0, 90.0], &[30.8, 60.0, 89.5]), 2);
+        assert_eq!(drop_hits(&[], &[1.0]), 0);
+        // Eski (dropsuz) sonuç dosyaları da okunur.
+        let old: BeatEvaluation = serde_json::from_str(
+            r#"{"fMeasure":0.9,"tapOffsetMs":40,"fMeasureAligned":0.95,"detectedBpm":120,
+               "markedBpm":120,"detectedCount":10,"markedCount":10}"#,
+        )
+        .unwrap();
+        assert_eq!(old.drop_hits, 0);
     }
 
     #[test]

@@ -434,6 +434,7 @@ export function PlayerScreen() {
             marker={marker}
             trackTitle={status.track ? trackTitle(status.track) : null}
             playing={playing}
+            durationSecs={status.track?.durationSecs ?? null}
           />
         </div>
       </div>

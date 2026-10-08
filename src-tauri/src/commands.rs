@@ -334,16 +334,26 @@ pub async fn annotation_evaluate(
         return Err("Doğruluğu ölçmek için en az 8 beat işaretleyin.".to_owned());
     }
     let marked = annotation.beats.clone();
-    let result =
-        tauri::async_runtime::spawn_blocking(move || evaluate::evaluate_file(&path, &marked))
-            .await
-            .map_err(reported)?
-            .map_err(reported)?;
+    let marked_drops = annotation.drops.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        evaluate::evaluate_file(&path, &marked, &marked_drops)
+    })
+    .await
+    .map_err(reported)?
+    .map_err(reported)?;
     annotation.evaluation = Some(result);
     store
         .save(&annotation)
         .map_err(|e| reported(format!("Sonuç kaydedilemedi: {e}")))?;
     Ok(annotation)
+}
+
+/// Çalan şarkının yapısı (ölçü, bölümler, droplar, enerji); analiz bitmediyse `null`.
+#[tauri::command]
+pub async fn song_map(
+    player: State<'_, PlayerState>,
+) -> Result<Option<crate::analysis::structure::SongMap>, String> {
+    Ok(player.lock()?.song_map().map(|m| (*m).clone()))
 }
 
 /// İşaret dosyalarının klasörünü dosya gezgininde açar.

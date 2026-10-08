@@ -202,6 +202,17 @@ pub struct VisualData {
     /// Tempo ve o anın vuruş ızgarasındaki yeri; analiz bitene kadar ya da
     /// belirgin ritim yoksa `None`.
     pub beat: Option<(f64, BeatPosition)>,
+    /// Şarkı yapısından o an: vuruşun ölçüdeki yeri, enerji, bölüm (analiz bitince).
+    pub structure: Option<StructureNow>,
+}
+
+/// Şarkı yapısında o an.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StructureNow {
+    /// Vuruşun ölçüdeki yeri (1 = ölçü başı).
+    pub bar_beat: Option<usize>,
+    pub energy: Option<f32>,
+    pub section: Option<usize>,
 }
 
 /// Bir şarkının çalınması için kurulan iş parçacıkları ve durumları.
@@ -586,6 +597,11 @@ impl Player {
         let beat = spectrogram
             .beat_grid()
             .and_then(|grid| Some((grid.bpm, grid.position_at(seconds)?)));
+        let structure = spectrogram.song_map().map(|map| StructureNow {
+            bar_beat: beat.map(|(_, position)| map.bar_beat(position.index)),
+            energy: map.energy_at(seconds),
+            section: map.section_at(seconds),
+        });
         let offsets = self.visual_eq_offsets(rate);
         for (level, &db) in bands.iter_mut().zip(&offsets) {
             *level = spectrogram::shift_level(*level, db);
@@ -596,7 +612,14 @@ impl Player {
             levels,
             vu_reference_db,
             beat,
+            structure,
         })
+    }
+
+    /// Çalan şarkının yapısı (analiz bittiyse).
+    pub fn song_map(&self) -> Option<Arc<crate::analysis::structure::SongMap>> {
+        let (track, _) = self.session.as_ref()?.now_playing();
+        self.analysis_for(&track.path)?.spectrogram.song_map()
     }
 
     /// Ekolayzerin spektrum bantlarındaki toplam kazancı (ön kazanç dahil, dB).

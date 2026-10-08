@@ -426,9 +426,9 @@ pub(crate) mod tests {
     }
 
     /// Basit sözde rastgele sayı üreteci (testler tekrarlanabilir olsun).
-    struct Lcg(u64);
+    pub(crate) struct Lcg(pub(crate) u64);
     impl Lcg {
-        fn next(&mut self) -> f64 {
+        pub(crate) fn next(&mut self) -> f64 {
             self.0 = self
                 .0
                 .wrapping_mul(6364136223846793005)
