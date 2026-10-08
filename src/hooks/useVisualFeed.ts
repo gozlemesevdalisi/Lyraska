@@ -41,7 +41,9 @@ export function useVisualFeed(
         const sentAt = performance.now();
         getVisualFrame()
           .then((frame) => {
-            if (!cancelled && frame) {
+            // `null`: o an için veri yok (ör. şarkı değişti, analiz henüz yetişmedi).
+            // Sahne dinlenmeye geçer; önceki karede donup kalmaz.
+            if (!cancelled) {
               latest = frame;
               latestAt = (sentAt + performance.now()) / 2;
             }

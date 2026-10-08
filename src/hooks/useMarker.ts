@@ -20,6 +20,19 @@ import {
 
 /** Değişiklikten bu kadar sonra kendiliğinden kaydedilir. */
 const AUTOSAVE_MS = 800;
+/**
+ * Durmadan işaretlerken her vuruş kaydı erteler; yine de ilk kaydedilmemiş
+ * değişiklikten en geç bu kadar sonra kaydedilir.
+ */
+const AUTOSAVE_MAX_WAIT_MS = 3000;
+
+/** Kaydedilmemiş işaretler: hangi şarkının, hangi değişikliğe kadar. */
+interface PendingMarks {
+  path: string;
+  beats: number[];
+  drops: number[];
+  change: number;
+}
 /** Şarkı haritası (analiz) hazır olana kadar bu aralıkla sorulur; en fazla 2 dakika. */
 const SONG_MAP_POLL_MS = 1000;
 const SONG_MAP_MAX_TRIES = 120;
@@ -66,8 +79,14 @@ export function useMarker(
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const [songMap, setSongMap] = useState<SongMap | null>(null);
   const tapId = useRef(0);
+  /** Her değişiklikte artar: kayıt sürerken yeni işaret geldiyse kirli kalınır. */
+  const changeCount = useRef(0);
+  /** İlk kaydedilmemiş değişikliğin zamanı (ms). */
+  const dirtySince = useRef<number | null>(null);
+  const pending = useRef<PendingMarks | null>(null);
 
-  // Şarkı değişince o şarkının kayıtlı işaretleri yüklenir.
+  // Şarkı değişince o şarkının kayıtlı işaretleri yüklenir (öncekinin kaydedilmemiş
+  // işaretleri aşağıda, şarkı değişimi etkisinde yazılır).
   if (loadedPath !== trackPath) {
     setLoadedPath(trackPath);
     setMarks(EMPTY_MARKS);
@@ -120,26 +139,65 @@ export function useMarker(
     };
   }, [trackPath]);
 
-  // Değişiklikler kısa bir beklemeden sonra kaydedilir.
+  // Kaydedilmemiş son durum: zamanlayıcı ve şarkı değişimi buradan yazar.
+  useEffect(() => {
+    pending.current =
+      dirty && trackPath
+        ? { path: trackPath, beats: marks.beats, drops: marks.drops, change: changeCount.current }
+        : null;
+  }, [dirty, marks, trackPath]);
+
+  // Şarkı değişince (boşluksuz geçiş, "Sonraki") kaydedilmemiş işaretler önceki
+  // şarkının dosyasına hemen yazılır; yoksa şarkının son vuruşları kaybolurdu.
+  useEffect(
+    () => () => {
+      const unsaved = pending.current;
+      dirtySince.current = null;
+      if (!unsaved) return;
+      pending.current = null;
+      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops).catch((e) =>
+        setError(errorMessage(e)),
+      );
+    },
+    [trackPath],
+  );
+
+  // Değişiklikler kısa bir beklemeden sonra kaydedilir; durmadan işaretlerken de en
+  // geç AUTOSAVE_MAX_WAIT_MS içinde.
   useEffect(() => {
     if (!dirty || !trackPath) return;
+    const since = dirtySince.current ?? performance.now();
+    const wait = Math.min(
+      AUTOSAVE_MS,
+      Math.max(0, since + AUTOSAVE_MAX_WAIT_MS - performance.now()),
+    );
     const timer = window.setTimeout(() => {
+      const unsaved = pending.current;
+      if (!unsaved || unsaved.path !== trackPath) return;
       setSaving(true);
-      saveAnnotation(trackPath, marks.beats, marks.drops)
+      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops)
         .then((file) => {
           setSavedFile(file);
-          setDirty(false);
           setError(null);
+          // Kayıt sürerken yeni işaret geldiyse kirli kalınır; o da kaydedilecek.
+          if (changeCount.current === unsaved.change) {
+            setDirty(false);
+            dirtySince.current = null;
+          } else {
+            dirtySince.current = performance.now();
+          }
         })
         .catch((e) => setError(errorMessage(e)))
         .finally(() => setSaving(false));
-    }, AUTOSAVE_MS);
+    }, wait);
     return () => window.clearTimeout(timer);
   }, [dirty, marks, trackPath]);
 
   const change = useCallback((next: (m: Marks) => Marks) => {
     setMarks(next);
     setDirty(true);
+    changeCount.current += 1;
+    dirtySince.current ??= performance.now();
     setSavedFile(null);
     setEvaluation(null); // eski sonuç artık bu işaretlere ait değil
   }, []);

@@ -115,31 +115,38 @@ impl Drop for BackgroundAnalysis {
 }
 
 fn run(cache: &AnalysisCache, foreground: &AtomicUsize, shared: &Shared) {
-    // Açılamayan ya da çözülemeyen dosyalar bu oturumda bir daha denenmez.
-    let mut failed: HashSet<PathBuf> = HashSet::new();
+    // Bu tarama kaydıyla (yol + kütüphanedeki damga) bir daha denenmeyecek şarkılar:
+    // açılamayanlar ve taramadan sonra diskte değişenler. Değişen şarkının analizi
+    // diskteki damgayla kaydedilir (oynatıcı onu kullanır); ama kütüphane kaydı
+    // yeniden taranana kadar "bekliyor" görünür ve yoksa tekrar tekrar analiz edilirdi.
+    let mut skip: HashSet<(PathBuf, FileStamp)> = HashSet::new();
     while !shared.stop.load(Ordering::Acquire) {
-        let batch: Vec<PathBuf> = match cache.pending_library_tracks(BATCH + failed.len()) {
-            Ok(paths) => paths.into_iter().filter(|p| !failed.contains(p)).collect(),
-            Err(e) => {
-                diagnostics::error(&e.to_string());
-                Vec::new()
-            }
-        };
+        let batch: Vec<(PathBuf, FileStamp)> =
+            match cache.pending_library_tracks(BATCH + skip.len()) {
+                Ok(tracks) => tracks.into_iter().filter(|t| !skip.contains(t)).collect(),
+                Err(e) => {
+                    diagnostics::error(&e.to_string());
+                    Vec::new()
+                }
+            };
         if batch.is_empty() {
             idle(shared);
             continue;
         }
-        for path in batch.into_iter().take(BATCH) {
+        for (path, library_stamp) in batch.into_iter().take(BATCH) {
             if shared.stop.load(Ordering::Acquire) {
                 return;
             }
             wait_for_foreground(foreground, shared);
             match analyze_one(&path, cache, foreground, shared) {
-                Outcome::Stored => {
+                Outcome::Stored(stamp) => {
                     shared.analyzed.fetch_add(1, Ordering::AcqRel);
+                    if stamp != library_stamp {
+                        skip.insert((path, library_stamp));
+                    }
                 }
                 Outcome::Failed => {
-                    failed.insert(path);
+                    skip.insert((path, library_stamp));
                 }
                 Outcome::Interrupted => {}
             }
@@ -167,7 +174,8 @@ fn wait_for_foreground(foreground: &AtomicUsize, shared: &Shared) {
 }
 
 enum Outcome {
-    Stored,
+    /// Analiz bu damgayla (dosyanın analiz edilen hâli) kaydedildi.
+    Stored(FileStamp),
     Failed,
     /// Program kapanıyor; şarkı sonra yeniden denenir.
     Interrupted,
@@ -206,7 +214,7 @@ fn analyze_one(
         return Outcome::Interrupted;
     }
     match cache.store(path, stamp, &saved) {
-        Ok(()) => Outcome::Stored,
+        Ok(()) => Outcome::Stored(stamp),
         Err(e) => {
             diagnostics::error(&e.to_string());
             Outcome::Failed
@@ -297,6 +305,34 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
         assert_eq!(background.analyzed(), songs.len());
         assert_eq!(service.status().unwrap().analyzed, songs.len());
+        background.stop();
+    }
+
+    #[test]
+    fn taramadan_sonra_degisen_dosya_dongude_yeniden_analiz_edilmez() {
+        let (_service, cache, songs) = library_with_songs();
+        // Program açıkken şarkının etiketi başka bir programla düzenlendi: diskteki
+        // damga kütüphanenin (son taramanın) damgasından farklı.
+        let file = std::fs::File::options()
+            .write(true)
+            .open(&songs[0])
+            .unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_000_000))
+            .unwrap();
+        drop(file);
+
+        let foreground = Arc::new(AtomicUsize::new(0));
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), foreground);
+        assert!(wait_until(|| background.analyzed() >= songs.len(), 30));
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(
+            background.analyzed(),
+            songs.len(),
+            "aynı şarkı döngüde yeniden analiz edildi"
+        );
+        // Oynatıcı açınca diskteki damgayla önbellekten bulunur (iş boşa gitmez).
+        let stamp = FileStamp::of(&songs[0]).unwrap();
+        assert!(cache.load(&songs[0], stamp).unwrap().is_some());
         background.stop();
     }
 

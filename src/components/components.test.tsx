@@ -1020,6 +1020,58 @@ describe("işaretleme", () => {
     expect(backend.toggle).toHaveBeenCalledTimes(1); // artık yine çal/duraklat
   });
 
+  /** İşaretleme sekmesini açar ve işaretlemeyi başlatır. */
+  async function startMarking() {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "İşaretle" })));
+    const start = await screen.findByRole("button", { name: /İşaretlemeye başla/ });
+    await waitFor(() => expect(start).toBeEnabled());
+    await act(async () => fireEvent.click(start));
+  }
+
+  /** Bir vuruş aralığı arayla `count` kez Boşluk'a basar (sürekli işaretleme). */
+  async function tapBeats(count: number, intervalMs: number) {
+    for (let i = 0; i < count; i++) {
+      // Sahte çekirdek de şarkının ilerlediğini bildirsin (yoksa vuruşlar üst üste düşer).
+      const status = backend.status!;
+      backend.status = { ...status, positionSecs: status.positionSecs + intervalMs / 1000 };
+      await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
+      await act(() => new Promise((resolve) => setTimeout(resolve, intervalMs)));
+    }
+  }
+
+  it("şarkı boyunca durmadan işaretlerken de ara ara kaydeder", async () => {
+    await startMarking();
+    // 0,25 sn arayla 16 vuruş (4 sn): her vuruş kaydı ertelese hiç kaydedilmezdi.
+    await tapBeats(16, 250);
+    expect(backend.saveMarks).toHaveBeenCalled();
+    const [, beats] = backend.saveMarks.mock.calls.at(-1)!;
+    expect(beats.length).toBeGreaterThanOrEqual(8);
+  }, 10_000);
+
+  it("şarkı değişince kaydedilmemiş işaretler önceki şarkıya yazılır", async () => {
+    await startMarking();
+    await tapBeats(4, 150);
+    expect(backend.saveMarks).not.toHaveBeenCalled(); // henüz kaydedilmedi
+    // Sıradaki şarkı başladı (boşluksuz geçiş ya da "Sonraki").
+    backend.status = {
+      ...playing,
+      positionSecs: 0.1,
+      track: { ...playing.track!, path: "C:\\Müzik\\sonraki.flac" },
+    };
+    await waitFor(
+      () =>
+        expect(backend.saveMarks).toHaveBeenCalledWith(playing.track!.path, expect.any(Array), []),
+      { timeout: 2000 },
+    );
+    const [, beats] = backend.saveMarks.mock.calls.find(([p]) => p === playing.track!.path)!;
+    expect(beats).toHaveLength(4);
+  });
+
   it("kayıtlı işaretleri yükler ve doğruluğu gösterir", async () => {
     backend.desktop = true;
     backend.status = playing;

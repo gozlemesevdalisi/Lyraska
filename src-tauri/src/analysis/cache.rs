@@ -61,7 +61,7 @@ pub enum CacheError {
 
 /// Bir dosyanın değişip değişmediğini anlamak için boyutu ve değişme zamanı
 /// (kütüphane taramasıyla aynı kural: Unix zamanı, saniye).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileStamp {
     pub size: u64,
     pub modified: i64,
@@ -202,9 +202,12 @@ impl AnalysisCache {
         Ok(())
     }
 
-    /// Analizi geçersiz ya da hiç olmayan kütüphane şarkıları (sıralı, en fazla `limit`).
-    /// Kütüphane tablosu yoksa boş döner.
-    pub fn pending_library_tracks(&self, limit: usize) -> Result<Vec<PathBuf>, CacheError> {
+    /// Analizi geçersiz ya da hiç olmayan kütüphane şarkıları ve kütüphanedeki (son
+    /// taramadaki) damgaları (sıralı, en fazla `limit`). Kütüphane tablosu yoksa boş döner.
+    pub fn pending_library_tracks(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(PathBuf, FileStamp)>, CacheError> {
         let conn = self.lock()?;
         let has_tracks: bool = conn
             .query_row(
@@ -217,20 +220,22 @@ impl AnalysisCache {
             return Ok(Vec::new());
         }
         let mut stmt = conn.prepare(
-            "SELECT t.path FROM tracks t
+            "SELECT t.path, t.file_size, t.modified FROM tracks t
              LEFT JOIN analyses a ON a.path = t.path AND a.file_size = t.file_size
                  AND a.modified = t.modified AND a.version = ?1
              WHERE a.path IS NULL
              ORDER BY t.sort_key LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![ANALYSIS_VERSION, limit as i64], |r| {
-            r.get::<_, String>(0)
+            Ok((
+                PathBuf::from(r.get::<_, String>(0)?),
+                FileStamp {
+                    size: r.get::<_, i64>(1)? as u64,
+                    modified: r.get(2)?,
+                },
+            ))
         })?;
-        Ok(rows
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(PathBuf::from)
-            .collect())
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 }
 
