@@ -1,32 +1,30 @@
 /** Ekrandaki görsel sahneler. */
-export type Scene = "spectrum" | "vu" | "sky" | "highway";
+export type Scene = "sky" | "highway" | "vu" | "spectrum";
 
+/** Üst çubuktaki sırayla; 1–4 tuşları da bu sırayı izler. */
 export const SCENES: { id: Scene; name: string }[] = [
-  { id: "spectrum", name: "Nokta matris spektrum" },
-  { id: "vu", name: "VU ibreleri" },
   { id: "sky", name: "Gece göğü" },
   { id: "highway", name: "Gece otoyolu" },
+  { id: "vu", name: "VU ibreleri" },
+  { id: "spectrum", name: "Spektrum" },
 ];
 
 const STORAGE_KEY = "lyraska.scene";
+const DEFAULT_SCENE: Scene = "sky";
 
-/** Sıradaki sahne (sonuncudan sonra başa döner). */
-export function nextScene(current: Scene): Scene {
-  const index = SCENES.findIndex((s) => s.id === current);
-  return SCENES[(index + 1) % SCENES.length]!.id;
+/** Klavyede 1–4 tuşunun seçtiği sahne; başka tuşta `null`. */
+export function sceneForKey(key: string): Scene | null {
+  const index = /^[1-9]$/.test(key) ? Number(key) - 1 : -1;
+  return SCENES[index]?.id ?? null;
 }
 
-export function sceneName(scene: Scene): string {
-  return SCENES.find((s) => s.id === scene)?.name ?? scene;
-}
-
-/** Son seçilen sahne. Kayıt yoksa ya da okunamazsa spektrum. */
+/** Son seçilen sahne. Kayıt yoksa ya da okunamazsa gece göğü. */
 export function loadScene(): Scene {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    return SCENES.some((s) => s.id === saved) ? (saved as Scene) : "spectrum";
+    return SCENES.some((s) => s.id === saved) ? (saved as Scene) : DEFAULT_SCENE;
   } catch {
-    return "spectrum";
+    return DEFAULT_SCENE;
   }
 }
 
@@ -34,6 +32,6 @@ export function saveScene(scene: Scene): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, scene);
   } catch {
-    /* Kaydedilemezse bir sonraki açılışta spektrumla başlar. */
+    /* Kaydedilemezse bir sonraki açılışta gece göğüyle başlar. */
   }
 }

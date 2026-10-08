@@ -12,7 +12,7 @@ vi.mock("./backend", async (importOriginal) => {
   };
 });
 
-import { linkFullscreenProgram, openScene, retrySetup } from "./gl";
+import { MAX_CANVAS_PIXELS, canvasScale, linkFullscreenProgram, openScene, retrySetup } from "./gl";
 
 /** Gölgelendirici derleyen ama derleme hatası veren sahte bir WebGL2 bağlamı. */
 function brokenGl(log: string): WebGL2RenderingContext {
@@ -64,5 +64,22 @@ describe("sahne kurulumu", () => {
     expect(openScene(canvas, "Gece otoyolu", () => 1)).toBeNull();
     expect(canvas.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(logged.messages[0]).toMatch(/^Gece otoyolu sahnesi ekran kartında çizilemedi/);
+  });
+});
+
+describe("tuval çözünürlüğü", () => {
+  it("küçük tuvalde ekranın piksel yoğunluğunu kullanır (en fazla 2×)", () => {
+    expect(canvasScale(1000, 300, 1)).toBe(1);
+    expect(canvasScale(1000, 300, 1.5)).toBe(1.5);
+    expect(canvasScale(400, 300, 3)).toBe(2);
+    expect(canvasScale(400, 300, 0)).toBe(1);
+  });
+
+  it("tüm pencereyi kaplayan tuvali 1080p piksel sayısına indirir", () => {
+    const scale = canvasScale(1920, 1080, 1.5);
+    expect(scale).toBeCloseTo(1);
+    const big = canvasScale(2560, 1440, 2);
+    expect(2560 * big * 1440 * big).toBeLessThanOrEqual(MAX_CANVAS_PIXELS + 1);
+    expect(canvasScale(10000, 10000, 1)).toBe(0.5);
   });
 });

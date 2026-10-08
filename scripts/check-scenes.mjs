@@ -129,6 +129,17 @@ function measure(png) {
 }
 
 /**
+ * Sahnenin üstündeki cam katmanlar (başlık, düğmeler, çekmece) ölçüme girmesin: yalnızca
+ * sahne ölçülür. Beyaz düğmeler Lyra'nın parlaklığı sanılmaz; katmanların karartması da
+ * parlama ölçümünü yumuşatmaz.
+ */
+async function hideChrome(page) {
+  await page.addStyleTag({
+    content: ".chrome, .drawer, .stage__shade, .drop-notice { visibility: hidden !important; }",
+  });
+}
+
+/**
  * Öğenin ekran görüntüsü (base64 PNG). Playwright'ın öğe görüntüsü öğenin "durgun"
  * olmasını bekler; ekran kartsız CI makinesinde yazılımsal çizim çok yavaş olduğundan
  * bu bekleme zaman aşımına düşebiliyordu. Konum bir kez okunur, o alan çekilir.
@@ -213,7 +224,8 @@ async function checkFlashBound(browser, scene) {
     await page.mouse.click(5, 5);
     await page.keyboard.press("Space");
     await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
-    shots.push(await capture(page, page.locator(".display")));
+    await hideChrome(page);
+    shots.push(await capture(page, page.locator(".stage")));
     await page.close();
   }
   const page = await browser.newPage();
@@ -262,6 +274,7 @@ async function checkScene(browser, scene) {
   await page.mouse.click(5, 5);
   await page.keyboard.press("Space"); // çal
   await page.waitForTimeout(2500);
+  await hideChrome(page);
 
   const canvas = page.locator("canvas:not([hidden])").first();
   const state = await canvas.evaluate((c) => ({

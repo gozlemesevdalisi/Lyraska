@@ -178,7 +178,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
 
 // Testler bileşeni sahte arka uçla birlikte yükler.
 const { default: App } = await import("../App");
-const { headline, marqueeText } = await import("./PlayerScreen");
+const { stateLabel } = await import("./NowPlaying");
 const { pointerRatio } = await import("./SeekBar");
 
 const track: TrackInfo = {
@@ -211,17 +211,27 @@ beforeEach(() => {
   backend.drag = null;
   backend.dragFailure = null;
   backend.dropOutcome = null;
+  backend.songMap = null;
+  backend.annotation = null;
+  window.localStorage.clear();
   vi.clearAllMocks();
 });
+
+/** Alttaki şeridin erişilebilir süre metni: "01:23 / 03:45". */
+const seekText = () =>
+  screen.getByRole("slider", { name: "Şarkıda konum" }).getAttribute("aria-valuetext");
 
 describe("oynatıcı ekranı", () => {
   it("tarayıcı önizlemesinde program adını gösterir, düğmeler kapalıdır", async () => {
     render(<App />);
-    expect(screen.getByRole("img", { name: "Lyraska" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Lyraska" })).toBeInTheDocument();
+    expect(screen.getByText("Hoş geldiniz")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Dosya aç/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Çal/ })).toBeDisabled();
-    await waitFor(() => expect(screen.getByText(/Faz 1 · Sürüm/)).toBeInTheDocument());
     expect(screen.getByText(/Windows'ta açın/)).toBeInTheDocument();
+    // Program bilgisi ayarlar panelinde.
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    await waitFor(() => expect(screen.getByText(/Faz 1 · Sürüm/)).toBeInTheDocument());
   });
 
   it("dosya seçilince şarkıyı açar ve süreyi gösterir", async () => {
@@ -236,10 +246,16 @@ describe("oynatıcı ekranı", () => {
 
     await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\Müzik\\gece.flac"));
     expect(backend.pick).toHaveBeenCalledWith(["mp3", "flac"]);
+    // Büyük başlıkta şarkının adı ve sanatçısı, altta süre.
     await waitFor(() =>
-      expect(screen.getByRole("img", { name: "Konum 01:23" })).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { level: 1, name: "Gece Otoyolu" })).toBeInTheDocument(),
     );
-    expect(screen.getByText("01:23 / 03:45")).toBeInTheDocument();
+    expect(screen.getByText("Şimdi çalıyor")).toBeInTheDocument();
+    expect(screen.getByText("Lyra", { selector: ".now__byline" })).toBeInTheDocument();
+    expect(seekText()).toBe("01:23 / 03:45");
+    expect(screen.getByText("01:23", { selector: ".dock__time" })).toBeInTheDocument();
+    expect(screen.getByText("03:45", { selector: ".dock__time" })).toBeInTheDocument();
+    expect(screen.getByText("FLAC 44,1 kHz")).toBeInTheDocument();
     expect(screen.getByText("Kesinti: 0")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Duraklat/ })).toBeEnabled();
   });
@@ -280,7 +296,7 @@ describe("sarma ve spektrum", () => {
       fireEvent.keyDown(window, { key: "ArrowRight", code: "ArrowRight" });
     });
     await waitFor(() => expect(backend.seek).toHaveBeenLastCalledWith(98.4));
-    expect(screen.getByText("01:38 / 03:45")).toBeInTheDocument();
+    expect(seekText()).toBe("01:38 / 03:45");
   });
 
   it("çubuğa tıklayınca süre ses motorunu beklemeden hemen değişir", async () => {
@@ -295,8 +311,8 @@ describe("sarma ve spektrum", () => {
       fireEvent.pointerUp(bar, { button: 0, clientX: 150, pointerId: 1 });
     });
     // Henüz ses motoru cevap vermeden: ekran 02:30'u göstermeli, eski yere sekmemeli.
-    expect(screen.getByText("02:30 / 03:45")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Konum 02:30" })).toBeInTheDocument();
+    expect(seekText()).toBe("02:30 / 03:45");
+    expect(screen.getByText("02:30", { selector: ".dock__time" })).toBeInTheDocument();
     await waitFor(() => expect(backend.seek).toHaveBeenCalledWith(150));
   });
 
@@ -334,6 +350,7 @@ describe("sarma ve spektrum", () => {
     backend.status = playing;
     backend.bands = new Array<number>(32).fill(0.9);
     render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Spektrum" })));
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
     const spectrum = await screen.findByRole("img", { name: "Spektrum" });
     await waitFor(() => {
@@ -527,6 +544,52 @@ describe("kütüphane", () => {
     await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(null));
   });
 
+  it("kütüphaneden çalınca çekmece kapanır, sıradaki görünür; düğmeyle ve Esc ile açılıp kapanır", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    backend.tracks = [song(1, "Mayın Tarlası"), song(2, "Bir Kedi Gördüm"), song(3, "Hoşçakal")];
+    render(<App />);
+    const drawer = document.getElementById("drawer")!;
+    // Açılışta henüz bir şey çalmıyor: kütüphane açık.
+    expect(drawer).toHaveAttribute("aria-hidden", "false");
+    backend.open.mockImplementation((path: string) => {
+      const track = backend.tracks.find((t) => t.path === path)!;
+      backend.status = {
+        ...playing,
+        state: "paused",
+        track: { ...playing.track!, path, title: track.title, durationSecs: 200 },
+      };
+    });
+    const first = await screen.findByText("Mayın Tarlası");
+    await act(async () => fireEvent.doubleClick(first));
+
+    // Çalmaya başlayınca sahne ortaya çıkar.
+    expect(drawer).toHaveAttribute("aria-hidden", "true");
+    expect(drawer).toHaveAttribute("inert");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1, name: "Mayın Tarlası" })).toBeInTheDocument(),
+    );
+    // Albüm kütüphaneden; sıradaki yer ve sıradaki şarkı.
+    expect(screen.getByText("Lyra — Kelimeler")).toBeInTheDocument();
+    expect(screen.getByText("Duraklatıldı · 1 / 3")).toBeInTheDocument();
+    expect(screen.getByText("Bir Kedi Gördüm · Şebnem Ferah")).toBeInTheDocument();
+
+    const libraryButton = screen.getByRole("button", { name: "Kütüphane" });
+    expect(libraryButton).toHaveAttribute("aria-expanded", "false");
+    await act(async () => fireEvent.click(libraryButton));
+    expect(drawer).toHaveAttribute("aria-hidden", "false");
+    expect(libraryButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("tab", { name: "Kütüphane" })).toHaveAttribute("aria-selected", "true");
+    await act(async () => fireEvent.keyDown(window, { key: "Escape" }));
+    expect(drawer).toHaveAttribute("aria-hidden", "true");
+    // Ekolayzer düğmesi çekmeceyi ekolayzerde açar; yeniden basınca kapanır.
+    const eqButton = screen.getByRole("button", { name: "Ekolayzer" });
+    await act(async () => fireEvent.click(eqButton));
+    expect(screen.getByRole("tab", { name: /Ekolayzer/ })).toHaveAttribute("aria-selected", "true");
+    await act(async () => fireEvent.click(eqButton));
+    expect(drawer).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("çekirdek sıradakine kendisi geçince sıra ilerler, şarkı yeniden açılmaz", async () => {
     backend.desktop = true;
     backend.library = library;
@@ -613,6 +676,8 @@ describe("kütüphane", () => {
 });
 
 describe("ekolayzer", () => {
+  /** Üst çubuktaki ekolayzer düğmesinin ışığı: ses değiştiriliyorsa yanar. */
+  const eqLight = () => screen.getByRole("button", { name: "Ekolayzer" }).querySelector(".led");
   const openEq = async () => {
     render(<App />);
     await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Ekolayzer/ })));
@@ -632,7 +697,7 @@ describe("ekolayzer", () => {
     );
     expect(screen.getByRole("slider", { name: "31 Hz" })).toHaveAttribute("aria-valuenow", "6");
     expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("EQ")).toHaveClass("is-on");
+    expect(eqLight()).toHaveClass("is-on");
     expect(await screen.findByText(/Bozulma koruması: −6 dB/)).toBeInTheDocument();
   });
 
@@ -660,7 +725,7 @@ describe("ekolayzer", () => {
     await act(async () => fireEvent.click(screen.getByRole("switch")));
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
     expect(slider).toHaveAttribute("aria-valuenow", "12");
-    expect(screen.getByText("EQ")).not.toHaveClass("is-on");
+    expect(eqLight()).not.toHaveClass("is-on");
     await waitFor(() =>
       expect(backend.setEq).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false })),
     );
@@ -679,51 +744,66 @@ describe("ekolayzer", () => {
 describe("sahneler", () => {
   afterEach(() => window.localStorage.clear());
 
-  it("sağdaki düğme VU ibrelerine geçer ve seçimi hatırlar", async () => {
+  it("açılışta gece göğü seçilidir; üstteki düğmeyle VU ibrelerine geçer ve seçimi hatırlar", async () => {
     render(<App />);
-    const knob = screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ });
-    await act(async () => fireEvent.click(knob));
+    expect(screen.getByRole("button", { name: "Gece göğü" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "VU ibreleri" })));
     expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Sağ kanal VU ölçer" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Sahne: VU ibreleri/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "VU ibreleri" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Gece göğü" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
   });
 
-  it("üçüncü basış gece göğüne geçer; WebGL2 yoksa durgun gök gösterir", async () => {
+  it("1–4 tuşları sahne seçer; arama kutusuna yazarken seçmez", async () => {
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { key: "3" }));
+    expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
+    await act(async () => fireEvent.keyDown(window, { key: "4" }));
+    const spectrum = screen.getByRole("button", { name: "Spektrum" });
+    expect(spectrum).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem("lyraska.scene")).toBe("spectrum");
+    const search = screen.getByRole("searchbox", { name: "Kütüphanede ara" });
+    await act(async () => fireEvent.keyDown(search, { key: "3" }));
+    expect(spectrum).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("gece göğü: WebGL2 yoksa durgun gök gösterir ve nedeni yazar", async () => {
     // jsdom'da WebGL yok: tuval bağlamı alınamaz, sahne çökmeden durgun göğe düşer.
     const getContext = vi
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockImplementation(() => null);
+    window.localStorage.setItem("lyraska.scene", "vu");
     render(<App />);
-    const knob = screen.getByRole("button", { name: /Sahne:/ });
-    await act(async () => fireEvent.click(knob));
-    await act(async () => fireEvent.click(knob));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Gece göğü" })));
     const sky = screen.getByRole("img", { name: /Gece göğü/ });
     expect(sky).toHaveAttribute("data-webgl", "off");
     // Neden tuvale işlenir ve hata günlüğüne yazılır (kullanıcı bize iletebilir).
     expect(sky.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(getContext).toHaveBeenCalledWith("webgl2", expect.anything());
-    expect(screen.getByRole("button", { name: /Sahne: Gece göğü/ })).toBeInTheDocument();
     expect(window.localStorage.getItem("lyraska.scene")).toBe("sky");
     getContext.mockRestore();
   });
 
-  it("dördüncü basış gece otoyoluna geçer; WebGL2 yoksa durgun görüntü kalır", async () => {
+  it("gece otoyolu: WebGL2 yoksa durgun görüntü kalır", async () => {
     const getContext = vi
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockImplementation(() => null);
-    window.localStorage.setItem("lyraska.scene", "sky");
     render(<App />);
-    const knob = screen.getByRole("button", { name: /Sahne: Gece göğü/ });
-    await act(async () => fireEvent.click(knob));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Gece otoyolu" })));
     const road = screen.getByRole("img", { name: /Gece otoyolu/ });
     expect(road).toHaveAttribute("data-webgl", "off");
     expect(road.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(window.localStorage.getItem("lyraska.scene")).toBe("highway");
-    await act(async () => fireEvent.click(knob));
-    expect(
-      screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ }),
-    ).toBeInTheDocument();
     getContext.mockRestore();
   });
 
@@ -769,20 +849,20 @@ describe("sahneler", () => {
     expect(input.energies[0]).toBeCloseTo(1, 5);
   });
 
-  it("epilepsi güvenli modu düğmeyle açılır, kaydedilir ve SAFE ışığı yanar", async () => {
+  it("epilepsi güvenli modu ayarlarda açılır, kaydedilir ve ekranda belirtilir", async () => {
     backend.safe = false;
-    const { container } = render(<App />);
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ayarlar" })));
     const toggle = await screen.findByRole("button", { name: /Epilepsi güvenli modu: Kapalı/ });
-    const lamp = () =>
-      [...container.querySelectorAll(".display__indicators li")].find(
-        (li) => li.textContent === "SAFE",
-      );
-    expect(lamp()).not.toHaveClass("is-on");
+    expect(screen.queryByText("Güvenli mod")).not.toBeInTheDocument();
     await act(async () => fireEvent.click(toggle));
     expect(backend.setSafe).toHaveBeenCalledWith(true);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(toggle).toHaveTextContent("Açık");
-    expect(lamp()).toHaveClass("is-on");
+    expect(screen.getByText("Güvenli mod")).toBeInTheDocument();
     backend.safe = false;
   });
 
@@ -833,6 +913,88 @@ describe("senkron", () => {
   });
 });
 
+describe("şarkı haritası ve bilgi kartları", () => {
+  it("şeritte bölümleri ve drop'ları gösterir, drop yaklaşınca geri sayar", async () => {
+    backend.desktop = true;
+    backend.status = {
+      ...playing,
+      state: "paused",
+      bpm: 128,
+      output: { deviceName: "Hoparlörler", sampleRate: 48000, channels: 2, resampled: true },
+    };
+    backend.songMap = {
+      meter: 4,
+      downbeatPhase: 0,
+      downbeats: [],
+      sections: [
+        { start: 0, end: 60, energy: 0.3, label: 0 },
+        { start: 60, end: 150, energy: 0.9, label: 1 },
+        { start: 150, end: 225, energy: 0.5, label: 0 },
+      ],
+      drops: [60, 100],
+      energy: [],
+    };
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const sections = () => [
+      ...container.querySelectorAll(".songmap__layer--future .songmap__section"),
+    ];
+    await waitFor(() => expect(sections()).toHaveLength(3));
+    // Benzer bölümler (aynı etiket) aynı renk temasını alır.
+    const [first, second, third] = sections().map((e) => e.className);
+    expect(first).toBe(third);
+    expect(first).not.toBe(second);
+    expect(container.querySelectorAll(".songmap__drop")).toHaveLength(2);
+    // 83,4. saniyede sıradaki drop 100. saniyede: 17 saniye kala sayaç görünür.
+    expect(screen.getByText("Drop yaklaşıyor")).toBeInTheDocument();
+    expect(screen.getByText("17 saniye sonra")).toBeInTheDocument();
+    expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
+    expect(screen.getByText("FLAC 44,1 → 48 kHz")).toBeInTheDocument();
+  });
+
+  it("analiz bitmeden şerit düz çubuktur, sayaç görünmez", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await waitFor(() => expect(container.querySelector(".seekbar__line")).toBeInTheDocument());
+    expect(container.querySelector(".songmap")).not.toBeInTheDocument();
+    expect(screen.queryByText("Drop yaklaşıyor")).not.toBeInTheDocument();
+  });
+
+  it("çalma hatası başlığın altında gösterilir", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "error", error: "Ses aygıtı bulunamadı." };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Ses aygıtı bulunamadı.");
+    expect(screen.getByText("Çalınamadı")).toBeInTheDocument();
+  });
+});
+
+describe("sinema görünümü", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("çalarken fare kıpırdamazsa düğmeler çekilir, kıpırdayınca geri gelir", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    backend.desktop = true;
+    backend.status = playing;
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const app = container.querySelector(".app")!;
+    // Çekmece açıkken çekilmez.
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(app).not.toHaveClass("is-cinema");
+    await act(async () => fireEvent.keyDown(window, { key: "Escape" }));
+    await act(async () => vi.advanceTimersByTime(3000));
+    expect(app).not.toHaveClass("is-cinema");
+    await act(async () => vi.advanceTimersByTime(1100));
+    expect(app).toHaveClass("is-cinema");
+    await act(async () => fireEvent.pointerMove(window));
+    expect(app).not.toHaveClass("is-cinema");
+  });
+});
+
 describe("pointerRatio", () => {
   it("işaretçi konumunu 0..1 aralığına çevirir", () => {
     expect(pointerRatio(150, 100, 200)).toBe(0.25);
@@ -842,25 +1004,15 @@ describe("pointerRatio", () => {
   });
 });
 
-describe("headline", () => {
-  it("boşta program adını, çalarken simge ve süreyi gösterir", () => {
-    expect(headline({ ...playing, track: null, state: "idle" })).toBe("LYRASKA");
-    expect(headline(playing)).toBe("▶ 01:23");
-    expect(headline({ ...playing, state: "paused" })).toBe("‖ 01:23");
-    expect(headline({ ...playing, state: "paused", positionSecs: 0 })).toBe("■ 00:00");
-    expect(headline({ ...playing, state: "ended" })).toBe("■ 03:45");
-  });
-});
-
-describe("marqueeText", () => {
-  it("şarkı adını ve teknik bilgiyi, hata varsa hatayı gösterir", () => {
-    expect(marqueeText(playing, null)).toBe("Lyra - Gece Otoyolu · FLAC · 44,1 kHz · Stereo ·");
-    expect(marqueeText({ ...playing, state: "ended" }, null)).toContain("BİTTİ");
-    expect(marqueeText(playing, "Dosya açılamadı")).toBe("HATA · Dosya açılamadı ·");
-    // Tempo bulununca sona eklenir.
-    expect(marqueeText({ ...playing, bpm: 128 }, null)).toBe(
-      "Lyra - Gece Otoyolu · FLAC · 44,1 kHz · Stereo · 128 BPM ·",
-    );
+describe("stateLabel", () => {
+  it("başlığın üstünde çalma durumunu yazar", () => {
+    expect(stateLabel({ ...playing, track: null, state: "idle" })).toBe("Hoş geldiniz");
+    expect(stateLabel(playing)).toBe("Şimdi çalıyor");
+    expect(stateLabel({ ...playing, state: "paused" })).toBe("Duraklatıldı");
+    // Durdur düğmesi başa sarıp duraklatır.
+    expect(stateLabel({ ...playing, state: "paused", positionSecs: 0 })).toBe("Durduruldu");
+    expect(stateLabel({ ...playing, state: "ended" })).toBe("Bitti");
+    expect(stateLabel({ ...playing, state: "error" })).toBe("Çalınamadı");
   });
 });
 
@@ -958,6 +1110,7 @@ describe("hata günlüğü", () => {
   it("programda düğmeyle açılır; açılamazsa nedenini söyler", async () => {
     backend.desktop = true;
     render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
     const button = await screen.findByRole("button", { name: "Hata günlüğü" });
     await act(async () => fireEvent.click(button));
     expect(backend.openLog).toHaveBeenCalledTimes(1);
@@ -1086,8 +1239,8 @@ describe("işaretleme", () => {
       downbeatPhase: 0,
       downbeats: [],
       sections: [
-        { start: 0, end: 60, energy: 0.3 },
-        { start: 60, end: 225, energy: 0.9 },
+        { start: 0, end: 60, energy: 0.3, label: 0 },
+        { start: 60, end: 225, energy: 0.9, label: 1 },
       ],
       drops: [61.5],
       energy: [],

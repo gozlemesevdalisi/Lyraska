@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { VisualFrame } from "../lib/backend";
 import { SKY_AT_REST, bandEnergies, stepSky, type DirectorInput, type SkyState } from "../lib/sky";
 import { createSkyFallback } from "../lib/skyFallback";
@@ -10,8 +10,6 @@ export interface SkySceneProps {
   playing: boolean;
   /** Epilepsi güvenli modu: parlaklık yarı hızla değişir. */
   safe?: boolean;
-  /** Gökyüzünün önünde gösterilecek içerik (süre). */
-  center: ReactNode;
 }
 
 /**
@@ -23,7 +21,7 @@ export interface SkySceneProps {
  * açılamazsa (neden hata günlüğüne yazılır) aynı gök 2D yedek çizimle görünür,
  * o da olmazsa durgun bir gök.
  */
-export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
+export function SkyScene({ playing, safe = false }: SkySceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fallbackRef = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<Pick<SkyRenderer, "draw"> | null>(null);
@@ -87,7 +85,6 @@ export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
         aria-label="Gece göğü: müziğe göre dalgalanan kuzey ışıkları ve Lyra takımyıldızı"
         hidden
       />
-      <div className="sky-scene__center">{center}</div>
     </div>
   );
 }

@@ -129,13 +129,30 @@ export function retrySetup<T>(
 /** WebGL2 hiç açılamadığında günlüğe yazılan neden. */
 export const NO_WEBGL2 = "WebGL2 açılamadı (ekran kartı sürücüsü desteklemiyor ya da engelliyor)";
 
-/** Tuvali ekran boyuna getirir (en fazla 2× piksel yoğunluğu); piksel oranını döndürür. */
+/**
+ * Sahne tuvalinin en fazla piksel sayısı (1080p). Sahneler tüm pencereyi kaplar; büyük ya
+ * da yüksek yoğunluklu ekranda çizim çözünürlüğü bu sınıra indirilir, dahili ekran
+ * kartında da her kare zamanında çizilir. Görüntü yumuşak olduğundan fark edilmez.
+ */
+export const MAX_CANVAS_PIXELS = 1920 * 1080;
+
+/**
+ * Tuvalin piksel oranı: ekranın piksel yoğunluğu (en fazla 2×), tuval `MAX_CANVAS_PIXELS`'ı
+ * aşacaksa daha düşük (en az 0,5).
+ */
+export function canvasScale(cssWidth: number, cssHeight: number, devicePixelRatio: number): number {
+  const pixel = Math.min(devicePixelRatio || 1, 2);
+  const area = Math.max(1, cssWidth) * Math.max(1, cssHeight);
+  return Math.max(0.5, Math.min(pixel, Math.sqrt(MAX_CANVAS_PIXELS / area)));
+}
+
+/** Tuvali ekran boyuna getirir (bkz. `canvasScale`); piksel oranını döndürür. */
 export function fitCanvas(canvas: HTMLCanvasElement): {
   width: number;
   height: number;
   pixel: number;
 } {
-  const pixel = Math.min(window.devicePixelRatio || 1, 2);
+  const pixel = canvasScale(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio);
   const width = Math.max(1, Math.round(canvas.clientWidth * pixel));
   const height = Math.max(1, Math.round(canvas.clientHeight * pixel));
   if (canvas.width !== width || canvas.height !== height) {

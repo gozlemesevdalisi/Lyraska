@@ -55,7 +55,15 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] "Gece otoyolu" sahnesi (0.0.19): şerit çizgileri vuruşlara, sokak lambaları ölçü başlarına kilitli; ufuk
       parıltısı bölüm temasıyla renklenir; drop öncesi ufka çekilir, drop'ta yükselir ve yol iki kat hızlanır
 - [x] Epilepsi güvenli modu (0.0.18): her zaman saniyede en fazla 3 parlama (testle sınanır); güvenli modda
-      saniyede en fazla 1 nabız ve yarı hızda parlaklık değişimi. Ayar kaydedilir, ekranda SAFE ışığı yanar
+      saniyede en fazla 1 nabız ve yarı hızda parlaklık değişimi. Ayar kaydedilir (Ayarlar paneli), açıkken
+      ekranda "Güvenli mod" yazar
+- [x] Yeni arayüz "Sahne" (0.0.25): sahne tüm pencereyi kaplar, yazı ve düğmeler cam katmanlarda; büyük şarkı
+      adı; şarkı haritası şeridi (bölümler gökyüzünün o bölümdeki renginde, enerji, drop'lar); drop geri sayımı;
+      sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–4 tuşları
+      sahne seçer; Inter yazı tipi (OFL-1.1)
+- [ ] "Gece sürüşü" nostalji modu (proje sahibi onayladı, A'dan sonra): ön camdan gece otoyolu, torpidoda
+      özgün tasarım teyp — parlayan nokta matris ekran, ışık halkalı düğmeler, arkadan aydınlatmalı VU
+      ibreleri. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz
 
 ## Faz 3 — Profesyonel ses, v0.3 (21 Aralık 2026 – 17 Ocak 2027)
 
