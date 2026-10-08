@@ -200,8 +200,8 @@ export function LibraryPanel({
           </p>
           <p>
             <strong>Şarkı ekle:</strong> şarkıları (ör. mp3) tek tek ya da birkaçını birden seçip
-            eklersiniz. Klasörleri bu pencereye sürükleyip de bırakabilirsiniz. Dosyalarınız
-            yerinden oynamaz, internet gerekmez.
+            eklersiniz. Şarkıları ya da klasörleri bu pencereye sürükleyip de bırakabilirsiniz.
+            Dosyalarınız yerinden oynamaz, internet gerekmez.
           </p>
           <div className="library__empty-actions">
             <button

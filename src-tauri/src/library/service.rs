@@ -1,7 +1,7 @@
 //! Kütüphane servisi: veritabanını ve arka plan taramasını bir arada yönetir.
 //! Tauri komutları yalnızca bu servisi çağırır.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -21,6 +21,22 @@ pub struct LibraryStatus {
     pub analyzed: usize,
     pub scan: ScanProgress,
     /// Son taramadaki sorunlar (ör. "Klasör bulunamadı: D:\Müzik").
+    pub problems: Vec<String>,
+}
+
+/// Pencereye bırakılanların sonucu.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropOutcome {
+    /// Çalınacak şarkılar, bırakılış sırasıyla (zaten kütüphanede olanlar dahil).
+    pub tracks: Vec<String>,
+    /// Kütüphaneye yeni eklenen şarkılar.
+    pub added_tracks: usize,
+    /// Kütüphaneye yeni eklenen klasörler (şarkıları arka planda taranır).
+    pub added_folders: usize,
+    /// Zaten kütüphanede olanlar (şarkı ya da klasör).
+    pub already: usize,
+    /// Eklenemeyenler (ör. "Bu dosya türü desteklenmiyor: notlar.txt").
     pub problems: Vec<String>,
 }
 
@@ -105,6 +121,48 @@ impl LibraryService {
         };
         self.request_scan();
         Ok(folder)
+    }
+
+    /// Pencereye bırakılanları kütüphaneye ekler: klasörler ve şarkılar kaynak olur,
+    /// şarkılar ayrıca çalınmak üzere bırakılış sırasıyla döndürülür.
+    ///
+    /// Dosya mı klasör mü olduğu diskte denetlenir (uzantıya bakılmaz). Zaten
+    /// kütüphanede olan şarkı yine çalınır. Biri eklenemese de diğerleri eklenir;
+    /// her sorun kullanıcıya gösterilecek bir cümle olarak döner.
+    pub fn add_dropped(&self, paths: &[PathBuf]) -> DropOutcome {
+        let mut outcome = DropOutcome::default();
+        for path in paths {
+            let name = path
+                .file_name()
+                .map_or_else(|| path.to_string_lossy(), |n| n.to_string_lossy())
+                .into_owned();
+            let is_track = path.is_file();
+            if is_track && !scan::is_audio(path) {
+                outcome
+                    .problems
+                    .push(LibraryError::UnsupportedFile(name).to_string());
+                continue;
+            }
+            if !is_track && !path.is_dir() {
+                // Ör. zip içinden ya da taşınmış dosya: diskte yok.
+                outcome
+                    .problems
+                    .push(LibraryError::FolderMissing(name).to_string());
+                continue;
+            }
+            if is_track {
+                outcome.tracks.push(path.to_string_lossy().into_owned());
+            }
+            match self.add_folder(path) {
+                Ok(_) if is_track => outcome.added_tracks += 1,
+                Ok(_) => outcome.added_folders += 1,
+                Err(LibraryError::FolderExists | LibraryError::AlreadyCovered(_)) => {
+                    outcome.already += 1;
+                }
+                Err(error) => outcome.problems.push(error.to_string()),
+            }
+        }
+        outcome
     }
 
     pub fn remove_folder(&self, id: i64) -> Result<(), LibraryError> {
@@ -245,6 +303,51 @@ mod tests {
         assert!(matches!(error, LibraryError::UnsupportedFile(_)));
         assert!(error.to_string().contains("notlar.txt"));
         assert!(service.status().unwrap().folders.is_empty());
+    }
+
+    #[test]
+    fn birakilanlar_eklenir_sarkilar_calinmak_uzere_doner() {
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let dir = folder_with_songs();
+        let elsewhere = temp_path("servis-birakilan");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let song = elsewhere.join("Gece Otoyolu.FLAC");
+        std::fs::copy(dir.join("uc-uc-ton.flac"), &song).unwrap();
+        // Desteklenmeyen tür: eskiden uzantı listede yok diye klasör sanılıyordu.
+        let wma = elsewhere.join("Eski Kayıt.wma");
+        std::fs::write(&wma, "değil").unwrap();
+        // Zip içinden sürüklenen dosya gibi diskte olmayan yol.
+        let missing = elsewhere.join("yok.mp3");
+
+        let outcome = service.add_dropped(&[dir.clone(), wma, song.clone(), missing]);
+        assert_eq!(outcome.tracks, vec![song.to_string_lossy().into_owned()]);
+        assert_eq!((outcome.added_folders, outcome.added_tracks), (1, 1));
+        assert_eq!(outcome.already, 0);
+        assert_eq!(outcome.problems.len(), 2, "{:?}", outcome.problems);
+        assert_eq!(
+            outcome.problems[0],
+            "Bu dosya türü desteklenmiyor: Eski Kayıt.wma"
+        );
+        assert!(outcome.problems[1].contains("yok.mp3"));
+        wait_idle(&service);
+        let status = service.status().unwrap();
+        assert_eq!(status.folders.len(), 2);
+        assert_eq!(status.track_count, 3);
+
+        // Zaten kütüphanede olan şarkılar yine çalınır, iki kez eklenmez.
+        let inside = dir.join("uc-uc-ton.mp3");
+        let again = service.add_dropped(&[song.clone(), inside.clone(), dir]);
+        assert_eq!(
+            again.tracks,
+            vec![
+                song.to_string_lossy().into_owned(),
+                inside.to_string_lossy().into_owned()
+            ]
+        );
+        assert_eq!((again.added_folders, again.added_tracks), (0, 0));
+        assert_eq!(again.already, 3);
+        assert!(again.problems.is_empty(), "{:?}", again.problems);
+        assert_eq!(service.status().unwrap().folders.len(), 2);
     }
 
     #[test]

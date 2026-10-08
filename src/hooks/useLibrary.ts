@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EMPTY_LIBRARY,
+  addDroppedPaths,
   addLibraryFolder,
   errorMessage,
   getLibraryStatus,
@@ -10,6 +11,7 @@ import {
   removeLibraryFolder,
   rescanLibrary,
   searchLibrary,
+  type DropOutcome,
   type LibraryStatus,
   type LibraryTrack,
 } from "../lib/backend";
@@ -33,8 +35,8 @@ export interface LibraryControls {
   addFolder: () => Promise<void>;
   /** Şarkı seçme penceresini açar; seçilen şarkıları tek tek kütüphaneye ekler. */
   addFiles: (extensions: string[]) => Promise<void>;
-  /** Yolu bilinen klasörü ekler (ör. pencereye sürüklenen). */
-  addFolderPath: (path: string) => Promise<void>;
+  /** Pencereye bırakılan şarkıları ve klasörleri ekler; sonucu döndürür (hata fırlatabilir). */
+  addDropped: (paths: string[]) => Promise<DropOutcome>;
   removeFolder: (id: number) => Promise<void>;
   rescan: () => Promise<void>;
 }
@@ -122,7 +124,14 @@ export function useLibrary(): LibraryControls {
     }
   }, [available, apply]);
 
-  const addFolderPath = useCallback((path: string) => apply(() => addLibraryFolder(path)), [apply]);
+  const addDropped = useCallback(
+    async (paths: string[]) => {
+      const outcome = await addDroppedPaths(paths);
+      await refreshStatus();
+      return outcome;
+    },
+    [refreshStatus],
+  );
 
   const addFiles = useCallback(
     async (extensions: string[]) => {
@@ -160,7 +169,7 @@ export function useLibrary(): LibraryControls {
     error,
     addFolder,
     addFiles,
-    addFolderPath,
+    addDropped,
     removeFolder,
     rescan,
   };

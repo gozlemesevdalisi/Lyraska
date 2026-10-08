@@ -1,5 +1,7 @@
 // node_modules altındaki bütün paketlerin lisanslarını denetler.
-// Kural: AGPL lisanslı ya da ticari kullanımı yasaklayan paket kullanılmaz.
+// Kural: AGPL lisanslı ya da ticari kullanımı yasaklayan paket kullanılmaz. Lisansı
+// belirtilmemiş ya da "UNLICENSED" (izin verilmemiş, tescilli) paket de kabul edilmez:
+// lisans eklemeden önce doğrulanır (CLAUDE.md).
 // Kullanım: npm run check:licenses
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
@@ -17,6 +19,7 @@ const FORBIDDEN = [
   /NonCommercial/i,
   /PolyForm-Noncommercial/i,
   /Prosperity/i,
+  /^UNLICENSED$/i,
 ];
 
 function licenseOf(pkg) {
@@ -55,16 +58,18 @@ for (const dir of packageDirs("node_modules")) {
   const options = license.replace(/[()]/g, "").split(/\s+OR\s+/i);
   if (options.every((option) => FORBIDDEN.some((re) => re.test(option)))) {
     problems.push(`${pkg.name}@${pkg.version}: ${license}`);
-  } else if (license === "BİLİNMİYOR") {
+  } else if (license === "BİLİNMİYOR" || /^SEE LICENSE IN/i.test(license)) {
     unknown.push(`${pkg.name}@${pkg.version}`);
   }
 }
 
 if (unknown.length > 0) {
-  console.warn(`Uyarı: lisansı belirtilmemiş ${unknown.length} paket:\n  ${unknown.join("\n  ")}`);
+  console.error(`Lisansı belirtilmemiş ${unknown.length} paket:\n  ${unknown.join("\n  ")}`);
 }
 if (problems.length > 0) {
   console.error(`Yasak lisanslı paketler bulundu:\n  ${problems.join("\n  ")}`);
+}
+if (problems.length > 0 || unknown.length > 0) {
   process.exit(1);
 }
 console.log(`Lisans denetimi tamam: ${count} paket incelendi, yasak lisans yok.`);

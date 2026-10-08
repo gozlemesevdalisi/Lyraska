@@ -82,6 +82,21 @@ pub fn run() {
             });
             Ok(())
         })
+        // Sürükle-bırak sorunlarını ayırt etmek için: Windows dosyaları pencereye
+        // ulaştırıyor mu? (Arayüzün bırakılanları işlediği ayrıca yazılır.)
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::DragDrop(drag) = event {
+                match drag {
+                    tauri::DragDropEvent::Enter { paths, .. } => {
+                        diagnostics::info(&format!("Pencereye {} öğe sürükleniyor", paths.len()));
+                    }
+                    tauri::DragDropEvent::Drop { paths, .. } => {
+                        diagnostics::info(&format!("Pencereye {} öğe bırakıldı", paths.len()));
+                    }
+                    _ => {}
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::open_track,
@@ -92,6 +107,7 @@ pub fn run() {
             commands::visual_frame,
             commands::library_status,
             commands::library_add_folder,
+            commands::library_add_dropped,
             commands::library_remove_folder,
             commands::library_rescan,
             commands::library_search,

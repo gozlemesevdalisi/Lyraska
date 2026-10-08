@@ -175,6 +175,19 @@ export interface LibraryStatus {
   problems: string[];
 }
 
+/** Rust tarafındaki `library::service::DropOutcome`: pencereye bırakılanların sonucu. */
+export interface DropOutcome {
+  /** Çalınacak şarkılar, bırakılış sırasıyla (zaten kütüphanede olanlar dahil). */
+  tracks: string[];
+  addedTracks: number;
+  /** Yeni eklenen klasörler (şarkıları arka planda taranır). */
+  addedFolders: number;
+  /** Zaten kütüphanede olanlar (şarkı ya da klasör). */
+  already: number;
+  /** Eklenemeyenler; her biri kullanıcıya gösterilecek bir cümle. */
+  problems: string[];
+}
+
 /** Rust tarafındaki `audio::eq::EqSettings`. */
 export interface EqSettings {
   enabled: boolean;
@@ -371,6 +384,14 @@ export function addLibraryFolder(path: string): Promise<LibraryStatus> {
   return invoke<LibraryStatus>("library_add_folder", { path });
 }
 
+/**
+ * Pencereye bırakılanları kütüphaneye ekler. Dosya mı klasör mü olduğuna çekirdek
+ * diskte bakar; çalınacak şarkıları ve sorunları döndürür.
+ */
+export function addDroppedPaths(paths: string[]): Promise<DropOutcome> {
+  return invoke<DropOutcome>("library_add_dropped", { paths });
+}
+
 export function removeLibraryFolder(id: number): Promise<LibraryStatus> {
   return invoke<LibraryStatus>("library_remove_folder", { id });
 }
@@ -491,12 +512,32 @@ export async function pickHeadphoneProfile(): Promise<string | null> {
   return typeof selected === "string" ? selected : null;
 }
 
-/** Pencereye bırakılan dosyaları dinler. Dinlemeyi bırakmak için dönen fonksiyon çağrılır. */
-export async function onFileDrop(handler: (paths: string[]) => void): Promise<() => void> {
+/** Pencereye dosya sürükleme olaylarını dinleyen işlevler. */
+export interface DragDropHandlers {
+  /** Dosyalar pencerenin üstüne geldi (`true`) ya da gitti/bırakıldı (`false`). */
+  onHover: (hovering: boolean) => void;
+  /** Dosyalar bırakıldı. */
+  onDrop: (paths: string[]) => void;
+}
+
+/** Pencereye sürüklenen dosyaları dinler. Dinlemeyi bırakmak için dönen fonksiyon çağrılır. */
+export async function onDragDrop(handlers: DragDropHandlers): Promise<() => void> {
   if (!isTauri()) return () => {};
   const { getCurrentWebview } = await import("@tauri-apps/api/webview");
   return getCurrentWebview().onDragDropEvent((event) => {
-    if (event.payload.type === "drop") handler(event.payload.paths);
+    switch (event.payload.type) {
+      case "enter":
+      case "over":
+        handlers.onHover(true);
+        break;
+      case "leave":
+        handlers.onHover(false);
+        break;
+      case "drop":
+        handlers.onHover(false);
+        handlers.onDrop(event.payload.paths);
+        break;
+    }
   });
 }
 

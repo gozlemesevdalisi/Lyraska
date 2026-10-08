@@ -21,7 +21,7 @@ use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
 use crate::audio::player::{PlaybackStatus, Player};
-use crate::library::{LibraryService, LibraryStatus, TrackRow};
+use crate::library::{DropOutcome, LibraryService, LibraryStatus, TrackRow};
 use crate::settings::SettingsStore;
 use crate::visual_bridge::VisualFrame;
 use crate::{analysis, audio, diagnostics, visual_bridge};
@@ -210,6 +210,29 @@ pub async fn library_add_folder(
     let service = library.get()?;
     service.add_folder(&path).map_err(reported)?;
     service.status().map_err(reported)
+}
+
+/// Pencereye bırakılan şarkıları ve klasörleri kütüphaneye ekler; çalınacak şarkıları döndürür.
+#[tauri::command]
+pub async fn library_add_dropped(
+    paths: Vec<PathBuf>,
+    library: State<'_, LibraryState>,
+) -> Result<DropOutcome, String> {
+    let outcome = library.get()?.add_dropped(&paths);
+    diagnostics::info(&format!(
+        "Bırakılanlar işlendi: {} öğe; {} şarkı çalınacak, {} şarkı ve {} klasör eklendi, \
+         {} zaten kütüphanede, {} sorun",
+        paths.len(),
+        outcome.tracks.len(),
+        outcome.added_tracks,
+        outcome.added_folders,
+        outcome.already,
+        outcome.problems.len(),
+    ));
+    for problem in &outcome.problems {
+        diagnostics::info(&format!("Bırakılan eklenemedi: {problem}"));
+    }
+    Ok(outcome)
 }
 
 /// Klasörü (ve şarkılarını) kütüphaneden çıkarır; diskteki dosyalara dokunmaz.

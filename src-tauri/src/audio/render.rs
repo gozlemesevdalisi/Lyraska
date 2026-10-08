@@ -96,7 +96,11 @@ impl Renderer {
             if source.slots() < self.channels {
                 self.frame.fill(0.0);
                 self.write_frame(frame);
-                if !paused {
+                if paused {
+                    // Veri yokken çıkış zaten sessiz: duraklatma geçişi bitmiş sayılır
+                    // (devam edince ses yine yumuşakça açılır).
+                    self.gain = 0.0;
+                } else {
                     outcome.frames_missing += 1;
                 }
                 continue;
@@ -235,6 +239,17 @@ mod tests {
         let d = renderer.latency_frames();
         assert_eq!(out[0], 0.0);
         assert!((out[29] - (0.69 - 0.01 * d as f32)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn duraklatilmisken_veri_yoksa_gecis_bitmis_sayilir() {
+        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
+        let mut source = filled(&[0.5; 40]);
+        let mut out = [0.0f32; 40];
+        renderer.render(&mut source, &mut out, false); // tam ses, tampon boşaldı
+        assert_eq!(renderer.gain(), 1.0);
+        renderer.render(&mut source, &mut out, true);
+        assert_eq!(renderer.gain(), 0.0);
     }
 
     #[test]

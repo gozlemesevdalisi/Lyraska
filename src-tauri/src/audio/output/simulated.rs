@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use rtrb::Consumer;
 
-use super::{DeviceInfo, OutputSpec};
+use super::{DeviceInfo, FadeWatch, OutputSpec};
 use crate::audio::player::SharedState;
 use crate::audio::render::Renderer;
 use crate::audio::{AudioError, Sample};
@@ -57,6 +57,7 @@ pub fn spawn(
             );
             let mut out = vec![0.0f32; frames_per_step * spec.channels];
             let mut consumed = 0u64;
+            let mut fade = FadeWatch::default();
             while !shared.stop.load(Ordering::Acquire) {
                 if shared.decode_done.load(Ordering::Acquire) && source.is_empty() {
                     shared.ended.store(true, Ordering::Release);
@@ -66,6 +67,10 @@ pub fn spawn(
                 let outcome = renderer.render(&mut source, &mut out, paused);
                 consumed += outcome.frames_consumed as u64;
                 shared.output_heard.store(consumed, Ordering::Release);
+                // Sanal aygıtın arabelleği yok: yazılan hemen "çalınır".
+                let silent = paused && renderer.gain() == 0.0;
+                fade.wrote(frames_per_step, silent, renderer.latency_frames());
+                shared.faded_out.store(fade.faded_out(0), Ordering::Release);
                 std::thread::sleep(STEP_SLEEP);
             }
         })

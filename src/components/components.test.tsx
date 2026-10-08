@@ -23,7 +23,12 @@ const backend = vi.hoisted(() => ({
   pickFiles: vi.fn(),
   open: vi.fn(),
   pick: vi.fn(),
-  drop: null as ((paths: string[]) => void) | null,
+  drag: null as import("../lib/backend").DragDropHandlers | null,
+  /** Sürükle-bırak dinlemesi kurulamazsa verilecek hata. */
+  dragFailure: null as Error | null,
+  dropped: vi.fn(),
+  dropOutcome: null as import("../lib/backend").DropOutcome | null,
+  logError: vi.fn(),
   setEq: vi.fn(),
   headphone: null as import("../lib/backend").HeadphoneState | null,
   pickProfile: vi.fn(),
@@ -69,12 +74,26 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return current().track;
     },
     pickAudioFile: async (extensions: string[]) => backend.pick(extensions),
-    onFileDrop: async (handler: (paths: string[]) => void) => {
-      backend.drop = handler;
+    onDragDrop: async (handlers: import("../lib/backend").DragDropHandlers) => {
+      if (backend.dragFailure) throw backend.dragFailure;
+      backend.drag = handlers;
       return () => {
-        if (backend.drop === handler) backend.drop = null;
+        if (backend.drag === handlers) backend.drag = null;
       };
     },
+    addDroppedPaths: async (paths: string[]) => {
+      backend.dropped(paths);
+      return (
+        backend.dropOutcome ?? {
+          tracks: [],
+          addedTracks: 0,
+          addedFolders: 0,
+          already: 0,
+          problems: [],
+        }
+      );
+    },
+    logFrontendError: async (message: string) => backend.logError(message),
     getLibraryStatus: async () => backend.library ?? actual.EMPTY_LIBRARY,
     searchLibrary: async (query: string) => {
       backend.search(query);
@@ -189,7 +208,9 @@ beforeEach(() => {
   backend.bands = null;
   backend.library = null;
   backend.tracks = [];
-  backend.drop = null;
+  backend.drag = null;
+  backend.dragFailure = null;
+  backend.dropOutcome = null;
   vi.clearAllMocks();
 });
 
@@ -377,38 +398,87 @@ describe("kütüphane", () => {
     expect(await screen.findByText(/Bu zaten kütüphanede/)).toBeInTheDocument();
   });
 
-  it("program bilgisi gelmeden bırakılan şarkılar bekletilir, sonra çalınır", async () => {
+  it("sürüklerken pencerede 'bırakın' çerçevesi görünür", async () => {
+    backend.desktop = true;
+    const { container } = render(<App />);
+    await waitFor(() => expect(backend.drag).not.toBeNull());
+    const zone = container.querySelector(".drop-zone")!;
+    expect(zone).not.toHaveClass("is-active");
+    act(() => backend.drag!.onHover(true));
+    expect(zone).toHaveClass("is-active");
+    expect(zone).toHaveTextContent(/Bırakın/);
+    act(() => backend.drag!.onHover(false));
+    expect(zone).not.toHaveClass("is-active");
+  });
+
+  it("bırakılanları kütüphaneye ekler, şarkıları sırayla çalar ve sonucu bildirir", async () => {
+    backend.desktop = true;
+    backend.dropOutcome = {
+      tracks: ["C:\\İndirilenler\\a.mp3", "C:\\İndirilenler\\b.MP3"],
+      addedTracks: 2,
+      addedFolders: 1,
+      already: 0,
+      problems: [],
+    };
+    render(<App />);
+    await waitFor(() => expect(backend.drag).not.toBeNull());
+    const paths = ["C:\\Müzik\\Rock", "C:\\İndirilenler\\a.mp3", "C:\\İndirilenler\\b.MP3"];
+    await act(async () => backend.drag!.onDrop(paths));
+    // Dosya mı klasör mü olduğuna çekirdek karar verir: hepsi olduğu gibi gönderilir.
+    expect(backend.dropped).toHaveBeenCalledWith(paths);
+    await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
+    expect(backend.open).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "2 şarkı kütüphaneye eklendi · 1 klasör kütüphaneye eklendi, şarkıları taranıyor",
+    );
+  });
+
+  it("program bilgisi gelmeden bırakılan şarkı da hemen eklenip çalınır", async () => {
     backend.desktop = true;
     let release = () => {};
     backend.appInfoGate = new Promise<void>((resolve) => (release = resolve));
+    backend.dropOutcome = {
+      tracks: ["C:\\İndirilenler\\a.mp3"],
+      addedTracks: 1,
+      addedFolders: 0,
+      already: 0,
+      problems: [],
+    };
     render(<App />);
-    await waitFor(() => expect(backend.drop).not.toBeNull());
-    // Çekirdek hangi türleri çalabildiğini henüz bildirmedi: şarkı klasör sanılmamalı.
-    await act(async () => {
-      backend.drop!(["C:\\İndirilenler\\a.mp3"]);
-      await Promise.resolve();
-    });
-    expect(backend.addFolder).not.toHaveBeenCalled();
-    expect(backend.open).not.toHaveBeenCalled();
-    await act(async () => release());
+    await waitFor(() => expect(backend.drag).not.toBeNull());
+    await act(async () => backend.drag!.onDrop(["C:\\İndirilenler\\a.mp3"]));
     await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
-    expect(backend.addFolder).not.toHaveBeenCalled();
+    await act(async () => release());
     backend.appInfoGate = null;
   });
 
-  it("pencereye bırakılan klasörü kütüphaneye ekler, şarkıları sırayla çalar", async () => {
+  it("eklenemeyen dosyayı hangi sekmede olursa olsun bildirir", async () => {
     backend.desktop = true;
+    backend.dropOutcome = {
+      tracks: [],
+      addedTracks: 0,
+      addedFolders: 0,
+      already: 0,
+      problems: ["Bu dosya türü desteklenmiyor: Eski Kayıt.wma"],
+    };
     render(<App />);
-    await screen.findByText("Müziğinizi ekleyin");
-    // Desteklenen uzantılar yüklendikten sonra bırakılır.
-    await waitFor(() => expect(backend.drop).not.toBeNull());
-    await act(async () => {
-      backend.drop!(["C:\\Müzik\\Rock", "C:\\İndirilenler\\a.mp3", "C:\\İndirilenler\\b.MP3"]);
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(backend.addFolder).toHaveBeenCalledWith("C:\\Müzik\\Rock"));
-    await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
-    expect(backend.open).toHaveBeenCalledTimes(1);
+    await act(async () => fireEvent.click(await screen.findByRole("tab", { name: /Senkron/ })));
+    await waitFor(() => expect(backend.drag).not.toBeNull());
+    await act(async () => backend.drag!.onDrop(["C:\\Eski Kayıt.wma"]));
+    const notice = await screen.findByText("Bu dosya türü desteklenmiyor: Eski Kayıt.wma");
+    expect(notice).toHaveClass("is-problem");
+    expect(backend.open).not.toHaveBeenCalled();
+  });
+
+  it("sürükle-bırak dinlenemezse nedeni hata günlüğüne yazılır", async () => {
+    backend.desktop = true;
+    backend.dragFailure = new Error("izin yok: event.listen");
+    render(<App />);
+    await waitFor(() =>
+      expect(backend.logError).toHaveBeenCalledWith(
+        expect.stringContaining("Sürükle-bırak dinlenemedi: Error: izin yok: event.listen"),
+      ),
+    );
   });
 
   it("şarkıları listeler, çift tıklayınca çalar, bitince sıradakine geçer", async () => {
@@ -485,6 +555,47 @@ describe("kütüphane", () => {
     });
     expect(backend.open).toHaveBeenCalledTimes(opened);
     expect(screen.getByRole("button", { name: "Sonraki" })).toBeEnabled();
+  });
+
+  it("art arda boşluksuz geçişlerde sıra kaybolmaz, son şarkıya kadar sürer", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    backend.tracks = [
+      song(1, "Birinci Şarkı"),
+      song(2, "İkinci Şarkı"),
+      song(3, "Üçüncü Şarkı"),
+      song(4, "Dördüncü Şarkı"),
+    ];
+    const paths = backend.tracks.map((t) => t.path);
+    render(<App />);
+    backend.open.mockImplementation((path: string) => {
+      backend.status = {
+        ...playing,
+        positionSecs: 0,
+        track: { ...playing.track!, path, durationSecs: 200 },
+      };
+    });
+    const first = await screen.findByText("Birinci Şarkı");
+    await act(async () => fireEvent.doubleClick(first));
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(paths[1]));
+    const opened = backend.open.mock.calls.length;
+
+    // Çekirdek iki kez kendisi geçer: 1 → 2 → 3. Sıra her geçişte ilerlemeli.
+    for (const [now, upcoming] of [
+      [paths[1], paths[2]],
+      [paths[2], paths[3]],
+    ] as const) {
+      backend.status = {
+        ...backend.status!,
+        positionSecs: 0.2,
+        track: { ...backend.status!.track!, path: now! },
+      };
+      await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(upcoming), {
+        timeout: 2000,
+      });
+      expect(screen.getByRole("button", { name: "Sonraki" })).toBeEnabled();
+    }
+    expect(backend.open).toHaveBeenCalledTimes(opened);
   });
 
   it("arama kutusuna yazılanla arar ve klasör kaldırılabilir", async () => {

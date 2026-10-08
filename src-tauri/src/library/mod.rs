@@ -19,7 +19,7 @@ use std::path::{Component, Path};
 use thiserror::Error;
 
 pub use db::{FolderRow, Library, TrackRow};
-pub use service::{LibraryService, LibraryStatus};
+pub use service::{DropOutcome, LibraryService, LibraryStatus};
 
 /// Kütüphane hataları. Mesajlar doğrudan kullanıcıya gösterilir.
 #[derive(Debug, Error)]
