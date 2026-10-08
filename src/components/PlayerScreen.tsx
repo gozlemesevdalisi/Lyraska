@@ -14,6 +14,8 @@ import {
   BROWSER_FALLBACK,
   getAppInfo,
   onFileDrop,
+  errorMessage,
+  openLog,
   setNextTrack,
   type AppInfo,
   type LibraryTrack,
@@ -84,6 +86,7 @@ export function PlayerScreen() {
   // "EQ" ışığı: ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa yanar.
   const soundShaped = equalizer.active || headphone.active;
   const [deck, setDeck] = useState<Deck>("library");
+  const [logError, setLogError] = useState<string | null>(null);
   const [scene, setScene] = useState<Scene>(loadScene);
   const changeScene = () => {
     const next = nextScene(scene);
@@ -432,6 +435,19 @@ export function PlayerScreen() {
           <span>Ses motoru: {info.audioEngine}</span>
         )}
         {!player.available && <span>Ses çalmak için programı Windows'ta açın.</span>}
+        {player.available && (
+          <button
+            type="button"
+            className="status__link"
+            title="Hata ve çökme günlüğünü dosya gezgininde gösterir. Hata kaydı açarken bu dosyayı ekleyin."
+            onClick={() => {
+              openLog().catch((e) => setLogError(errorMessage(e)));
+            }}
+          >
+            Hata günlüğü
+          </button>
+        )}
+        {logError && <span className="status__warn">{logError}</span>}
       </footer>
     </main>
   );

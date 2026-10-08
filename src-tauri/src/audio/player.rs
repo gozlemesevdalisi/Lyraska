@@ -122,6 +122,9 @@ impl SharedState {
     /// İlk hatayı kaydeder (sonrakiler genellikle ilkinin sonucudur).
     pub fn fail(&self, message: String) {
         if let Ok(mut error) = self.error.lock() {
+            if error.is_none() {
+                crate::diagnostics::error(&format!("Çalma hatası: {message}"));
+            }
             error.get_or_insert(message);
         }
     }

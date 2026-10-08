@@ -190,6 +190,17 @@ export function stopPlayback(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("stop_playback");
 }
 
+/** Arayüzde oluşan hatayı çekirdeğin günlüğüne yazar (tarayıcı önizlemesinde yok sayılır). */
+export async function logFrontendError(message: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("log_frontend_error", { message });
+}
+
+/** Hata günlüğünü dosya gezgininde seçili olarak gösterir. */
+export async function openLog(): Promise<void> {
+  await invoke("open_log");
+}
+
 /** Boşluksuz geçiş için sıradaki şarkıyı çekirdeğe bildirir (`null`: sıra yok). */
 export async function setNextTrack(path: string | null): Promise<void> {
   if (!isTauri()) return;

@@ -196,6 +196,27 @@ body {
   color: var(--accent);
 }
 
+/* Durum satırındaki bağlantı görünümlü düğme ("Hata günlüğü"). */
+.status__link {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.status__link:hover {
+  color: var(--vfd);
+}
+
+.status__link:focus-visible {
+  outline: 2px solid var(--vfd);
+  outline-offset: 2px;
+}
+
 .knob {
   width: 30px;
   height: 30px;

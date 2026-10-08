@@ -7,10 +7,12 @@
 //! - [`library`]: müzik kütüphanesi (SQLite, klasör tarama, arama)
 //! - [`settings`]: kalıcı kullanıcı ayarları (ekolayzer vb.)
 //! - [`commands`]: arayüzün çağırabildiği Tauri komutları
+//! - [`diagnostics`]: yerel hata ve çökme günlüğü
 
 pub mod analysis;
 pub mod audio;
 pub mod commands;
+pub mod diagnostics;
 pub mod library;
 pub mod settings;
 pub mod visual_bridge;
@@ -24,6 +26,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::PlayerState::default())
         .setup(|app| {
+            // Hata ve çökme günlüğü en önce açılır: kurulumdaki hatalar da yazılsın.
+            if let Ok(dir) = app.path().app_data_dir() {
+                diagnostics::init(&dir.join("logs"));
+            }
             // Kütüphane uygulama veri klasöründe durur; açılır açılmaz arka planda güncellenir.
             let service = app
                 .path()
@@ -33,8 +39,9 @@ pub fn run() {
                     library::LibraryService::open(&dir.join("library.sqlite3"))
                         .map_err(|e| e.to_string())
                 });
-            if let Ok(service) = &service {
-                service.request_scan();
+            match &service {
+                Ok(service) => service.request_scan(),
+                Err(error) => diagnostics::error(&format!("Kütüphane açılamadı: {error}")),
             }
             app.manage(commands::LibraryState::new(service));
 
@@ -63,6 +70,8 @@ pub fn run() {
             commands::equalizer_get,
             commands::equalizer_set,
             commands::set_next_track,
+            commands::log_frontend_error,
+            commands::open_log,
             commands::headphone_get,
             commands::headphone_import,
             commands::headphone_set_enabled,

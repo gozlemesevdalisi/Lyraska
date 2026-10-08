@@ -27,6 +27,7 @@ const backend = vi.hoisted(() => ({
   pickProfile: vi.fn(),
   importProfile: vi.fn(),
   setNext: vi.fn(),
+  openLog: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -85,6 +86,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
       backend.setEq(settings);
       return actual.setEqualizer(settings);
     },
+    openLog: async () => backend.openLog(),
     setNextTrack: async (path: string | null) => {
       backend.setNext(path);
     },
@@ -665,5 +667,29 @@ describe("kulaklık düzeltmesi", () => {
     backend.pickProfile.mockResolvedValue("C:\\bozuk.txt");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
     expect(screen.getByText(/kulaklık düzeltmesi bulunamadı/)).toBeInTheDocument();
+  });
+});
+
+describe("hata günlüğü", () => {
+  afterEach(() => {
+    backend.desktop = false;
+    backend.openLog.mockReset();
+  });
+
+  it("programda düğmeyle açılır; açılamazsa nedenini söyler", async () => {
+    backend.desktop = true;
+    render(<App />);
+    const button = await screen.findByRole("button", { name: "Hata günlüğü" });
+    await act(async () => fireEvent.click(button));
+    expect(backend.openLog).toHaveBeenCalledTimes(1);
+
+    backend.openLog.mockRejectedValue("Hata günlüğü açılamadı: erişim yok");
+    await act(async () => fireEvent.click(button));
+    expect(screen.getByText("Hata günlüğü açılamadı: erişim yok")).toBeInTheDocument();
+  });
+
+  it("tarayıcı önizlemesinde gösterilmez", () => {
+    render(<App />);
+    expect(screen.queryByRole("button", { name: "Hata günlüğü" })).not.toBeInTheDocument();
   });
 });
