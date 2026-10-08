@@ -104,6 +104,12 @@ jobs:
         env:
           SCENE_BROWSER_CHANNEL: msedge
           SCENE_BROWSER_ARGS: --use-angle=d3d11 --ignore-gpu-blocklist
+      - name: Yedek çizim denetimi (Edge, WebGL kapalı)
+        run: npm run check:scenes
+        env:
+          SCENE_BROWSER_CHANNEL: msedge
+          SCENE_BROWSER_ARGS: --disable-webgl --disable-webgl2
+          SCENE_EXPECT: fallback
 
   windows:
     name: Windows kurulum dosyası

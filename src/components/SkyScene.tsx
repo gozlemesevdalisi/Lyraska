@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { VisualFrame } from "../lib/backend";
 import { SKY_AT_REST, bandEnergies, stepSky, type DirectorInput, type SkyState } from "../lib/sky";
+import { createSkyFallback } from "../lib/skyFallback";
 import { createSkyRenderer, type SkyRenderer } from "../lib/skyRenderer";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
 import { useVisualFeed } from "../hooks/useVisualFeed";
@@ -19,11 +20,13 @@ export interface SkySceneProps {
  * güçlendirir; vuruşlar ışıkların akışını hızlandırır. Görsel Yönetmen şarkıyı
  * önceden bildiği için perdelerin rengini bölüme göre seçer, droptan önce
  * ışıkları toplar ve drop anında açar. Ekran kartında (WebGL2) çizilir; WebGL2
- * yoksa durgun bir gök görünür.
+ * açılamazsa (neden hata günlüğüne yazılır) aynı gök 2D yedek çizimle görünür,
+ * o da olmazsa durgun bir gök.
  */
 export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const renderer = useRef<SkyRenderer | null>(null);
+  const fallbackRef = useRef<HTMLCanvasElement>(null);
+  const renderer = useRef<Pick<SkyRenderer, "draw"> | null>(null);
   const sky = useRef<SkyState>(SKY_AT_REST);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -31,8 +34,21 @@ export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const created = createSkyRenderer(canvas);
-    renderer.current = created;
     canvas.dataset.webgl = created ? "on" : "off";
+    renderer.current = created;
+    // Ekran kartı çizimi açılamadıysa: ayrı bir tuvalde 2D yedek çizim (WebGL bağlamı
+    // alınmış bir tuvalde 2D çizilemez).
+    const spare = fallbackRef.current;
+    const fallback = !created && spare ? createSkyFallback(spare) : null;
+    if (fallback && spare) {
+      renderer.current = fallback;
+      canvas.hidden = true;
+      spare.hidden = false;
+      spare.dataset.webgl = "off";
+      spare.dataset.fallback = "2d";
+      if (canvas.dataset.webglError) spare.dataset.webglError = canvas.dataset.webglError;
+      fallback.draw(sky.current); // oynatma başlamadan da gök görünsün
+    }
     return () => {
       created?.dispose();
       renderer.current = null;
@@ -63,6 +79,13 @@ export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
         className="sky-scene__canvas"
         role="img"
         aria-label="Gece göğü: müziğe göre dalgalanan kuzey ışıkları ve Lyra takımyıldızı"
+      />
+      <canvas
+        ref={fallbackRef}
+        className="sky-scene__canvas"
+        role="img"
+        aria-label="Gece göğü: müziğe göre dalgalanan kuzey ışıkları ve Lyra takımyıldızı"
+        hidden
       />
       <div className="sky-scene__center">{center}</div>
     </div>

@@ -14,11 +14,14 @@
 //   SCENE_BROWSER_CHANNEL  ör. "msedge" (kurulu tarayıcı)
 //   SCENE_BROWSER_PATH     tarayıcı dosyası (kanal verilmediyse)
 //   SCENE_BROWSER_ARGS     ek tarayıcı argümanları (boşlukla ayrılmış)
+//   SCENE_EXPECT           "webgl" (varsayılan) ya da "fallback": WebGL kapalı bir
+//                          tarayıcıda gece göğünün 2D yedek çizimle (Lyra dahil) göründüğü denetlenir
 
 import { chromium } from "playwright-core";
 import { preview } from "vite";
 
 const PORT = 4179;
+const EXPECT_FALLBACK = process.env.SCENE_EXPECT === "fallback";
 const URL = `http://localhost:${PORT}`;
 
 /** Tarayıcıda Tauri yerine geçen sahte çekirdek: 128 BPM'lik bir şarkı çalıyor. */
@@ -135,7 +138,9 @@ async function checkScene(browser, scene) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
   const problems = [];
   page.on("console", (m) => {
-    if (m.type() === "error") problems.push(`konsol: ${m.text()}`);
+    // Yedek çizim denetiminde WebGL'in açılamadığı bildirimi beklenen bir şeydir.
+    const expected = EXPECT_FALLBACK && m.text().includes("ekran kartında çizilemedi");
+    if (m.type() === "error" && !expected) problems.push(`konsol: ${m.text()}`);
   });
   page.on("pageerror", (e) => problems.push(`sayfa hatası: ${e}`));
   await page.addInitScript(
@@ -147,9 +152,10 @@ async function checkScene(browser, scene) {
   await page.keyboard.press("Space"); // çal
   await page.waitForTimeout(2500);
 
-  const canvas = page.locator("canvas").first();
+  const canvas = page.locator("canvas:not([hidden])").first();
   const state = await canvas.evaluate((c) => ({
     webgl: c.dataset.webgl,
+    fallback: c.dataset.fallback ?? null,
     error: c.dataset.webglError ?? null,
     gpu: c.dataset.gpu ?? null,
   }));
@@ -164,8 +170,11 @@ async function checkScene(browser, scene) {
   }
   const change = moved / first.pixels.length;
 
-  if (state.webgl !== "on")
+  if (EXPECT_FALLBACK) {
+    if (state.fallback !== "2d") problems.push("2D yedek çizim devreye girmedi");
+  } else if (state.webgl !== "on") {
     problems.push(`WebGL2 çizimi açılmadı: ${state.error ?? "neden bilinmiyor"}`);
+  }
   if (first.spread < 0.01) problems.push(`görüntü düz/boş (sapma ${first.spread.toFixed(4)})`);
   if (change < 0.003) {
     problems.push(`görüntü hareket etmiyor (değişen nokta %${(change * 100).toFixed(2)})`);
@@ -174,7 +183,7 @@ async function checkScene(browser, scene) {
   if (extra) problems.push(extra);
 
   console.log(
-    `${scene.name}: WebGL ${state.webgl} · ekran kartı: ${state.gpu ?? "-"} · ${first.width}×${first.height} · ` +
+    `${scene.name}: WebGL ${state.webgl}${state.fallback ? ` (yedek: ${state.fallback})` : ""} · ekran kartı: ${state.gpu ?? "-"} · ${first.width}×${first.height} · ` +
       `ortalama ${first.mean.toFixed(4)} · sapma ${first.spread.toFixed(4)} · ` +
       `sağ üst en parlak ${first.topRight.max.toFixed(3)} · orta ${first.middle.mean.toFixed(4)} · ` +
       `değişen nokta %${(change * 100).toFixed(1)}`,
@@ -191,7 +200,9 @@ const browser = await chromium.launch({ channel, executablePath, args });
 console.log(`Tarayıcı: ${browser.version()} ${args.length ? `(${args.join(" ")})` : ""}`);
 let problems = [];
 try {
-  for (const scene of SCENES) problems = problems.concat(await checkScene(browser, scene));
+  // Yedek çizim yalnızca gece göğünde var (Lyra orada).
+  const scenes = EXPECT_FALLBACK ? SCENES.filter((s) => s.id === "sky") : SCENES;
+  for (const scene of scenes) problems = problems.concat(await checkScene(browser, scene));
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));
@@ -200,4 +211,8 @@ if (problems.length > 0) {
   console.error("\nSahne denetimi BAŞARISIZ:\n" + problems.map((p) => `  - ${p}`).join("\n"));
   process.exit(1);
 }
-console.log("\nSahne denetimi tamam: sahneler ekran kartında çiziliyor.");
+console.log(
+  EXPECT_FALLBACK
+    ? "\nSahne denetimi tamam: WebGL olmadan da gece göğü ve Lyra görünüyor."
+    : "\nSahne denetimi tamam: sahneler ekran kartında çiziliyor.",
+);
