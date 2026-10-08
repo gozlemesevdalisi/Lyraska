@@ -7,6 +7,7 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
 
 use super::{search_key, LibraryError};
+use crate::analysis::cache::{self, ANALYSIS_VERSION};
 use crate::audio::decode::TrackInfo;
 
 /// Şema sürümü; yapı değişince artırılır ve göç adımı eklenir.
@@ -65,14 +66,13 @@ pub struct TrackRow {
     pub track_number: Option<u32>,
     pub duration_secs: Option<f64>,
     pub codec: String,
+    /// Tempo (önbellekteki geçerli analizden); analiz edilmediyse ya da ritim yoksa `None`.
+    pub bpm: Option<f64>,
+    /// Geçerli bir analizi var mı (ritimsiz şarkılar da analiz edilmiş sayılır).
+    pub analyzed: bool,
 }
 
-/// Bir dosyanın değişip değişmediğini anlamak için boyutu ve değişme zamanı.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FileStamp {
-    pub size: u64,
-    pub modified: i64,
-}
+pub use crate::analysis::cache::FileStamp;
 
 pub struct Library {
     conn: Connection,
@@ -97,6 +97,8 @@ impl Library {
             "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;",
         )?;
         conn.execute_batch(SCHEMA)?;
+        // Analiz önbelleğinin tablosu: listedeki BPM sütunu buradan okunur.
+        conn.execute_batch(cache::SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn })
     }
@@ -150,6 +152,16 @@ impl Library {
         let n: i64 = self
             .conn
             .query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0))?;
+        Ok(n as usize)
+    }
+
+    /// Geçerli (dosyası ve analiz sürümü değişmemiş) analizi olan şarkı sayısı.
+    pub fn analyzed_count(&self) -> Result<usize, LibraryError> {
+        let n: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM tracks t {VALID_ANALYSIS_JOIN}"),
+            [ANALYSIS_VERSION],
+            |r| r.get(0),
+        )?;
         Ok(n as usize)
     }
 
@@ -232,22 +244,25 @@ impl Library {
             .split_whitespace()
             .map(|w| format!("%{}%", escape_like(w)))
             .collect();
-        let mut sql = String::from(
-            "SELECT id, path, COALESCE(title, file_name), artist, album, track_number,
-                    duration_secs, codec
-             FROM tracks",
+        // ?1 analiz sürümü; arama kelimeleri ?2'den başlar.
+        let mut sql = format!(
+            "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
+                    t.track_number, t.duration_secs, t.codec, a.bpm, a.path IS NOT NULL
+             FROM tracks t LEFT {VALID_ANALYSIS_JOIN}"
         );
         for i in 0..words.len() {
             sql.push_str(if i == 0 { " WHERE " } else { " AND " });
-            sql.push_str(&format!("search LIKE ?{} ESCAPE '\\'", i + 1));
+            sql.push_str(&format!("t.search LIKE ?{} ESCAPE '\\'", i + 2));
         }
         sql.push_str(&format!(
-            " ORDER BY sort_key LIMIT {}",
+            " ORDER BY t.sort_key LIMIT {}",
             limit.min(MAX_RESULTS)
         ));
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_from_iter(words.iter()), |r| {
+        let mut values: Vec<rusqlite::types::Value> = vec![ANALYSIS_VERSION.into()];
+        values.extend(words.into_iter().map(rusqlite::types::Value::from));
+        let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
             Ok(TrackRow {
                 id: r.get(0)?,
                 path: r.get(1)?,
@@ -257,11 +272,17 @@ impl Library {
                 track_number: r.get(5)?,
                 duration_secs: r.get(6)?,
                 codec: r.get(7)?,
+                bpm: r.get(8)?,
+                analyzed: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
+
+/// Şarkıyı (`t`) geçerli analiziyle (`a`) eşleyen JOIN; `?1` analiz sürümüdür.
+const VALID_ANALYSIS_JOIN: &str = "JOIN analyses a ON a.path = t.path
+    AND a.file_size = t.file_size AND a.modified = t.modified AND a.version = ?1";
 
 /// LIKE kalıbındaki özel karakterleri kaçırır.
 fn escape_like(word: &str) -> String {
@@ -420,6 +441,75 @@ mod tests {
         // LIKE özel karakterleri kaçırılır: "_" her karakterle eşleşmemeli.
         assert_eq!(lib.search("z_d", 100).unwrap().len(), 1);
         assert!(lib.search("%", 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn bpm_yalnizca_gecerli_analizden_gelir() {
+        let lib = sample();
+        let analyze = |path: &str, size: i64, version: i64, bpm: Option<f64>| {
+            lib.conn
+                .execute(
+                    "INSERT OR REPLACE INTO analyses
+                         (path, file_size, modified, version, frames, bpm, levels, meters, onset)
+                     VALUES (?1, ?2, ?3, ?4, 0, ?5, x'', x'', x'')",
+                    params![path, size, STAMP.modified, version, bpm],
+                )
+                .unwrap();
+        };
+        let row = |path: &str| {
+            lib.search("", 100)
+                .unwrap()
+                .into_iter()
+                .find(|t| t.path == path)
+                .unwrap()
+        };
+        assert_eq!(
+            (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
+            (None, false)
+        );
+        assert_eq!(lib.analyzed_count().unwrap(), 0);
+
+        analyze(
+            "/muzik/a.flac",
+            STAMP.size as i64,
+            ANALYSIS_VERSION,
+            Some(128.0),
+        );
+        analyze("/muzik/b.flac", STAMP.size as i64, ANALYSIS_VERSION, None); // ritimsiz
+        assert_eq!(
+            (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
+            (Some(128.0), true)
+        );
+        assert_eq!(
+            (row("/muzik/b.flac").bpm, row("/muzik/b.flac").analyzed),
+            (None, true)
+        );
+        assert_eq!(lib.analyzed_count().unwrap(), 2);
+        // Arama da çalışır: kelime parametreleri analiz sürümünden sonra gelir.
+        assert_eq!(lib.search("mayin", 100).unwrap()[0].bpm, Some(128.0));
+
+        // Dosya değişti ya da analiz sürümü eskidi: BPM gösterilmez.
+        analyze(
+            "/muzik/a.flac",
+            STAMP.size as i64 + 1,
+            ANALYSIS_VERSION,
+            Some(128.0),
+        );
+        analyze(
+            "/muzik/b.flac",
+            STAMP.size as i64,
+            ANALYSIS_VERSION - 1,
+            Some(90.0),
+        );
+        assert_eq!(
+            (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
+            (None, false)
+        );
+        assert_eq!(
+            (row("/muzik/b.flac").bpm, row("/muzik/b.flac").analyzed),
+            (None, false)
+        );
+        assert_eq!(lib.analyzed_count().unwrap(), 0);
     }
 
     #[test]

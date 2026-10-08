@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 use walkdir::WalkDir;
@@ -212,18 +211,7 @@ fn find_audio_files(root: &Path) -> Vec<(PathBuf, FileStamp)> {
         .filter(|entry| entry.file_type().is_file() && is_audio(entry.path()))
         .filter_map(|entry| {
             let meta = entry.metadata().ok()?;
-            let modified = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_secs() as i64);
-            Some((
-                entry.into_path(),
-                FileStamp {
-                    size: meta.len(),
-                    modified,
-                },
-            ))
+            Some((entry.into_path(), FileStamp::of_metadata(&meta)))
         })
         .collect()
 }

@@ -47,6 +47,26 @@ pub fn run() {
             }
             app.manage(commands::LibraryState::new(service));
 
+            // Şarkı haritası önbelleği kütüphaneyle aynı veritabanında; kütüphane arka
+            // planda, düşük öncelikle analiz edilir (önce çalan, sonra sıradaki şarkı).
+            let background = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|dir| {
+                    analysis::cache::AnalysisCache::open(&dir.join("library.sqlite3"))
+                        .map_err(|e| e.to_string())
+                })
+                .map_err(|e| diagnostics::error(&format!("Analiz önbelleği açılamadı: {e}")))
+                .ok()
+                .and_then(|cache| {
+                    commands::start_analysis_cache(
+                        &app.state::<commands::PlayerState>(),
+                        std::sync::Arc::new(cache),
+                    )
+                });
+            app.manage(commands::BackgroundState(background));
+
             // Ayarlar (ekolayzer) kaldığı gibi geri yüklenir.
             let store = match app.path().app_data_dir() {
                 Ok(dir) => settings::SettingsStore::open(&dir.join("settings.json")),
@@ -97,6 +117,7 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<commands::LibraryState>().shutdown();
+                app.state::<commands::BackgroundState>().shutdown();
             }
         });
 }

@@ -16,7 +16,7 @@
 //! - **Enerji:** Ses yüksekliğinin 1 sn'lik ortalaması; şarkının en sessiz %5'i
 //!   0, en yüksek %5'i 1 olacak biçimde.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::beats::BeatGrid;
 
@@ -35,7 +35,7 @@ const DROP_MIN_BASS_JUMP: f64 = 0.12;
 const DROP_MIN_GAP_BARS: usize = 16;
 
 /// Şarkının yapısı.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SongMap {
     /// Ölçüdeki vuruş sayısı (3 ya da 4).
@@ -51,7 +51,7 @@ pub struct SongMap {
     pub energy: Vec<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     pub start: f64,

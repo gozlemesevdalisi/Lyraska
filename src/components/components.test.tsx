@@ -329,10 +329,14 @@ describe("kütüphane", () => {
     trackNumber: id,
     durationSecs: 200,
     codec: "flac",
+    // 1. şarkı 128 BPM, 2. ritimsiz, 3. henüz analiz edilmedi.
+    bpm: id === 1 ? 128.4 : null,
+    analyzed: id !== 3,
   });
   const library = {
     folders: [{ id: 7, path: "C:\\Müzik" }],
     trackCount: 3,
+    analyzed: 2,
     scan: { scanning: false, found: 3, processed: 3, current: null },
     problems: [],
   };
@@ -389,6 +393,15 @@ describe("kütüphane", () => {
     backend.tracks = [song(1, "Mayın Tarlası"), song(2, "Bir Kedi Gördüm"), song(3, "Hoşçakal")];
     render(<App />);
     const first = await screen.findByText("Mayın Tarlası");
+
+    // BPM sütunu ve arka plan analizinin ilerlemesi.
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows.map((row) => row.querySelector(".library__bpm")?.textContent)).toEqual([
+      "128",
+      "—",
+      "",
+    ]);
+    expect(screen.getByText(/Şarkı haritası: 2 \/ 3 şarkı analiz edildi/)).toBeInTheDocument();
 
     // Çift tıklayınca çalar.
     backend.open.mockImplementation((path: string) => {

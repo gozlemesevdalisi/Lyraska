@@ -1,6 +1,6 @@
 [package]
 name = "lyraska"
-version = "0.0.19"
+version = "0.0.20"
 description = "Görselleri şarkıyı önceden bilen, çevrimdışı müzik çalar"
 authors = ["Lyraska geliştiricileri"]
 license = "GPL-3.0-only"
@@ -28,6 +28,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 walkdir = "2"
 serde_json = "1"
 rubato = "5"
+miniz_oxide = "0.8"
 
 [profile.release]
 codegen-units = 1
