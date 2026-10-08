@@ -136,6 +136,11 @@ export function PlayerScreen() {
   const statusPath = status.track?.path ?? null;
   // Boşluksuz geçişte çekirdek sıradakine kendisi geçer: sıra buna göre ilerlemiş sayılır.
   const activeQueue = followQueue(queue, statusPath);
+  // İlerleyen sıra saklanır: yoksa ikinci geçişte sıra eski yerinden bakar, çalan
+  // şarkıyı tanımaz ve çalma o şarkının sonunda durur.
+  useEffect(() => {
+    if (activeQueue !== queue) setQueue(activeQueue);
+  }, [activeQueue, queue]);
 
   // Sıradaki şarkı çekirdeğe önceden bildirilir: şarkı bitince ses kesilmeden ona geçer.
   const upcoming = upcomingPath(activeQueue, statusPath);

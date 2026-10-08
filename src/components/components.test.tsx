@@ -557,6 +557,47 @@ describe("kütüphane", () => {
     expect(screen.getByRole("button", { name: "Sonraki" })).toBeEnabled();
   });
 
+  it("art arda boşluksuz geçişlerde sıra kaybolmaz, son şarkıya kadar sürer", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    backend.tracks = [
+      song(1, "Birinci Şarkı"),
+      song(2, "İkinci Şarkı"),
+      song(3, "Üçüncü Şarkı"),
+      song(4, "Dördüncü Şarkı"),
+    ];
+    const paths = backend.tracks.map((t) => t.path);
+    render(<App />);
+    backend.open.mockImplementation((path: string) => {
+      backend.status = {
+        ...playing,
+        positionSecs: 0,
+        track: { ...playing.track!, path, durationSecs: 200 },
+      };
+    });
+    const first = await screen.findByText("Birinci Şarkı");
+    await act(async () => fireEvent.doubleClick(first));
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(paths[1]));
+    const opened = backend.open.mock.calls.length;
+
+    // Çekirdek iki kez kendisi geçer: 1 → 2 → 3. Sıra her geçişte ilerlemeli.
+    for (const [now, upcoming] of [
+      [paths[1], paths[2]],
+      [paths[2], paths[3]],
+    ] as const) {
+      backend.status = {
+        ...backend.status!,
+        positionSecs: 0.2,
+        track: { ...backend.status!.track!, path: now! },
+      };
+      await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(upcoming), {
+        timeout: 2000,
+      });
+      expect(screen.getByRole("button", { name: "Sonraki" })).toBeEnabled();
+    }
+    expect(backend.open).toHaveBeenCalledTimes(opened);
+  });
+
   it("arama kutusuna yazılanla arar ve klasör kaldırılabilir", async () => {
     backend.desktop = true;
     backend.library = library;
