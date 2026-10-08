@@ -572,9 +572,15 @@ impl Player {
             return Ok(());
         };
         match session.state() {
-            PlaybackState::Ended | PlaybackState::Error => {
+            PlaybackState::Ended => {
                 let path = session.now_playing().0.path;
                 self.load(&path, true).map(|_| ())
+            }
+            PlaybackState::Error => {
+                // Ör. aygıt koptu (kulaklık çıkarıldı): o anki varsayılan aygıtta kalınan
+                // yerden sürer.
+                let (track, position) = session.now_playing();
+                self.restart(&track.path, true, Some(position)).map(|_| ())
             }
             _ => {
                 session.shared.paused.store(false, Ordering::Release);
@@ -1253,6 +1259,24 @@ mod tests {
             player.state(),
             PlaybackState::Playing | PlaybackState::Ended
         ));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn aygit_hatasindan_sonra_cal_kaldigi_yerden_surer() {
+        // Ör. kulaklık çıkarılınca aygıta yazılamaz ve oturum hata durumuna geçer.
+        let path = ramp_song("aygit-hatasi.wav");
+        let mut player = Player::new();
+        player.load(&path, false).unwrap();
+        player.seek(1.2).unwrap();
+        let session = player.session.as_ref().unwrap();
+        session.shared.fail("Ses aygıtına yazılamadı".to_owned());
+        assert_eq!(player.state(), PlaybackState::Error);
+
+        player.play().unwrap();
+        let session = player.session.as_ref().unwrap();
+        let start = session.shared.segments.lock().unwrap()[0].start_frame;
+        assert_eq!(start, 9_600, "baştan değil, kalınan yerden (1,2 sn)");
         std::fs::remove_file(path).ok();
     }
 
