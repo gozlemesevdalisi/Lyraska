@@ -21,6 +21,7 @@ pub mod decode;
 pub mod eq;
 pub mod limiter;
 pub mod output;
+pub mod peq;
 pub mod player;
 pub mod render;
 pub mod resample;

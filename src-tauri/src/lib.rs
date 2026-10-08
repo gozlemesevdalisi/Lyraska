@@ -62,6 +62,10 @@ pub fn run() {
             commands::library_search,
             commands::equalizer_get,
             commands::equalizer_set,
+            commands::headphone_get,
+            commands::headphone_import,
+            commands::headphone_set_enabled,
+            commands::headphone_clear,
         ])
         .build(tauri::generate_context!())
         .expect("Lyraska başlatılamadı")

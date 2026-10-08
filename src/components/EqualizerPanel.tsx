@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { EqualizerControls } from "../hooks/useEqualizer";
+import type { HeadphoneControls } from "../hooks/useHeadphone";
 import {
   EQ_MAX_DB,
   EQ_PRESETS,
@@ -131,11 +132,96 @@ function EqSlider({ hz, value, dimmed, onChange, onNeighbor, sliderRef }: EqSlid
 
 export interface EqualizerPanelProps {
   equalizer: EqualizerControls;
+  /** Kulaklık düzeltmesi (verilmezse bölüm gösterilmez). */
+  headphone?: HeadphoneControls;
+}
+
+/** Kulaklık düzeltmesi: AutoEq profili yükleme, açma/kapama, kaldırma. */
+function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
+  const { profile, enabled } = headphone.state;
+  return (
+    <div className="hp" role="group" aria-label="Kulaklık düzeltmesi">
+      <span className="hp__title">Kulaklık düzeltmesi</span>
+      {profile ? (
+        <>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Kulaklık düzeltmesi"
+            className={`switch${enabled ? " is-on" : ""}`}
+            disabled={headphone.busy}
+            onClick={() => void headphone.setEnabled(!enabled)}
+            title="Kulaklık düzeltmesini aç / kapat (profil kaybolmaz)"
+          >
+            <span className="switch__knob" aria-hidden />
+            <span>{enabled ? "Açık" : "Kapalı"}</span>
+          </button>
+          <span className="hp__name" title={profile.name}>
+            {profile.name || "Kulaklık profili"}
+          </span>
+          <span className="hp__meta">
+            {profile.filters.length} filtre · ön kazanç {formatGain(profile.preampDb)} dB
+            {enabled && " · eğride kesikli çizgi"}
+          </span>
+          <span className="hp__actions">
+            <button
+              type="button"
+              className="chip chip--button"
+              disabled={headphone.busy}
+              onClick={() => void headphone.importProfile()}
+            >
+              Değiştir
+            </button>
+            <button
+              type="button"
+              className="chip chip--button"
+              disabled={headphone.busy}
+              onClick={() => void headphone.clear()}
+            >
+              Kaldır
+            </button>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="hp__hint">
+            Kulaklığınızın ölçümüne göre düzeltme: autoeq.app sitesinde modelinizi seçin,
+            &quot;Equalizer APO&quot; biçiminde indirin (ParametricEQ.txt) ve buradan yükleyin.
+          </span>
+          <span className="hp__actions">
+            <button
+              type="button"
+              className="chip chip--button"
+              disabled={headphone.busy}
+              onClick={() => void headphone.importProfile()}
+            >
+              Profil yükle
+            </button>
+          </span>
+        </>
+      )}
+      {headphone.error && (
+        <p className="library__notice library__problem hp__error">{headphone.error}</p>
+      )}
+    </div>
+  );
 }
 
 /** 10 bantlı ekolayzer: hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
-export function EqualizerPanel({ equalizer }: EqualizerPanelProps) {
+export function EqualizerPanel({ equalizer, headphone }: EqualizerPanelProps) {
   const { settings, state, error } = equalizer;
+  // Kulaklık düzeltmesinin biçimi (ön kazanç çıkarılmış: sıfır çizgisi etrafında).
+  const correction = headphone?.active ? headphone.state : null;
+  const correctionPath = correction
+    ? curvePath(
+        correction.curveHz,
+        correction.curveDb.map((db) => db - (correction.profile?.preampDb ?? 0)),
+        PLOT_WIDTH,
+        PLOT_HEIGHT,
+        PLOT_RANGE_DB,
+      )
+    : "";
   const sliders = useRef<(HTMLDivElement | null)[]>([]);
   const preset = matchPreset(settings.gainsDb);
   const enabled = settings.enabled;
@@ -170,6 +256,8 @@ export function EqualizerPanel({ equalizer }: EqualizerPanelProps) {
           Bozulma koruması: {formatGain(enabled ? state.preampDb : 0)} dB
         </span>
       </header>
+
+      {headphone && <HeadphoneStrip headphone={headphone} />}
 
       <div className="eq__presets" role="group" aria-label="Hazır ayarlar">
         {EQ_PRESETS.map((p) => (
@@ -214,6 +302,7 @@ export function EqualizerPanel({ equalizer }: EqualizerPanelProps) {
               />
             ))}
             <path className="eq__area" d={area} />
+            {correctionPath && <path className="eq__line eq__line--headphone" d={correctionPath} />}
             <path className="eq__line" d={path} />
           </svg>
           {state.bandsHz.map((hz, i) => (

@@ -11,12 +11,15 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::eq::EqSettings;
+use crate::audio::peq::HeadphoneSettings;
 
 /// Kalıcı ayarlar. Yeni alanlar eklendiğinde eski dosyalar varsayılanla tamamlanır.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub equalizer: EqSettings,
+    /// Kulaklık düzeltmesi (AutoEq profili).
+    pub headphone: HeadphoneSettings,
 }
 
 /// Ayarları bellekte tutar ve her değişiklikte diske yazar.
@@ -37,6 +40,7 @@ impl SettingsStore {
             path: Some(path.to_path_buf()),
             current: Mutex::new(Settings {
                 equalizer: settings.equalizer.sanitized(),
+                headphone: settings.headphone.sanitized(),
             }),
         }
     }

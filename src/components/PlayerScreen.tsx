@@ -31,6 +31,7 @@ import {
   type Queue,
 } from "../lib/queue";
 import { useEqualizer } from "../hooks/useEqualizer";
+import { useHeadphone } from "../hooks/useHeadphone";
 import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
 
@@ -76,6 +77,9 @@ export function PlayerScreen() {
   const [info, setInfo] = useState<AppInfo>(BROWSER_FALLBACK);
   const library = useLibrary();
   const equalizer = useEqualizer();
+  const headphone = useHeadphone();
+  // "EQ" ışığı: ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa yanar.
+  const soundShaped = equalizer.active || headphone.active;
   const [deck, setDeck] = useState<Deck>("library");
   const [scene, setScene] = useState<Scene>(loadScene);
   const changeScene = () => {
@@ -188,7 +192,7 @@ export function PlayerScreen() {
     { label: "ST", on: (status.track?.channels ?? 2) >= 2 && hasTrack },
     { label: playing ? "PLAY" : "PAUSE", on: hasTrack && status.state !== "ended" },
     { label: "64-BIT", on: true },
-    { label: "EQ", on: equalizer.active },
+    { label: "EQ", on: soundShaped },
     { label: "BIT-PERFECT", on: false },
     { label: "SYNC", on: false },
   ];
@@ -352,7 +356,7 @@ export function PlayerScreen() {
               >
                 {label}
                 {id === "eq" && (
-                  <span className={`deck__led${equalizer.active ? " is-on" : ""}`} aria-hidden />
+                  <span className={`deck__led${soundShaped ? " is-on" : ""}`} aria-hidden />
                 )}
               </button>
             ))}
@@ -390,7 +394,7 @@ export function PlayerScreen() {
           aria-labelledby="deck-tab-eq"
           hidden={deck !== "eq"}
         >
-          <EqualizerPanel equalizer={equalizer} />
+          <EqualizerPanel equalizer={equalizer} headphone={headphone} />
         </div>
       </div>
 

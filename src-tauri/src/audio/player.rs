@@ -23,6 +23,7 @@ use serde::Serialize;
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{Design, EqControl, EqSettings};
 use super::output::{self, DeviceInfo, OutputSpec};
+use super::peq::{HeadphoneSettings, PeqControl};
 use super::resample::Converter;
 use super::{AudioError, Sample};
 use crate::analysis::beats::BeatPosition;
@@ -66,15 +67,24 @@ pub struct SharedState {
     pub underruns: AtomicU64,
     /// Ekolayzer ayarları (oynatıcı boyunca aynı; her oturum paylaşır).
     pub eq: Arc<EqControl>,
+    /// Kulaklık düzeltmesi (oynatıcı boyunca aynı; her oturum paylaşır).
+    pub headphone: Arc<PeqControl>,
     error: Mutex<Option<String>>,
 }
 
 impl SharedState {
-    fn new(paused: bool, start_frame: u64, rate_ratio: f64, eq: Arc<EqControl>) -> Self {
+    fn new(
+        paused: bool,
+        start_frame: u64,
+        rate_ratio: f64,
+        eq: Arc<EqControl>,
+        headphone: Arc<PeqControl>,
+    ) -> Self {
         let state = Self {
             start_frame,
             rate_ratio,
             eq,
+            headphone,
             ..Self::default()
         };
         state.paused.store(paused, Ordering::Release);
@@ -172,6 +182,7 @@ impl Session {
         autoplay: bool,
         start_secs: Option<f64>,
         eq: &Arc<EqControl>,
+        headphone: &Arc<PeqControl>,
     ) -> Result<Self, AudioError> {
         let mut decoder = Decoder::open(path)?;
         let start_frame = match start_secs {
@@ -200,6 +211,7 @@ impl Session {
             start_frame,
             rate_ratio,
             Arc::clone(eq),
+            Arc::clone(headphone),
         ));
 
         let decode_shared = Arc::clone(&shared);
@@ -316,6 +328,9 @@ pub struct Player {
     last_error: Option<String>,
     /// Ekolayzer ayarları; bütün oturumların ses çıkışı buradan okur.
     eq: Arc<EqControl>,
+    /// Kulaklık düzeltmesi: ses çıkışının okuduğu kanal ve son ayar.
+    headphone_control: Arc<PeqControl>,
+    headphone: HeadphoneSettings,
     /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
     /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
     visual_eq: Option<(u64, u32, [f64; BANDS])>,
@@ -348,7 +363,13 @@ impl Player {
         // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
         self.session = None;
         self.last_error = None;
-        match Session::start(path, autoplay, start_secs, &self.eq) {
+        match Session::start(
+            path,
+            autoplay,
+            start_secs,
+            &self.eq,
+            &self.headphone_control,
+        ) {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
@@ -426,6 +447,20 @@ impl Player {
             None if self.last_error.is_some() => PlaybackState::Error,
             None => PlaybackState::Idle,
         }
+    }
+
+    /// Kulaklık düzeltmesi ayarı.
+    pub fn headphone(&self) -> HeadphoneSettings {
+        self.headphone.clone()
+    }
+
+    /// Kulaklık düzeltmesini değiştirir; çalan ses ~30 ms içinde yumuşakça geçer.
+    pub fn set_headphone(&mut self, settings: HeadphoneSettings) -> HeadphoneSettings {
+        let settings = settings.sanitized();
+        self.headphone_control
+            .set(settings.profile.as_ref(), settings.enabled);
+        self.headphone = settings.clone();
+        settings
     }
 
     /// Ekolayzer ayarları.
@@ -636,7 +671,13 @@ mod tests {
 
         // Küçük tampon: geri basınç (tampon dolu → bekle) yolunu da sınar.
         let (producer, mut consumer) = RingBuffer::<Sample>::new(1_001);
-        let shared = Arc::new(SharedState::new(false, 0, 1.0, Arc::default()));
+        let shared = Arc::new(SharedState::new(
+            false,
+            0,
+            1.0,
+            Arc::default(),
+            Arc::default(),
+        ));
         let thread_shared = Arc::clone(&shared);
         let converter = Converter::new(8_000, 2, 8_000, 2).unwrap();
         let spec = OutputSpec {
@@ -675,7 +716,13 @@ mod tests {
         write_wav(&path, 8_000, 1, 80_000, |_, _| 0.1);
         let decoder = Decoder::open(&path).unwrap();
         let (producer, _consumer) = RingBuffer::<Sample>::new(100); // hiç boşalmayacak
-        let shared = Arc::new(SharedState::new(false, 0, 1.0, Arc::default()));
+        let shared = Arc::new(SharedState::new(
+            false,
+            0,
+            1.0,
+            Arc::default(),
+            Arc::default(),
+        ));
         let thread_shared = Arc::clone(&shared);
         let converter = Converter::new(8_000, 1, 8_000, 2).unwrap();
         let spec = OutputSpec {
