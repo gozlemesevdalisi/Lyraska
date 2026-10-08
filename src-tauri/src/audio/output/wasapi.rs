@@ -196,26 +196,23 @@ fn run(
             started = true;
         }
 
-        // Duyulan konum ≈ oturumun başladığı kare + halka tampondan alınan -
-        // henüz aygıtta bekleyen - taşma korumasının gecikmesi (aygıt kareleri
-        // şarkı karesine çevrilir). Duraklatmada aygıta sessizlik yazıldığı için bu
+        // Duyulan çıkış karesi ≈ halka tampondan alınan - henüz aygıtta bekleyen -
+        // taşma korumasının gecikmesi. (Oynatıcı bunu çalan şarkıya ve şarkıdaki
+        // konuma çevirir; boşluksuz geçişte şarkı sınırını da bilir.) Duraklatmada aygıta sessizlik yazıldığı için bu
         // tahmin bir an geriye kayabilir; oturum içinde geri gidiş olmadığından
         // (sarma yeni oturum açar) konum hiç azaltılmaz.
         let padding = client
             .get_current_padding()
             .map_err(fail("Ses aygıtı okunamadı"))? as u64;
         let latency = padding + renderer.latency_frames() as u64;
-        shared.frames_played.fetch_max(
-            shared.song_frame(consumed.saturating_sub(latency)),
-            Ordering::AcqRel,
-        );
+        shared
+            .output_heard
+            .fetch_max(consumed.saturating_sub(latency), Ordering::AcqRel);
 
         if draining {
             if padding == 0 {
                 // Her şey çalındı: konum tam şarkı sonu.
-                shared
-                    .frames_played
-                    .fetch_max(shared.song_frame(consumed), Ordering::AcqRel);
+                shared.output_heard.fetch_max(consumed, Ordering::AcqRel);
                 shared.ended.store(true, Ordering::Release);
                 break Ok(());
             }

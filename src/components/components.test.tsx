@@ -26,6 +26,8 @@ const backend = vi.hoisted(() => ({
   headphone: null as import("../lib/backend").HeadphoneState | null,
   pickProfile: vi.fn(),
   importProfile: vi.fn(),
+  setNext: vi.fn(),
+  openLog: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -83,6 +85,10 @@ vi.mock("../lib/backend", async (importOriginal) => {
     setEqualizer: async (settings: import("../lib/backend").EqSettings) => {
       backend.setEq(settings);
       return actual.setEqualizer(settings);
+    },
+    openLog: async () => backend.openLog(),
+    setNextTrack: async (path: string | null) => {
+      backend.setNext(path);
     },
     getHeadphone: async () => backend.headphone ?? actual.NO_HEADPHONE,
     pickHeadphoneProfile: async () => backend.pickProfile(),
@@ -368,11 +374,46 @@ describe("kütüphane", () => {
     await act(async () => fireEvent.click(nextButton));
     await waitFor(() => expect(backend.open).toHaveBeenLastCalledWith(backend.tracks[1]!.path));
 
-    // Şarkı bitince üçüncüye kendiliğinden geçer.
+    // Sıradaki şarkı çekirdeğe önceden bildirilir (boşluksuz geçiş için).
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(backend.tracks[2]!.path));
+
+    // Boşluksuz geçiş olamazsa: şarkı bitince üçüncüye kendiliğinden geçer.
     backend.status = { ...backend.status!, state: "ended", positionSecs: 200 };
     await waitFor(() => expect(backend.open).toHaveBeenLastCalledWith(backend.tracks[2]!.path), {
       timeout: 2000,
     });
+    // Son şarkıda sıradaki yok.
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(null));
+  });
+
+  it("çekirdek sıradakine kendisi geçince sıra ilerler, şarkı yeniden açılmaz", async () => {
+    backend.desktop = true;
+    backend.library = library;
+    backend.tracks = [song(1, "Birinci Şarkı"), song(2, "İkinci Şarkı"), song(3, "Üçüncü Şarkı")];
+    render(<App />);
+    backend.open.mockImplementation((path: string) => {
+      backend.status = {
+        ...playing,
+        positionSecs: 0,
+        track: { ...playing.track!, path, durationSecs: 200 },
+      };
+    });
+    const first = await screen.findByText("Birinci Şarkı");
+    await act(async () => fireEvent.doubleClick(first));
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(backend.tracks[1]!.path));
+    const opened = backend.open.mock.calls.length;
+
+    // Çekirdek boşluksuz geçti: çalan şarkı artık ikincisi.
+    backend.status = {
+      ...backend.status!,
+      positionSecs: 0.2,
+      track: { ...backend.status!.track!, path: backend.tracks[1]!.path },
+    };
+    await waitFor(() => expect(backend.setNext).toHaveBeenLastCalledWith(backend.tracks[2]!.path), {
+      timeout: 2000,
+    });
+    expect(backend.open).toHaveBeenCalledTimes(opened);
+    expect(screen.getByRole("button", { name: "Sonraki" })).toBeEnabled();
   });
 
   it("arama kutusuna yazılanla arar ve klasör kaldırılabilir", async () => {
@@ -626,5 +667,29 @@ describe("kulaklık düzeltmesi", () => {
     backend.pickProfile.mockResolvedValue("C:\\bozuk.txt");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
     expect(screen.getByText(/kulaklık düzeltmesi bulunamadı/)).toBeInTheDocument();
+  });
+});
+
+describe("hata günlüğü", () => {
+  afterEach(() => {
+    backend.desktop = false;
+    backend.openLog.mockReset();
+  });
+
+  it("programda düğmeyle açılır; açılamazsa nedenini söyler", async () => {
+    backend.desktop = true;
+    render(<App />);
+    const button = await screen.findByRole("button", { name: "Hata günlüğü" });
+    await act(async () => fireEvent.click(button));
+    expect(backend.openLog).toHaveBeenCalledTimes(1);
+
+    backend.openLog.mockRejectedValue("Hata günlüğü açılamadı: erişim yok");
+    await act(async () => fireEvent.click(button));
+    expect(screen.getByText("Hata günlüğü açılamadı: erişim yok")).toBeInTheDocument();
+  });
+
+  it("tarayıcı önizlemesinde gösterilmez", () => {
+    render(<App />);
+    expect(screen.queryByRole("button", { name: "Hata günlüğü" })).not.toBeInTheDocument();
   });
 });

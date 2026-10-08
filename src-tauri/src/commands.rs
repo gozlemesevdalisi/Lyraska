@@ -20,7 +20,14 @@ use crate::audio::player::{PlaybackStatus, Player};
 use crate::library::{LibraryService, LibraryStatus, TrackRow};
 use crate::settings::SettingsStore;
 use crate::visual_bridge::VisualFrame;
-use crate::{analysis, audio, visual_bridge};
+use crate::{analysis, audio, diagnostics, visual_bridge};
+
+/// Kullanıcıya dönen hatayı günlüğe de yazar.
+fn reported(error: impl std::fmt::Display) -> String {
+    let message = error.to_string();
+    diagnostics::error(&message);
+    message
+}
 
 /// Karşılama ekranında gösterilen program bilgisi.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -61,7 +68,7 @@ pub struct PlayerState(Mutex<Player>);
 impl PlayerState {
     fn lock(&self) -> Result<MutexGuard<'_, Player>, String> {
         self.0.lock().map_err(|_| {
-            "Oynatıcı beklenmedik bir hatayla durdu; programı yeniden başlatın.".to_owned()
+            reported("Oynatıcı beklenmedik bir hatayla durdu; programı yeniden başlatın.")
         })
     }
 }
@@ -109,14 +116,24 @@ pub async fn open_track(
     path: PathBuf,
     player: State<'_, PlayerState>,
 ) -> Result<TrackInfo, String> {
-    player.lock()?.load(&path, true).map_err(|e| e.to_string())
+    player.lock()?.load(&path, true).map_err(reported)
+}
+
+/// Boşluksuz geçiş için sıradaki şarkıyı bildirir (`null`: sıra yok).
+#[tauri::command]
+pub async fn set_next_track(
+    path: Option<PathBuf>,
+    player: State<'_, PlayerState>,
+) -> Result<(), String> {
+    player.lock()?.set_next(path);
+    Ok(())
 }
 
 /// Çalıyorsa duraklatır, değilse çalar.
 #[tauri::command]
 pub async fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
     let mut player = player.lock()?;
-    player.toggle().map_err(|e| e.to_string())?;
+    player.toggle().map_err(reported)?;
     Ok(player.status())
 }
 
@@ -124,7 +141,7 @@ pub async fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackS
 #[tauri::command]
 pub async fn stop_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {
     let mut player = player.lock()?;
-    player.stop().map_err(|e| e.to_string())?;
+    player.stop().map_err(reported)?;
     Ok(player.status())
 }
 
@@ -135,7 +152,7 @@ pub async fn seek_playback(
     player: State<'_, PlayerState>,
 ) -> Result<PlaybackStatus, String> {
     let mut player = player.lock()?;
-    player.seek(seconds).map_err(|e| e.to_string())?;
+    player.seek(seconds).map_err(reported)?;
     Ok(player.status())
 }
 
@@ -149,7 +166,7 @@ pub async fn visual_frame(player: State<'_, PlayerState>) -> Result<Option<Visua
 /// Kütüphane durumu: klasörler, şarkı sayısı, tarama ilerlemesi.
 #[tauri::command]
 pub async fn library_status(library: State<'_, LibraryState>) -> Result<LibraryStatus, String> {
-    library.get()?.status().map_err(|e| e.to_string())
+    library.get()?.status().map_err(reported)
 }
 
 /// Klasörü kütüphaneye ekler ve arka planda taramaya başlar.
@@ -159,8 +176,8 @@ pub async fn library_add_folder(
     library: State<'_, LibraryState>,
 ) -> Result<LibraryStatus, String> {
     let service = library.get()?;
-    service.add_folder(&path).map_err(|e| e.to_string())?;
-    service.status().map_err(|e| e.to_string())
+    service.add_folder(&path).map_err(reported)?;
+    service.status().map_err(reported)
 }
 
 /// Klasörü (ve şarkılarını) kütüphaneden çıkarır; diskteki dosyalara dokunmaz.
@@ -170,8 +187,8 @@ pub async fn library_remove_folder(
     library: State<'_, LibraryState>,
 ) -> Result<LibraryStatus, String> {
     let service = library.get()?;
-    service.remove_folder(id).map_err(|e| e.to_string())?;
-    service.status().map_err(|e| e.to_string())
+    service.remove_folder(id).map_err(reported)?;
+    service.status().map_err(reported)
 }
 
 /// Bütün klasörleri yeniden tarar (değişmeyen dosyalar atlanır).
@@ -179,7 +196,7 @@ pub async fn library_remove_folder(
 pub async fn library_rescan(library: State<'_, LibraryState>) -> Result<LibraryStatus, String> {
     let service = library.get()?;
     service.request_scan();
-    service.status().map_err(|e| e.to_string())
+    service.status().map_err(reported)
 }
 
 /// Kütüphanede arar; boş arama bütün şarkıları döndürür.
@@ -189,10 +206,7 @@ pub async fn library_search(
     limit: Option<usize>,
     library: State<'_, LibraryState>,
 ) -> Result<Vec<TrackRow>, String> {
-    library
-        .get()?
-        .search(&query, limit)
-        .map_err(|e| e.to_string())
+    library.get()?.search(&query, limit).map_err(reported)
 }
 
 /// Ekolayzer ayarları ve uygulanan eğri.
@@ -211,7 +225,7 @@ pub async fn equalizer_set(
     let applied = player.lock()?.set_equalizer(settings);
     store
         .update(|s| s.equalizer = applied)
-        .map_err(|e| format!("Ekolayzer ayarı kaydedilemedi: {e}"))?;
+        .map_err(|e| reported(format!("Ekolayzer ayarı kaydedilemedi: {e}")))?;
     Ok(EqState::new(applied))
 }
 
@@ -229,13 +243,13 @@ pub async fn headphone_import(
     store: State<'_, SettingsStore>,
 ) -> Result<HeadphoneState, String> {
     let path = std::path::Path::new(&path);
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("Profil dosyası okunamadı: {e}"))?;
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| reported(format!("Profil dosyası okunamadı: {e}")))?;
     let name = path
         .file_stem()
         .map(|s| HeadphoneProfile::name_from_file(&s.to_string_lossy()))
         .unwrap_or_default();
-    let profile = HeadphoneProfile::parse(&text, &name).map_err(|e| e.to_string())?;
+    let profile = HeadphoneProfile::parse(&text, &name).map_err(reported)?;
     apply_headphone(
         HeadphoneSettings {
             enabled: true,
@@ -274,8 +288,45 @@ fn apply_headphone(
     let applied = player.lock()?.set_headphone(settings);
     store
         .update(|s| s.headphone = applied.clone())
-        .map_err(|e| format!("Kulaklık ayarı kaydedilemedi: {e}"))?;
+        .map_err(|e| reported(format!("Kulaklık ayarı kaydedilemedi: {e}")))?;
     Ok(HeadphoneState::new(applied))
+}
+
+/// Arayüzde oluşan hatayı (yakalanmamış istisna vb.) günlüğe yazar.
+#[tauri::command]
+pub fn log_frontend_error(message: String) {
+    diagnostics::error(&format!(
+        "arayüz: {}",
+        message.chars().take(4000).collect::<String>()
+    ));
+}
+
+/// Hata günlüğünü dosya gezgininde seçili olarak gösterir (hata kaydına eklemek için).
+#[tauri::command]
+pub fn open_log() -> Result<(), String> {
+    let path = diagnostics::log_path()
+        .ok_or_else(|| "Hata günlüğü açılamadı: uygulama veri klasörü bulunamadı.".to_owned())?;
+    reveal(&path).map_err(|e| format!("Hata günlüğü açılamadı: {e}"))
+}
+
+#[cfg(windows)]
+fn reveal(path: &std::path::Path) -> std::io::Result<()> {
+    // `explorer /select,<dosya>`: klasörü açar ve dosyayı seçili gösterir.
+    let mut argument = std::ffi::OsString::from("/select,");
+    argument.push(path);
+    std::process::Command::new("explorer")
+        .arg(argument)
+        .spawn()
+        .map(|_| ())
+}
+
+#[cfg(not(windows))]
+fn reveal(path: &std::path::Path) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or(path);
+    std::process::Command::new("xdg-open")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
 }
 
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.

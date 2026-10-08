@@ -79,6 +79,17 @@ body:
         - Bilmiyorum / Diğer
 
   - type: textarea
+    id: gunluk
+    attributes:
+      label: Hata günlüğü
+      description: |
+        Programın en altındaki **Hata günlüğü** yazısına basın; açılan klasörde seçili duran
+        `lyraska.log` dosyasını bu kutuya sürükleyip bırakın. Program çöktüyse yeniden açıp aynı şeyi yapın:
+        çökme bilgisi dosyada kalır. Dosyada program sürümü, Windows sürümü ve hata mesajları vardır;
+        hata mesajlarında şarkı dosyalarının adı ve klasör yolu (Windows kullanıcı adınız dahil) geçebilir.
+        İsterseniz eklemeden önce Not Defteri ile açıp bakabilirsiniz. Şarkıların kendisi dosyada yoktur.
+
+  - type: textarea
     id: ek
     attributes:
       label: Ekran görüntüsü, video veya şarkı bilgisi

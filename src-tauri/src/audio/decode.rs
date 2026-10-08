@@ -14,7 +14,11 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTag};
 use symphonia::core::units::{Time, TimeBase};
 
+use super::gapless::{self, Trim};
 use super::{AudioError, Sample};
+
+/// Kodlayıcı dolgusu çözücü tarafından atılmayan, MP4 tabanlı uzantılar.
+const MP4_EXTENSIONS: &[&str] = &["m4a", "m4b", "mp4"];
 
 /// "Dosya aç" penceresinde gösterilen uzantılar.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
@@ -53,7 +57,10 @@ pub struct Decoder {
     /// Son çözülen paketin örnekleri (kanallar iç içe: L, R, L, R...).
     buffer: Vec<Sample>,
     /// Sarmadan sonra bu saniyeden önceki örnekler atılır (örnek hassasiyetinde sarma).
+    /// Çözülen akışın zamanıdır (kodlayıcı dolgusu dahil).
     skip_until: Option<f64>,
+    /// Boşluksuz çalma: baştaki ve sondaki kodlayıcı dolgusu (MP4/AAC).
+    trim: Option<Trim>,
 }
 
 impl Decoder {
@@ -105,6 +112,18 @@ impl Decoder {
             .filter(|&c| c > 0)
             .ok_or_else(|| AudioError::Unsupported("kanal sayısı bilinmiyor".to_owned()))?;
 
+        // MP3 ve Vorbis'te dolguyu çözücü atar; MP4'te bilgiyi dosyadan biz okuruz.
+        let is_mp4 = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| MP4_EXTENSIONS.iter().any(|m| e.eq_ignore_ascii_case(m)));
+        let trim = if is_mp4 {
+            gapless::mp4_trim(path, sample_rate)
+        } else {
+            None
+        };
+        let playable_frames = trim.and_then(|t| t.frames).or(num_frames);
+
         let tags = read_tags(format.as_mut());
         let file_name = path
             .file_stem()
@@ -123,7 +142,7 @@ impl Decoder {
             codec: decoder.codec_info().short_name.to_owned(),
             sample_rate,
             channels,
-            duration_secs: num_frames.map(|n| n as f64 / f64::from(sample_rate)),
+            duration_secs: playable_frames.map(|n| n as f64 / f64::from(sample_rate)),
         };
 
         Ok(Self {
@@ -134,6 +153,7 @@ impl Decoder {
             info,
             buffer: Vec::new(),
             skip_until: None,
+            trim,
         })
     }
 
@@ -157,7 +177,9 @@ impl Decoder {
         } else {
             0.0
         };
-        let time = Time::try_from_secs_f64(target)
+        // Akış zamanı = şarkı zamanı + baştaki kodlayıcı dolgusu.
+        let stream_target = target + self.trim.map_or(0.0, |t| t.delay as f64 / rate);
+        let time = Time::try_from_secs_f64(stream_target)
             .ok_or_else(|| AudioError::Seek("geçersiz konum".to_owned()))?;
         self.format
             .seek(
@@ -169,7 +191,7 @@ impl Decoder {
             )
             .map_err(|e| AudioError::Seek(e.to_string()))?;
         self.decoder.reset();
-        self.skip_until = self.time_base.map(|_| target);
+        self.skip_until = self.time_base.map(|_| stream_target);
         Ok((target * rate).round() as u64)
     }
 
@@ -205,17 +227,32 @@ impl Decoder {
                     self.buffer.resize(audio.samples_interleaved(), 0.0);
                     audio.copy_to_slice_interleaved(&mut self.buffer);
 
-                    // Sarmadan sonra hedefe kadar olan örnekleri at.
-                    let mut skip = 0;
-                    if let (Some(target), Some(start)) = (self.skip_until, packet_start) {
+                    // Paketin çalınacak kısmı [from, to): sarma hedefinden ve baştaki
+                    // dolgudan önceki örnekler, sondaki dolgu da atılır.
+                    let (mut from, mut to) = (0usize, frames);
+                    if let Some(start) = packet_start {
                         let rate = f64::from(self.info.sample_rate);
-                        skip = ((target - start) * rate).round().max(0.0) as usize;
-                        if skip >= frames {
+                        let start = (start * rate).round() as i64;
+                        let delay = self.trim.map_or(0, |t| t.delay as i64);
+                        let skip_to = self
+                            .skip_until
+                            .map_or(0, |t| (t * rate).round() as i64)
+                            .max(delay);
+                        from = (skip_to - start).clamp(0, frames as i64) as usize;
+                        if let Some(length) = self.trim.and_then(|t| t.frames) {
+                            let end = delay + length as i64;
+                            if start >= end {
+                                return Ok(None);
+                            }
+                            to = (end - start).clamp(0, frames as i64) as usize;
+                        }
+                        if from >= to {
                             continue;
                         }
                         self.skip_until = None;
                     }
-                    return Ok(Some(&self.buffer[skip * self.info.channels..]));
+                    let channels = self.info.channels;
+                    return Ok(Some(&self.buffer[from * channels..to * channels]));
                 }
                 Err(SymphoniaError::DecodeError(_)) => continue,
                 Err(e) => return Err(e.into()),

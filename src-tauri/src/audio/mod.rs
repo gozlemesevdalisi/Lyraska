@@ -19,6 +19,7 @@
 
 pub mod decode;
 pub mod eq;
+pub mod gapless;
 pub mod limiter;
 pub mod output;
 pub mod peq;

@@ -65,9 +65,7 @@ pub fn spawn(
                 let paused = shared.paused.load(Ordering::Acquire);
                 let outcome = renderer.render(&mut source, &mut out, paused);
                 consumed += outcome.frames_consumed as u64;
-                shared
-                    .frames_played
-                    .store(shared.song_frame(consumed), Ordering::Release);
+                shared.output_heard.store(consumed, Ordering::Release);
                 std::thread::sleep(STEP_SLEEP);
             }
         })

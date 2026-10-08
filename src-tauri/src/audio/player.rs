@@ -56,13 +56,14 @@ pub struct SharedState {
     pub decode_done: AtomicBool,
     /// Son örnek de hoparlörden çıktı.
     pub ended: AtomicBool,
-    /// Oturumun başladığı kare (sarmada sıfırdan farklıdır). Oturum boyunca değişmez.
-    pub start_frame: u64,
-    /// Duyulan konum (şarkının başından itibaren, şarkının kendi karesi cinsinden).
-    pub frames_played: AtomicU64,
-    /// Bir çıkış karesinin kaç şarkı karesine denk geldiği (şarkı hızı / aygıt hızı).
-    /// Şarkı aygıtın hızına çevrildiği için çıkış iş parçacıkları konumu buna göre hesaplar.
-    pub rate_ratio: f64,
+    /// Oturum başından beri hoparlörden çıkan çıkış karesi sayısı (aygıt hızında).
+    /// Çıkış iş parçacığı yazar; şarkı konumu buradan [`Segment`]'lerle hesaplanır.
+    pub output_heard: AtomicU64,
+    /// Oturumda çalınan şarkılar: boşluksuz geçişte çözme iş parçacığı yenisini ekler.
+    /// Gerçek zamanlı yolda kullanılmaz.
+    segments: Mutex<Vec<Segment>>,
+    /// Boşluksuz geçiş için sıradaki şarkı; çözme iş parçacığı şarkı bitince alır.
+    next_path: Mutex<Option<PathBuf>>,
     /// Çalma sırasında veri yetişmediği tur sayısı (hedef: her zaman 0).
     pub underruns: AtomicU64,
     /// Ekolayzer ayarları (oynatıcı boyunca aynı; her oturum paylaşır).
@@ -73,33 +74,57 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    fn new(
-        paused: bool,
-        start_frame: u64,
-        rate_ratio: f64,
-        eq: Arc<EqControl>,
-        headphone: Arc<PeqControl>,
-    ) -> Self {
+    fn new(paused: bool, first: Segment, eq: Arc<EqControl>, headphone: Arc<PeqControl>) -> Self {
         let state = Self {
-            start_frame,
-            rate_ratio,
             eq,
             headphone,
+            segments: Mutex::new(vec![first]),
             ..Self::default()
         };
         state.paused.store(paused, Ordering::Release);
-        state.frames_played.store(start_frame, Ordering::Release);
         state
     }
 
-    /// Oturumda çalınan çıkış karesi sayısından duyulan şarkı konumu (kare).
-    pub fn song_frame(&self, output_frames: u64) -> u64 {
-        self.start_frame + (output_frames as f64 * self.rate_ratio).round() as u64
+    /// Şu an duyulan şarkı ve o şarkıdaki konumu (saniye).
+    fn now_playing(&self) -> Option<(TrackInfo, f64)> {
+        let heard = self.output_heard.load(Ordering::Acquire);
+        let segments = self.segments.lock().ok()?;
+        let segment = segments
+            .iter()
+            .rev()
+            .find(|s| s.first_output_frame <= heard)
+            .or(segments.first())?;
+        let frames = segment.start_frame as f64
+            + heard.saturating_sub(segment.first_output_frame) as f64 * segment.rate_ratio;
+        let mut seconds = frames.round() / f64::from(segment.info.sample_rate.max(1));
+        if let Some(duration) = segment.info.duration_secs {
+            seconds = seconds.min(duration);
+        }
+        Some((segment.info.clone(), seconds))
+    }
+
+    fn set_next(&self, path: Option<PathBuf>) {
+        if let Ok(mut next) = self.next_path.lock() {
+            *next = path;
+        }
+    }
+
+    fn take_next(&self) -> Option<PathBuf> {
+        self.next_path.lock().ok().and_then(|mut n| n.take())
+    }
+
+    fn push_segment(&self, segment: Segment) {
+        if let Ok(mut segments) = self.segments.lock() {
+            segments.push(segment);
+        }
     }
 
     /// İlk hatayı kaydeder (sonrakiler genellikle ilkinin sonucudur).
     pub fn fail(&self, message: String) {
         if let Ok(mut error) = self.error.lock() {
+            if error.is_none() {
+                crate::diagnostics::error(&format!("Çalma hatası: {message}"));
+            }
             error.get_or_insert(message);
         }
     }
@@ -107,6 +132,19 @@ impl SharedState {
     pub fn error(&self) -> Option<String> {
         self.error.lock().ok().and_then(|e| e.clone())
     }
+}
+
+/// Bir oturumda çalınan bir şarkı: çıkış akışında nerede başladığı ve konumun
+/// nasıl hesaplanacağı.
+#[derive(Debug, Clone)]
+struct Segment {
+    info: TrackInfo,
+    /// Şarkının ilk karesinin çıkış akışındaki yeri (aygıt karesi).
+    first_output_frame: u64,
+    /// O noktadaki şarkı konumu (şarkı karesi; sarmada sıfırdan farklı).
+    start_frame: u64,
+    /// Bir çıkış karesinin kaç şarkı karesine denk geldiği (şarkı hızı / aygıt hızı).
+    rate_ratio: f64,
 }
 
 /// Oynatıcının durumu.
@@ -168,6 +206,7 @@ pub struct VisualData {
 
 /// Bir şarkının çalınması için kurulan iş parçacıkları ve durumları.
 struct Session {
+    /// Oturumun açıldığı şarkı (boşluksuz geçişten sonra çalan şarkı farklı olabilir).
     info: TrackInfo,
     path: SignalPath,
     shared: Arc<SharedState>,
@@ -181,6 +220,7 @@ impl Session {
         path: &Path,
         autoplay: bool,
         start_secs: Option<f64>,
+        next: Option<PathBuf>,
         eq: &Arc<EqControl>,
         headphone: &Arc<PeqControl>,
     ) -> Result<Self, AudioError> {
@@ -205,14 +245,19 @@ impl Session {
         let path = signal_path(device, &info, spec);
         let capacity = spec.sample_rate as usize * spec.channels * RING_SECONDS;
         let (producer, consumer) = RingBuffer::new(capacity);
-        let rate_ratio = f64::from(info.sample_rate) / f64::from(spec.sample_rate);
+        let first = Segment {
+            info: info.clone(),
+            first_output_frame: 0,
+            start_frame,
+            rate_ratio: f64::from(info.sample_rate) / f64::from(spec.sample_rate),
+        };
         let shared = Arc::new(SharedState::new(
             !autoplay,
-            start_frame,
-            rate_ratio,
+            first,
             Arc::clone(eq),
             Arc::clone(headphone),
         ));
+        shared.set_next(next);
 
         let decode_shared = Arc::clone(&shared);
         let decode = std::thread::Builder::new()
@@ -238,6 +283,13 @@ impl Session {
             decode: Some(decode),
             output: Some(output),
         })
+    }
+
+    /// Şu an duyulan şarkı ve konumu.
+    fn now_playing(&self) -> (TrackInfo, f64) {
+        self.shared
+            .now_playing()
+            .unwrap_or_else(|| (self.info.clone(), 0.0))
     }
 
     fn state(&self) -> PlaybackState {
@@ -324,6 +376,9 @@ pub struct Player {
     session: Option<Session>,
     /// Çalan şarkının spektrumu. Sarma ve durdurmada (aynı şarkı) korunur.
     analysis: Option<Analysis>,
+    /// Boşluksuz geçiş için sıradaki şarkı ve önceden başlatılan analizi.
+    next_path: Option<PathBuf>,
+    next_analysis: Option<Analysis>,
     /// Son açma girişimi başarısız olduysa nedeni.
     last_error: Option<String>,
     /// Ekolayzer ayarları; bütün oturumların ses çıkışı buradan okur.
@@ -363,21 +418,22 @@ impl Player {
         // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
         self.session = None;
         self.last_error = None;
+        // Sıradaki şarkı açılan şarkının kendisiyse (boşluksuz geçiş sonrası) artık sırada değil.
+        if self.next_path.as_deref() == Some(path) {
+            self.next_path = None;
+        }
         match Session::start(
             path,
             autoplay,
             start_secs,
+            self.next_path.clone(),
             &self.eq,
             &self.headphone_control,
         ) {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
-                // Yeni şarkıysa spektrum analizini baştan başlat.
-                if self.analysis.as_ref().is_none_or(|a| a.path != path) {
-                    self.analysis = None;
-                    self.analysis = Analysis::start(path);
-                }
+                self.adopt_analysis(path);
                 Ok(info)
             }
             Err(error) => {
@@ -387,6 +443,47 @@ impl Player {
         }
     }
 
+    /// Boşluksuz geçiş için sıradaki şarkıyı bildirir (`None`: sıra yok).
+    /// Çalan şarkı bitince ses akışı kesilmeden bu şarkıyla devam eder; analizi de
+    /// şimdiden başlar.
+    pub fn set_next(&mut self, path: Option<PathBuf>) {
+        if self.next_path == path {
+            return;
+        }
+        self.next_path = path.clone();
+        if let Some(session) = &self.session {
+            session.shared.set_next(path.clone());
+        }
+        self.next_analysis = match &path {
+            Some(p) if self.next_analysis.as_ref().is_some_and(|a| &a.path == p) => {
+                self.next_analysis.take()
+            }
+            Some(p) if self.analysis.as_ref().is_none_or(|a| &a.path != p) => Analysis::start(p),
+            _ => None,
+        };
+    }
+
+    /// Analizi verilen şarkınınkine geçirir: önceden başlatılmışsa onu kullanır.
+    fn adopt_analysis(&mut self, path: &Path) {
+        if self.analysis.as_ref().is_some_and(|a| a.path == path) {
+            return;
+        }
+        if self.next_analysis.as_ref().is_some_and(|a| a.path == path) {
+            self.analysis = self.next_analysis.take();
+        } else {
+            self.analysis = None;
+            self.analysis = Analysis::start(path);
+        }
+    }
+
+    /// Çalan şarkının analizi (boşluksuz geçişten hemen sonra önceden başlatılan da olabilir).
+    fn analysis_for(&self, path: &Path) -> Option<&Analysis> {
+        [&self.analysis, &self.next_analysis]
+            .into_iter()
+            .flatten()
+            .find(|a| a.path == path)
+    }
+
     /// Çalar ya da kaldığı yerden devam eder. Şarkı bittiyse baştan çalar.
     pub fn play(&mut self) -> Result<(), AudioError> {
         let Some(session) = &self.session else {
@@ -394,7 +491,7 @@ impl Player {
         };
         match session.state() {
             PlaybackState::Ended | PlaybackState::Error => {
-                let path = session.info.path.clone();
+                let path = session.now_playing().0.path;
                 self.load(&path, true).map(|_| ())
             }
             _ => {
@@ -427,7 +524,7 @@ impl Player {
         let Some(session) = &self.session else {
             return Ok(());
         };
-        let path = session.info.path.clone();
+        let path = session.now_playing().0.path;
         let resume = session.state() == PlaybackState::Playing;
         self.restart(&path, resume, Some(seconds)).map(|_| ())
     }
@@ -437,7 +534,7 @@ impl Player {
         let Some(session) = &self.session else {
             return Ok(());
         };
-        let path = session.info.path.clone();
+        let path = session.now_playing().0.path;
         self.load(&path, false).map(|_| ())
     }
 
@@ -478,10 +575,10 @@ impl Player {
     /// Spektrum ekolayzerden önce çıkarıldığı için ekolayzerin etkisi burada eklenir:
     /// görseller duyulanı gösterir.
     pub fn visual_now(&mut self) -> Option<VisualData> {
-        let session = self.session.as_ref()?;
-        let rate = session.info.sample_rate;
-        let frames = session.shared.frames_played.load(Ordering::Acquire);
-        let seconds = frames as f64 / f64::from(rate);
+        let (track, seconds) = self.session.as_ref()?.now_playing();
+        // Boşluksuz geçişle şarkı değiştiyse analizi de değiştir.
+        self.adopt_analysis(&track.path);
+        let rate = track.sample_rate;
         let spectrogram = &self.analysis.as_ref()?.spectrogram;
         let mut bands = spectrogram.frame_at(seconds)?;
         let levels = spectrogram.meters_at(seconds)?;
@@ -527,19 +624,21 @@ impl Player {
     pub fn status(&self) -> PlaybackStatus {
         match &self.session {
             Some(session) => {
-                let frames = session.shared.frames_played.load(Ordering::Acquire);
+                let (track, position_secs) = session.now_playing();
+                let bpm = self
+                    .analysis_for(&track.path)
+                    .and_then(|a| a.spectrogram.beat_grid())
+                    .map(|grid| grid.bpm);
+                let mut output = session.path.clone();
+                output.resampled = output.sample_rate != track.sample_rate;
                 PlaybackStatus {
                     state: session.state(),
-                    track: Some(session.info.clone()),
-                    position_secs: frames as f64 / f64::from(session.info.sample_rate),
+                    track: Some(track),
+                    position_secs,
                     underruns: session.shared.underruns.load(Ordering::Relaxed),
                     error: session.shared.error(),
-                    bpm: self
-                        .analysis
-                        .as_ref()
-                        .and_then(|a| a.spectrogram.beat_grid())
-                        .map(|grid| grid.bpm),
-                    output: Some(session.path.clone()),
+                    bpm,
+                    output: Some(output),
                 }
             }
             None => PlaybackStatus {
@@ -560,8 +659,8 @@ impl Player {
 /// Tampon doluysa kısa aralıklarla bekler. Halka tampona her zaman tam kareler
 /// yazılır; böylece çıkış tarafı kanalları hiçbir zaman karıştırmaz.
 fn decode_loop(
-    mut decoder: Decoder,
-    mut converter: Converter,
+    decoder: Decoder,
+    converter: Converter,
     spec: OutputSpec,
     mut producer: Producer<Sample>,
     shared: &SharedState,
@@ -573,6 +672,8 @@ fn decode_loop(
     let mut pos = 0;
     let mut pushed = 0usize;
     let mut finished = false;
+    let mut decoder = decoder;
+    let mut converter = converter;
 
     loop {
         if shared.stop.load(Ordering::Acquire) {
@@ -580,7 +681,17 @@ fn decode_loop(
         }
         if pos == pending.len() {
             if finished {
-                break;
+                // Boşluksuz geçiş: sıradaki şarkı aynı akışa eklenir. Önceki şarkının
+                // son örneği tampona yazıldı; yenisinin ilki hemen ardından gelir.
+                match open_next(shared, spec, (pushed / channels) as u64) {
+                    Some((next_decoder, next_converter)) => {
+                        decoder = next_decoder;
+                        converter = next_converter;
+                        finished = false;
+                        continue;
+                    }
+                    None => break,
+                }
             }
             // Çözülen dilim aygıt biçimine çevrilir; şarkı bitince dönüştürücünün
             // içinde kalanlar da alınır.
@@ -630,6 +741,35 @@ fn decode_loop(
     shared.decode_done.store(true, Ordering::Release);
 }
 
+/// Sıradaki şarkıyı açar ve oturuma ekler. Sıra yoksa, açılamazsa ya da kanal
+/// sayısı akışa uymuyorsa `None` (şarkı normal biçimde biter).
+fn open_next(
+    shared: &SharedState,
+    spec: OutputSpec,
+    first_output_frame: u64,
+) -> Option<(Decoder, Converter)> {
+    let path = shared.take_next()?;
+    let decoder = Decoder::open(&path).ok()?;
+    let info = decoder.info().clone();
+    if Converter::output_channels(info.channels) != spec.channels {
+        return None;
+    }
+    let converter = Converter::new(
+        info.sample_rate,
+        info.channels,
+        spec.sample_rate,
+        spec.channels,
+    )
+    .ok()?;
+    shared.push_segment(Segment {
+        rate_ratio: f64::from(info.sample_rate) / f64::from(spec.sample_rate),
+        info,
+        first_output_frame,
+        start_frame: 0,
+    });
+    Some((decoder, converter))
+}
+
 fn wait_for_prefill(shared: &SharedState, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !shared.prefilled.load(Ordering::Acquire) && Instant::now() < deadline {
@@ -641,6 +781,28 @@ fn wait_for_prefill(shared: &SharedState, timeout: Duration) {
 mod tests {
     use super::*;
     use crate::audio::test_util::{temp_path, write_wav};
+
+    fn test_segment() -> Segment {
+        Segment {
+            info: TrackInfo {
+                path: PathBuf::from("deneme.wav"),
+                file_name: "deneme".into(),
+                title: None,
+                artist: None,
+                album: None,
+                album_artist: None,
+                track_number: None,
+                disc_number: None,
+                codec: "pcm".into(),
+                sample_rate: 8_000,
+                channels: 2,
+                duration_secs: None,
+            },
+            first_output_frame: 0,
+            start_frame: 0,
+            rate_ratio: 1.0,
+        }
+    }
 
     #[test]
     fn durum_onceligi_dogru() {
@@ -673,8 +835,7 @@ mod tests {
         let (producer, mut consumer) = RingBuffer::<Sample>::new(1_001);
         let shared = Arc::new(SharedState::new(
             false,
-            0,
-            1.0,
+            test_segment(),
             Arc::default(),
             Arc::default(),
         ));
@@ -718,8 +879,7 @@ mod tests {
         let (producer, _consumer) = RingBuffer::<Sample>::new(100); // hiç boşalmayacak
         let shared = Arc::new(SharedState::new(
             false,
-            0,
-            1.0,
+            test_segment(),
             Arc::default(),
             Arc::default(),
         ));
@@ -777,6 +937,121 @@ mod tests {
         let path = temp_path(name);
         write_wav(&path, 8_000, 1, 16_000, |frame, _| frame as f64 / 16_000.0);
         path
+    }
+
+    #[test]
+    fn bosluksuz_geciste_ornekler_ara_vermeden_surer() {
+        // A: 0..3000, B: 3000..5000 değerlerini taşıyan iki şarkı. Halka tampona
+        // aralarında tek örnek bile eksik ya da fazla olmadan art arda gelmeli.
+        let a = temp_path("bosluksuz-a.wav");
+        let b = temp_path("bosluksuz-b.wav");
+        write_wav(&a, 8_000, 2, 3_000, |f, _| f as f64 / 10_000.0);
+        write_wav(&b, 8_000, 2, 2_000, |f, _| (3_000 + f) as f64 / 10_000.0);
+        let decoder = Decoder::open(&a).unwrap();
+        let (producer, mut consumer) = RingBuffer::<Sample>::new(777);
+        let shared = Arc::new(SharedState::new(
+            false,
+            test_segment(),
+            Arc::default(),
+            Arc::default(),
+        ));
+        shared.set_next(Some(b.clone()));
+        let thread_shared = Arc::clone(&shared);
+        let converter = Converter::new(8_000, 2, 8_000, 2).unwrap();
+        let spec = OutputSpec {
+            sample_rate: 8_000,
+            channels: 2,
+        };
+        let handle = std::thread::spawn(move || {
+            decode_loop(decoder, converter, spec, producer, &thread_shared)
+        });
+        let mut received = Vec::new();
+        while !(shared.decode_done.load(Ordering::Acquire) && consumer.is_empty()) {
+            match consumer.pop() {
+                Ok(sample) => received.push(sample),
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+        handle.join().unwrap();
+        assert_eq!(received.len(), 5_000 * 2);
+        for (i, pair) in received.chunks(2).enumerate() {
+            assert!(
+                (pair[0] - i as f64 / 10_000.0).abs() < 1e-4,
+                "kare {i}: {}",
+                pair[0]
+            );
+        }
+        // İkinci şarkı, çıkış akışının 3000. karesinde başlar.
+        let segments = shared.segments.lock().unwrap().clone();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[1].first_output_frame, 3_000);
+        assert_eq!(segments[1].info.path, b);
+        // Konum hesabı: sınırdan önce A'da, sonra B'nin başında.
+        shared.output_heard.store(2_999, Ordering::Release);
+        assert_eq!(
+            shared.now_playing().unwrap().0.path,
+            PathBuf::from("deneme.wav")
+        );
+        shared.output_heard.store(3_400, Ordering::Release);
+        let (track, seconds) = shared.now_playing().unwrap();
+        assert_eq!(track.path, b);
+        assert!((seconds - 0.05).abs() < 1e-9, "{seconds}");
+        std::fs::remove_file(a).ok();
+        std::fs::remove_file(b).ok();
+    }
+
+    #[test]
+    fn oynatici_siradakine_kesintisiz_gecer() {
+        // 8 kHz şarkılar, 48 kHz sanal aygıt: geçiş, aygıt hızına çevrilen akışta olur.
+        output::simulated::set_device_rate(Some(48_000));
+        let a = ramp_song("gecis-a.wav");
+        let b = ramp_song("gecis-b.wav");
+        let mut player = Player::new();
+        player.load(&a, true).unwrap();
+        player.set_next(Some(b.clone()));
+        assert!(wait_until(|| player
+            .status()
+            .track
+            .is_some_and(|t| t.path == b)));
+        assert_ne!(
+            player.state(),
+            PlaybackState::Ended,
+            "ilk şarkı bitince durmaz"
+        );
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        let status = player.status();
+        assert_eq!(status.track.unwrap().path, b);
+        assert!(
+            (status.position_secs - 2.0).abs() < 1e-9,
+            "{}",
+            status.position_secs
+        );
+        assert_eq!(status.underruns, 0);
+        // Görseller de yeni şarkının analizine geçer.
+        // (Şarkı sonunda görsel kare yok; çağrı yine de analizi yeni şarkıya geçirir.)
+        player.visual_now();
+        assert_eq!(player.analysis.as_ref().unwrap().path, b);
+        output::simulated::set_device_rate(None);
+        std::fs::remove_file(a).ok();
+        std::fs::remove_file(b).ok();
+    }
+
+    #[test]
+    fn kanal_sayisi_uymayan_siradaki_sarkiya_gecilmez() {
+        let a = ramp_song("kanal-a.wav");
+        let b = temp_path("kanal-b.wav");
+        write_wav(&b, 8_000, 3, 8_000, |_, _| 0.1); // 3 kanal: stereo akışa eklenemez
+        let mut player = Player::new();
+        player.load(&a, true).unwrap();
+        player.set_next(Some(b.clone()));
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        assert_eq!(
+            player.status().track.unwrap().path,
+            a,
+            "ilk şarkı normal biter"
+        );
+        std::fs::remove_file(a).ok();
+        std::fs::remove_file(b).ok();
     }
 
     #[test]

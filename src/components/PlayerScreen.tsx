@@ -14,6 +14,9 @@ import {
   BROWSER_FALLBACK,
   getAppInfo,
   onFileDrop,
+  errorMessage,
+  openLog,
+  setNextTrack,
   type AppInfo,
   type LibraryTrack,
   type PlaybackStatus,
@@ -25,9 +28,11 @@ import {
   EMPTY_QUEUE,
   RESTART_THRESHOLD_SECONDS,
   currentPath,
+  followQueue,
   nextInQueue,
   previousInQueue,
   queueFrom,
+  upcomingPath,
   type Queue,
 } from "../lib/queue";
 import { useEqualizer } from "../hooks/useEqualizer";
@@ -81,6 +86,7 @@ export function PlayerScreen() {
   // "EQ" ışığı: ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa yanar.
   const soundShaped = equalizer.active || headphone.active;
   const [deck, setDeck] = useState<Deck>("library");
+  const [logError, setLogError] = useState<string | null>(null);
   const [scene, setScene] = useState<Scene>(loadScene);
   const changeScene = () => {
     const next = nextScene(scene);
@@ -105,9 +111,11 @@ export function PlayerScreen() {
   );
   const onEnded = useCallback(
     (ended: PlaybackStatus) => {
-      // Yalnızca sıradan çalınan şarkı bittiyse sonrakine geç.
-      if (currentPath(queue) !== ended.track?.path) return;
-      const next = nextInQueue(queue);
+      // Yalnızca sıradan çalınan şarkı bittiyse sonrakine geç (boşluksuz geçiş
+      // olamadıysa: ör. kanal sayısı farklı ya da şarkı açılamadı).
+      const current = followQueue(queue, ended.track?.path ?? null);
+      if (currentPath(current) !== ended.track?.path) return;
+      const next = nextInQueue(current);
       if (next) playQueue(next);
     },
     [queue, playQueue],
@@ -115,13 +123,24 @@ export function PlayerScreen() {
 
   const player = usePlayer(info.supportedExtensions, { onEnded });
   const { status } = player;
+  const statusPath = status.track?.path ?? null;
+  // Boşluksuz geçişte çekirdek sıradakine kendisi geçer: sıra buna göre ilerlemiş sayılır.
+  const activeQueue = followQueue(queue, statusPath);
+
+  // Sıradaki şarkı çekirdeğe önceden bildirilir: şarkı bitince ses kesilmeden ona geçer.
+  const upcoming = upcomingPath(activeQueue, statusPath);
+  useEffect(() => {
+    setNextTrack(upcoming).catch(() => {
+      /* Bildirilemezse şarkı sonunda normal geçiş yapılır. */
+    });
+  }, [upcoming]);
   useEffect(() => {
     openPathRef.current = player.openPath;
   }, [openPathRef, player.openPath]);
 
   // Sıra yalnızca çalan şarkı sıradaysa geçerlidir ("Dosya aç" ile tek şarkı açılınca değil).
-  const queueActive = status.track !== null && currentPath(queue) === status.track.path;
-  const canNext = queueActive && nextInQueue(queue) !== null;
+  const queueActive = status.track !== null && currentPath(activeQueue) === status.track.path;
+  const canNext = queueActive && nextInQueue(activeQueue) !== null;
 
   const playFromLibrary = (track: LibraryTrack, list: LibraryTrack[]) =>
     playQueue(
@@ -131,11 +150,11 @@ export function PlayerScreen() {
       ),
     );
   const next = () => {
-    const target = queueActive ? nextInQueue(queue) : null;
+    const target = queueActive ? nextInQueue(activeQueue) : null;
     if (target) playQueue(target);
   };
   const previous = () => {
-    const target = queueActive ? previousInQueue(queue) : null;
+    const target = queueActive ? previousInQueue(activeQueue) : null;
     // Şarkının ortasındaysa önce başa sar (alışılmış davranış).
     if (player.position > RESTART_THRESHOLD_SECONDS || !target) void player.seek(0);
     else playQueue(target);
@@ -416,6 +435,19 @@ export function PlayerScreen() {
           <span>Ses motoru: {info.audioEngine}</span>
         )}
         {!player.available && <span>Ses çalmak için programı Windows'ta açın.</span>}
+        {player.available && (
+          <button
+            type="button"
+            className="status__link"
+            title="Hata ve çökme günlüğünü dosya gezgininde gösterir. Hata kaydı açarken bu dosyayı ekleyin."
+            onClick={() => {
+              openLog().catch((e) => setLogError(errorMessage(e)));
+            }}
+          >
+            Hata günlüğü
+          </button>
+        )}
+        {logError && <span className="status__warn">{logError}</span>}
       </footer>
     </main>
   );

@@ -29,5 +29,21 @@ export function currentPath(queue: Queue): string | null {
   return queue.paths[queue.index] ?? null;
 }
 
+/**
+ * Boşluksuz geçiş: çekirdek sıradaki şarkıya kendiliğinden geçer. Çalan şarkı
+ * sıradakiyse sıra bir ilerlemiş sayılır; değilse sıra aynen döner.
+ */
+export function followQueue(queue: Queue, playingPath: string | null): Queue {
+  const next = nextInQueue(queue);
+  return next && playingPath !== null && currentPath(next) === playingPath ? next : queue;
+}
+
+/** Çekirdeğe önceden bildirilecek sıradaki şarkı (sıra etkin değilse `null`). */
+export function upcomingPath(queue: Queue, playingPath: string | null): string | null {
+  if (playingPath === null || currentPath(queue) !== playingPath) return null;
+  const next = nextInQueue(queue);
+  return next ? currentPath(next) : null;
+}
+
 /** "Önceki" düğmesi: şarkının ilk 3 saniyesinden sonra basılırsa şarkı başa sarılır. */
 export const RESTART_THRESHOLD_SECONDS = 3;

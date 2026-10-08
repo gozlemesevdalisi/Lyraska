@@ -51,7 +51,8 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
 │   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useVisualFeed (görsel verisi)
-│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky), Rust köprüsü (backend.ts),
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, queue), Rust köprüsü (backend.ts),
+│   │                         # arayüz hatalarını günlüğe yazma (errorReporting.ts),
 │   │                         # WebGL2 çizimi (skyRenderer.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
@@ -60,6 +61,7 @@ lyraska/
 │   │   ├── commands.rs       # Arayüzün çağırdığı ince Tauri komutları
 │   │   ├── audio/            # Ses motoru
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
+│   │   │   ├── gapless.rs    #   boşluksuz çalma: MP4/AAC kodlayıcı dolgusu (iTunSMPB, elst)
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
 │   │   │   ├── peq.rs        #   kulaklık düzeltmesi: AutoEq/Equalizer APO profili, parametrik EQ (RBJ)
 │   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
@@ -67,11 +69,12 @@ lyraska/
 │   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, taşma koruması, duraklatma geçişi
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
-│   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), komutlar
+│   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
 │   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
+│   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer, kulaklık)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
