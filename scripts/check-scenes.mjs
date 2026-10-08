@@ -24,8 +24,12 @@ const PORT = 4179;
 const EXPECT_FALLBACK = process.env.SCENE_EXPECT === "fallback";
 const URL = `http://localhost:${PORT}`;
 
-/** Tarayıcıda Tauri yerine geçen sahte çekirdek: 128 BPM'lik bir şarkı çalıyor. */
-const FAKE_CORE = `
+/**
+ * Tarayıcıda Tauri yerine geçen sahte çekirdek: 128 BPM'lik bir şarkı çalıyor. `level` verilirse bütün bantlar ve
+ * VU seviyeleri sabit o düzeyde (parlama sınırı ölçümü için: 0 = sessiz, 1 = tam).
+ */
+const fakeCore = (level = null) => `
+  const LEVEL = ${level === null ? "null" : level};
   window.isTauri = true;
   const started = performance.now();
   const track = { path: "C:/Müzik/deneme.flac", fileName: "deneme", title: "Deneme", artist: "Lyraska",
@@ -49,8 +53,11 @@ const FAKE_CORE = `
       case "song_map": case "annotation_get": return null;
       case "visual_frame": return {
         positionSecs: 60 + t,
-        bands: Array.from({ length: 32 }, (_, i) => Math.max(0, 0.85 - i * 0.015 + 0.12 * Math.sin(i + t * 4))),
-        rmsDb: [-12, -12], peakDb: [-3, -3], vuReferenceDb: -14, energy: 0.8, section: 1,
+        bands: Array.from({ length: 32 }, (_, i) =>
+          LEVEL ?? Math.max(0, 0.85 - i * 0.015 + 0.12 * Math.sin(i + t * 4))),
+        rmsDb: LEVEL === null ? [-12, -12] : LEVEL ? [0, 0] : [-60, -60],
+        peakDb: LEVEL === null ? [-3, -3] : LEVEL ? [0, 0] : [-60, -60],
+        vuReferenceDb: -14, energy: 0.8, section: 1,
         beat: { bpm: 128, index: Math.floor(beats), phase: beats % 1, barBeat: 1 + (Math.floor(beats) % 4), meter: 4 },
         director: {
           atmosphere: { section: 1, theme: 1, mood: 0.9, warmth: 0.6 },
@@ -121,6 +128,91 @@ function measure(png) {
   });
 }
 
+/**
+ * İki görüntü arasındaki en büyük ortalama parlaklık farkı, WCAG'nin parlama alanı
+ * büyüklüğündeki (1024×768 ekranda 341×256 piksel) en kötü pencerede.
+ */
+async function worstWindowDifference([before, after]) {
+  const load = async (data) => {
+    const img = new Image();
+    img.src = "data:image/png;base64," + data;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    return g.getImageData(0, 0, c.width, c.height);
+  };
+  const a = await load(before);
+  const b = await load(after);
+  const lin = (v) => {
+    v /= 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = (d, i) => 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]);
+  const W = a.width;
+  const H = a.height;
+  const sum = new Float64Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      sum[(y + 1) * (W + 1) + x + 1] =
+        lum(b.data, i) -
+        lum(a.data, i) +
+        sum[y * (W + 1) + x + 1] +
+        sum[(y + 1) * (W + 1) + x] -
+        sum[y * (W + 1) + x];
+    }
+  }
+  const bw = Math.min(341, W);
+  const bh = Math.min(256, H);
+  let worst = 0;
+  for (let y = 0; y + bh <= H; y += 4) {
+    for (let x = 0; x + bw <= W; x += 4) {
+      const s =
+        sum[(y + bh) * (W + 1) + x + bw] -
+        sum[y * (W + 1) + x + bw] -
+        sum[(y + bh) * (W + 1) + x] +
+        sum[y * (W + 1) + x];
+      worst = Math.max(worst, Math.abs(s) / (bw * bh));
+    }
+  }
+  return worst;
+}
+
+/** WCAG 2.3.1: bağıl parlaklıkta %10'dan küçük değişim parlama sayılmaz. */
+const FLASH_DELTA = 0.1;
+
+/**
+ * Parlama sınırı: sahne müziğin en sessiz hâlinden en yüksek hâline geçerken bile
+ * ekrandaki parlaklık farkı parlama eşiğinin altındaysa, hangi ritimde olursa olsun
+ * parlama üretemez. (Gece göğü ve otoyolda ayrıca değişim hızı da sınırlıdır.)
+ */
+async function checkFlashBound(browser, scene) {
+  const shots = [];
+  for (const level of [0, 1]) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    await page.addInitScript(
+      `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${fakeCore(level)}`,
+    );
+    await page.goto(URL);
+    await page.waitForTimeout(800);
+    await page.mouse.click(5, 5);
+    await page.keyboard.press("Space");
+    await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
+    shots.push((await page.locator(".display").screenshot()).toString("base64"));
+    await page.close();
+  }
+  const page = await browser.newPage();
+  const worst = await page.evaluate(worstWindowDifference, shots);
+  await page.close();
+  console.log(`${scene.name}: sessiz → tam ses en büyük parlaklık farkı ${worst.toFixed(4)}`);
+  return worst < FLASH_DELTA
+    ? []
+    : [`${scene.name}: parlaklık farkı ${worst.toFixed(3)} ≥ ${FLASH_DELTA} (parlama riski)`];
+}
+
 const SCENES = [
   {
     id: "sky",
@@ -134,6 +226,13 @@ const SCENES = [
   { id: "highway", name: "Gece otoyolu", extra: () => null },
 ];
 
+/** Parlama sınırı ölçülen sahneler (hepsi). */
+const ALL_SCENES = [
+  { id: "spectrum", name: "Nokta matris spektrum" },
+  { id: "vu", name: "VU ibreleri" },
+  ...SCENES,
+];
+
 async function checkScene(browser, scene) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
   const problems = [];
@@ -144,7 +243,7 @@ async function checkScene(browser, scene) {
   });
   page.on("pageerror", (e) => problems.push(`sayfa hatası: ${e}`));
   await page.addInitScript(
-    `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${FAKE_CORE}`,
+    `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${fakeCore()}`,
   );
   await page.goto(URL);
   await page.waitForTimeout(800);
@@ -203,6 +302,10 @@ try {
   // Yedek çizim yalnızca gece göğünde var (Lyra orada).
   const scenes = EXPECT_FALLBACK ? SCENES.filter((s) => s.id === "sky") : SCENES;
   for (const scene of scenes) problems = problems.concat(await checkScene(browser, scene));
+  if (!EXPECT_FALLBACK) {
+    for (const scene of ALL_SCENES)
+      problems = problems.concat(await checkFlashBound(browser, scene));
+  }
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));
