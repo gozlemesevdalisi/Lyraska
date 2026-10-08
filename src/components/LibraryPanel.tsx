@@ -233,7 +233,11 @@ export function LibraryPanel({
             <span role="columnheader" className="library__album">
               Albüm
             </span>
-            <span role="columnheader" className="library__bpm" title="Tempo (vuruş/dakika)">
+            <span
+              role="columnheader"
+              className="library__time library__bpm"
+              title="Tempo (vuruş/dakika)"
+            >
               BPM
             </span>
             <span role="columnheader" className="library__time">
