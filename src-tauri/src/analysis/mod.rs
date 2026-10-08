@@ -3,12 +3,16 @@
 //! - [`spectrogram`]: şarkının her anı için frekans bantları ve kanal seviyeleri (Faz 1).
 //! - [`levels`]: VU ibreleri için sol/sağ seviyeler ve şarkıya göre 0 VU referansı.
 //! - [`beats`]: vuruşlar ve tempo (BPM), spektrogramla aynı geçişte.
+//! - [`annotation`]: kullanıcının işaretlediği beat ve drop anları (ses içermez).
+//! - [`evaluate`]: analizin doğruluğunu insan işaretlerine göre ölçme (F-ölçüsü).
 //!
 //! Faz 2'de sırada: ölçü (ilk vuruş) takibi, bölüm sınırları, drop tespiti ve
 //! enerji eğrisi. Analiz şarkı çalmadan önce yapılır ve
 //! sonuç SQLite'ta saklanır; böylece görseller şarkıyı "önceden bilir".
 
+pub mod annotation;
 pub mod beats;
+pub mod evaluate;
 pub mod levels;
 pub mod spectrogram;
 

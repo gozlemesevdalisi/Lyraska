@@ -13,7 +13,9 @@ use std::sync::{Mutex, MutexGuard};
 use serde::Serialize;
 use tauri::State;
 
-use crate::audio::decode::{TrackInfo, SUPPORTED_EXTENSIONS};
+use crate::analysis::annotation::{AnnotatedTrack, Annotation, AnnotationStore};
+use crate::analysis::evaluate;
+use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
 use crate::audio::player::{PlaybackStatus, Player};
@@ -292,6 +294,73 @@ fn apply_headphone(
     Ok(HeadphoneState::new(applied))
 }
 
+/// İşaretleme: şarkının kayıtlı işaretleri (yoksa `null`).
+#[tauri::command]
+pub async fn annotation_get(
+    path: PathBuf,
+    store: State<'_, AnnotationStore>,
+) -> Result<Option<Annotation>, String> {
+    Ok(store.load(&annotated_track(&path)?))
+}
+
+/// İşaretleri şarkının işaret dosyasına yazar; dosyanın yolunu döndürür.
+/// Önceki "doğruluk" sonucu, işaretler değiştiği için silinir.
+#[tauri::command]
+pub async fn annotation_save(
+    path: PathBuf,
+    beats: Vec<f64>,
+    drops: Vec<f64>,
+    store: State<'_, AnnotationStore>,
+) -> Result<String, String> {
+    let annotation = Annotation::new(annotated_track(&path)?, beats, drops);
+    store
+        .save(&annotation)
+        .map(|p| p.display().to_string())
+        .map_err(|e| reported(format!("İşaretler kaydedilemedi: {e}")))
+}
+
+/// Kayıtlı işaretleri programın beat analiziyle karşılaştırır (birkaç saniye
+/// sürer); sonucu işaret dosyasına ekler ve döndürür.
+#[tauri::command]
+pub async fn annotation_evaluate(
+    path: PathBuf,
+    store: State<'_, AnnotationStore>,
+) -> Result<Annotation, String> {
+    let track = annotated_track(&path)?;
+    let mut annotation = store
+        .load(&track)
+        .ok_or_else(|| "Önce işaretleri kaydedin.".to_owned())?;
+    if annotation.beats.len() < 8 {
+        return Err("Doğruluğu ölçmek için en az 8 beat işaretleyin.".to_owned());
+    }
+    let marked = annotation.beats.clone();
+    let result =
+        tauri::async_runtime::spawn_blocking(move || evaluate::evaluate_file(&path, &marked))
+            .await
+            .map_err(reported)?
+            .map_err(reported)?;
+    annotation.evaluation = Some(result);
+    store
+        .save(&annotation)
+        .map_err(|e| reported(format!("Sonuç kaydedilemedi: {e}")))?;
+    Ok(annotation)
+}
+
+/// İşaret dosyalarının klasörünü dosya gezgininde açar.
+#[tauri::command]
+pub fn annotation_open_folder(store: State<'_, AnnotationStore>) -> Result<(), String> {
+    let dir = store
+        .dir()
+        .ok_or_else(|| "İşaret klasörü bulunamadı.".to_owned())?;
+    std::fs::create_dir_all(dir).map_err(|e| reported(format!("Klasör açılamadı: {e}")))?;
+    open_folder(dir).map_err(|e| reported(format!("Klasör açılamadı: {e}")))
+}
+
+fn annotated_track(path: &std::path::Path) -> Result<AnnotatedTrack, String> {
+    let decoder = Decoder::open(path).map_err(reported)?;
+    Ok(AnnotatedTrack::from_info(decoder.info()))
+}
+
 /// Arayüzde oluşan hatayı (yakalanmamış istisna vb.) günlüğe yazar.
 #[tauri::command]
 pub fn log_frontend_error(message: String) {
@@ -307,6 +376,22 @@ pub fn open_log() -> Result<(), String> {
     let path = diagnostics::log_path()
         .ok_or_else(|| "Hata günlüğü açılamadı: uygulama veri klasörü bulunamadı.".to_owned())?;
     reveal(&path).map_err(|e| format!("Hata günlüğü açılamadı: {e}"))
+}
+
+#[cfg(windows)]
+fn open_folder(dir: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
+}
+
+#[cfg(not(windows))]
+fn open_folder(dir: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
 }
 
 #[cfg(windows)]

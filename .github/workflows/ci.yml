@@ -40,6 +40,8 @@ jobs:
         run: npm test
       - name: Lisans denetimi
         run: npm run check:licenses
+      - name: Depoda ses dosyası yok (telif)
+        run: npm run check:audio
       - name: Derleme
         run: npm run build
 

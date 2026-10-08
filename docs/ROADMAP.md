@@ -32,6 +32,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)
 
+- [x] İşaretleme aracı: şarkı çalarken beat (Boşluk) ve drop (D) işaretleme, doğruluk ölçümü (F-ölçüsü)
 - [ ] Şarkı haritası analizi: beat ✓ (tempo ve vuruşlar), ölçü, bölümler, drop, enerji
 - [ ] Gecikme telafisi ve kalibrasyon
 - [ ] Koreografi: atmosfer, ritim ve doku katmanları

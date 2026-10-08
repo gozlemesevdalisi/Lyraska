@@ -190,6 +190,49 @@ export function stopPlayback(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("stop_playback");
 }
 
+/** Rust tarafındaki `analysis::evaluate::BeatEvaluation`. */
+export interface BeatEvaluation {
+  fMeasure: number;
+  tapOffsetMs: number;
+  fMeasureAligned: number;
+  detectedBpm: number | null;
+  markedBpm: number | null;
+  detectedCount: number;
+  markedCount: number;
+}
+
+/** Rust tarafındaki `analysis::annotation::Annotation` (yalnızca arayüzün kullandığı alanlar). */
+export interface Annotation {
+  savedAt: string;
+  beats: number[];
+  drops: number[];
+  evaluation: BeatEvaluation | null;
+}
+
+/** Şarkının kayıtlı işaretleri (yoksa `null`). Tarayıcı önizlemesinde hep `null`. */
+export async function getAnnotation(path: string): Promise<Annotation | null> {
+  if (!isTauri()) return null;
+  return invoke<Annotation | null>("annotation_get", { path });
+}
+
+/** İşaretleri kaydeder; yazılan dosyanın yolunu döndürür. */
+export async function saveAnnotation(
+  path: string,
+  beats: number[],
+  drops: number[],
+): Promise<string> {
+  return invoke<string>("annotation_save", { path, beats, drops });
+}
+
+/** Kayıtlı işaretleri programın beat analiziyle karşılaştırır (birkaç saniye sürer). */
+export async function evaluateAnnotation(path: string): Promise<Annotation> {
+  return invoke<Annotation>("annotation_evaluate", { path });
+}
+
+export async function openAnnotationFolder(): Promise<void> {
+  await invoke("annotation_open_folder");
+}
+
 /** Arayüzde oluşan hatayı çekirdeğin günlüğüne yazar (tarayıcı önizlemesinde yok sayılır). */
 export async function logFrontendError(message: string): Promise<void> {
   if (!isTauri()) return;
