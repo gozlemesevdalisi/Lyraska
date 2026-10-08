@@ -204,6 +204,8 @@ pub struct VisualData {
     pub beat: Option<(f64, BeatPosition)>,
     /// Şarkı yapısından o an: vuruşun ölçüdeki yeri, enerji, bölüm (analiz bitince).
     pub structure: Option<StructureNow>,
+    /// Görsel Yönetmen'in o anki notu (analiz bitince).
+    pub director: Option<crate::director::DirectorFrame>,
 }
 
 /// Şarkı yapısında o an.
@@ -397,6 +399,8 @@ pub struct Player {
     /// Kulaklık düzeltmesi: ses çıkışının okuduğu kanal ve son ayar.
     headphone_control: Arc<PeqControl>,
     headphone: HeadphoneSettings,
+    /// Epilepsi güvenli modu: Görsel Yönetmen nabızları saniyede en fazla bire indirir.
+    visual_safe: bool,
     /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
     /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
     visual_eq: Option<(u64, u32, [f64; BANDS])>,
@@ -597,6 +601,9 @@ impl Player {
         let beat = spectrogram
             .beat_grid()
             .and_then(|grid| Some((grid.bpm, grid.position_at(seconds)?)));
+        let director = spectrogram
+            .choreography()
+            .map(|c| c.frame_at(seconds, self.visual_safe));
         let structure = spectrogram.song_map().map(|map| StructureNow {
             bar_beat: beat.map(|(_, position)| map.bar_beat(position.index)),
             energy: map.energy_at(seconds),
@@ -613,7 +620,17 @@ impl Player {
             vu_reference_db,
             beat,
             structure,
+            director,
         })
+    }
+
+    /// Epilepsi güvenli modu açık mı?
+    pub fn visual_safe(&self) -> bool {
+        self.visual_safe
+    }
+
+    pub fn set_visual_safe(&mut self, safe: bool) {
+        self.visual_safe = safe;
     }
 
     /// Çalan şarkının yapısı (analiz bittiyse).

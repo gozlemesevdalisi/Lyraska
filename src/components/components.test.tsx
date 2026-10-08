@@ -565,6 +565,7 @@ describe("sahneler", () => {
       beat: null,
       energy: null,
       section: null,
+      director: null,
     };
     let meters: Parameters<typeof stepMeters>[0] = {
       needles: [

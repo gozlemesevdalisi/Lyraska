@@ -3,6 +3,7 @@
 //! Modül yapısı:
 //! - [`audio`]: ses motoru (çözme, 64-bit iç işlem, WASAPI çıkışı)
 //! - [`analysis`]: şarkı haritası analizi (beat, ölçü, bölümler, drop, enerji)
+//! - [`director`]: Görsel Yönetmen — şarkıyı önceden bilen koreografi (atmosfer, ritim, doku)
 //! - [`visual_bridge`]: analiz ve çalma zamanını arayüzdeki görsellere taşıyan köprü
 //! - [`library`]: müzik kütüphanesi (SQLite, klasör tarama, arama)
 //! - [`settings`]: kalıcı kullanıcı ayarları (ekolayzer vb.)
@@ -13,6 +14,7 @@ pub mod analysis;
 pub mod audio;
 pub mod commands;
 pub mod diagnostics;
+pub mod director;
 pub mod library;
 pub mod settings;
 pub mod visual_bridge;
