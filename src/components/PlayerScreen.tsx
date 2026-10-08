@@ -1,69 +1,31 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Dock } from "./Dock";
 import { DropOverlay } from "./DropOverlay";
 import { EqualizerPanel } from "./EqualizerPanel";
 import { InfoStack, type UpNext } from "./InfoStack";
 import { LibraryPanel } from "./LibraryPanel";
 import { MarkerPanel } from "./MarkerPanel";
 import { NowPlaying } from "./NowPlaying";
-import { SeekBar } from "./SeekBar";
+import { SceneStage } from "./SceneStage";
 import { SettingsPanel } from "./SettingsPanel";
-import { SpectrumDemo } from "./SpectrumDemo";
-import { SpectrumView } from "./SpectrumView";
-import { HighwayScene } from "./HighwayScene";
-import { SkyScene } from "./SkyScene";
 import { SyncPanel } from "./SyncPanel";
-import { VuScene } from "./VuScene";
-import {
-  CloseIcon,
-  EjectIcon,
-  LibraryIcon,
-  LyraMark,
-  NextIcon,
-  PauseIcon,
-  PlayIcon,
-  PreviousIcon,
-  SettingsIcon,
-  SlidersIcon,
-  StopIcon,
-} from "./icons";
-import {
-  BROWSER_FALLBACK,
-  getAppInfo,
-  logFrontendError,
-  onDragDrop,
-  errorMessage,
-  setNextTrack,
-  type AppInfo,
-  type LibraryTrack,
-  type PlaybackStatus,
-} from "../lib/backend";
-import { DROP_NOTICE_MS, DROP_PROBLEM_MS, dropSummary, type DropNotice } from "../lib/drop";
-import { describeError } from "../lib/errorReporting";
-import { SCENES, loadScene, saveScene, sceneForKey, type Scene } from "../lib/scene";
-import { fileStem, formatTime, trackTitle } from "../lib/format";
+import { CloseIcon, LibraryIcon, LyraMark, SettingsIcon, SlidersIcon } from "./icons";
+import { BROWSER_FALLBACK, getAppInfo, type AppInfo, type LibraryTrack } from "../lib/backend";
+import { SCENES } from "../lib/scene";
+import { fileStem, trackTitle } from "../lib/format";
 import { timelineLayout } from "../lib/timeline";
-import {
-  EMPTY_QUEUE,
-  RESTART_THRESHOLD_SECONDS,
-  currentPath,
-  followQueue,
-  nextInQueue,
-  previousInQueue,
-  queueFrom,
-  upcomingPath,
-  type Queue,
-} from "../lib/queue";
+import { useDrawer, type Panel } from "../hooks/useDrawer";
+import { useDropToLibrary } from "../hooks/useDropToLibrary";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
+import { usePlayback } from "../hooks/usePlayback";
+import { useScene } from "../hooks/useScene";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
 import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
-import { usePlayer } from "../hooks/usePlayer";
-
-type Panel = "library" | "eq" | "marker" | "sync" | "settings";
 
 const PANELS: [Panel, string][] = [
   ["library", "Kütüphane"],
@@ -75,8 +37,6 @@ const PANELS: [Panel, string][] = [
 
 /** Müzik çalarken fare bu kadar kıpırdamazsa düğmeler çekilir, yalnızca sahne kalır. */
 const IDLE_MS = 4000;
-const SPECTRUM_BANDS = 16;
-const SPECTRUM_ROWS = 10;
 
 /** Kütüphanede yolu verilen şarkı (arama sonucunda varsa). */
 function libraryTrack(tracks: LibraryTrack[], path: string | null): LibraryTrack | null {
@@ -97,67 +57,12 @@ export function PlayerScreen() {
   const visualSafe = useVisualSafe();
   // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
   const soundShaped = equalizer.active || headphone.active;
-  const [panel, setPanel] = useState<Panel>("library");
-  // Çekmece açılışta açıktır: henüz bir şey çalmıyor, kütüphane ilk iştir.
-  const [drawerOpen, setDrawerOpen] = useState(true);
-  const [scene, setScene] = useState<Scene>(loadScene);
-  const chooseScene = useCallback((next: Scene) => {
-    setScene(next);
-    saveScene(next);
-  }, []);
-  const [queue, setQueue] = useState<Queue>(EMPTY_QUEUE);
+  const [scene, chooseScene] = useScene();
 
-  // Sıradaki şarkıyı çalmak için oynatıcıya ihtiyaç var; oynatıcı da şarkı bitince
-  // sırayı soruyor. Döngüyü kırmak için açma işlevi sonradan bağlanır.
-  const [openPathRef] = useState<{ current: (path: string) => Promise<void> }>(() => ({
-    current: async () => {},
-  }));
-  const playQueue = useCallback(
-    (next: Queue) => {
-      const path = currentPath(next);
-      if (!path) return;
-      setQueue(next);
-      void openPathRef.current(path);
-    },
-    [openPathRef],
-  );
-  const onEnded = useCallback(
-    (ended: PlaybackStatus) => {
-      // Yalnızca sıradan çalınan şarkı bittiyse sonrakine geç (boşluksuz geçiş
-      // olamadıysa: ör. kanal sayısı farklı ya da şarkı açılamadı).
-      const current = followQueue(queue, ended.track?.path ?? null);
-      if (currentPath(current) !== ended.track?.path) return;
-      const next = nextInQueue(current);
-      if (next) playQueue(next);
-    },
-    [queue, playQueue],
-  );
-
-  const player = usePlayer(info.supportedExtensions, { onEnded });
+  const playback = usePlayback(info.supportedExtensions);
+  const { player, playList, upcoming } = playback;
   const { status } = player;
   const statusPath = status.track?.path ?? null;
-  // Boşluksuz geçişte çekirdek sıradakine kendisi geçer: sıra buna göre ilerlemiş sayılır.
-  const activeQueue = followQueue(queue, statusPath);
-  // İlerleyen sıra saklanır: yoksa ikinci geçişte sıra eski yerinden bakar, çalan
-  // şarkıyı tanımaz ve çalma o şarkının sonunda durur. (Çizim sırasında güncellenir:
-  // sıra ilerlemediyse `followQueue` aynı nesneyi döndürür, döngü olmaz.)
-  if (activeQueue !== queue) setQueue(activeQueue);
-
-  // Sıradaki şarkı çekirdeğe önceden bildirilir: şarkı bitince ses kesilmeden ona geçer.
-  const upcoming = upcomingPath(activeQueue, statusPath);
-  useEffect(() => {
-    setNextTrack(upcoming).catch(() => {
-      /* Bildirilemezse şarkı sonunda normal geçiş yapılır. */
-    });
-  }, [upcoming]);
-  useEffect(() => {
-    openPathRef.current = player.openPath;
-  }, [openPathRef, player.openPath]);
-
-  // Sıra yalnızca çalan şarkı sıradaysa geçerlidir ("Dosya aç" ile tek şarkı açılınca değil).
-  const queueActive = status.track !== null && currentPath(activeQueue) === status.track.path;
-  const canNext = queueActive && nextInQueue(activeQueue) !== null;
-
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
   const marker = useMarker(statusPath, playing, player.positionNow, songMap);
@@ -167,98 +72,36 @@ export function PlayerScreen() {
     status.state === "ended" ? statusPath : null,
   );
 
-  const selectPanel = (id: Panel) => {
-    setPanel(id);
-    // Sekmeden çıkınca işaretleme biter: Boşluk yine çal/duraklat olur.
-    if (id !== "marker") marker.setRecording(false);
-    // Senkron ölçümü de sekmeden çıkınca biter.
-    if (id !== "sync") sync.finishCalibration();
-  };
+  // Panelden ayrılınca işaretleme biter (Boşluk yine çal/duraklat olur), senkron ölçümü de.
   const { setRecording } = marker;
   const { finishCalibration } = sync;
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setRecording(false);
-    finishCalibration();
-  }, [setRecording, finishCalibration]);
-  /** Üst çubuktaki düğmeler: paneli açar; zaten açıksa çekmeceyi kapatır. */
-  const togglePanel = (id: Panel) => {
-    if (drawerOpen && panel === id) {
-      closeDrawer();
-    } else {
-      selectPanel(id);
-      setDrawerOpen(true);
-    }
-  };
-
-  const playFromLibrary = (track: LibraryTrack, list: LibraryTrack[]) => {
-    playQueue(
-      queueFrom(
-        list.map((t) => t.path),
-        track.path,
-      ),
-    );
-    // Çalmaya başlayınca sahne ortaya çıksın; kütüphane düğmesiyle geri açılır.
-    closeDrawer();
-  };
-  const next = () => {
-    const target = queueActive ? nextInQueue(activeQueue) : null;
-    if (target) playQueue(target);
-  };
-  const previous = () => {
-    const target = queueActive ? previousInQueue(activeQueue) : null;
-    // Şarkının ortasındaysa önce başa sar (alışılmış davranış).
-    if (player.position > RESTART_THRESHOLD_SECONDS || !target) void player.seek(0);
-    else playQueue(target);
-  };
-
-  // Pencereye bırakılanlar: şarkılar ve klasörler kütüphaneye eklenir, şarkılar bırakılış
-  // sırasıyla çalınır. Dosya mı klasör mü olduğuna çekirdek diskte bakar. Sonuç (sorunlar
-  // dahil) hangi panel açık olursa olsun kısa bir bildirimle gösterilir.
-  const { addDropped } = library;
-  const [dragging, setDragging] = useState(false);
-  const [dropNotice, setDropNotice] = useState<DropNotice | null>(null);
-  const handleDropped = useCallback(
-    async (paths: string[]) => {
-      let notice: DropNotice;
-      try {
-        const outcome = await addDropped(paths);
-        const first = outcome.tracks[0];
-        if (first) {
-          playQueue(queueFrom(outcome.tracks, first));
-          closeDrawer();
-        }
-        notice = dropSummary(outcome);
-      } catch (e) {
-        notice = { text: errorMessage(e), problem: true };
-      }
-      setDropNotice(notice);
+  const onLeave = useCallback(
+    (panel: Panel) => {
+      if (panel === "marker") setRecording(false);
+      if (panel === "sync") finishCalibration();
     },
-    [addDropped, playQueue, closeDrawer],
+    [setRecording, finishCalibration],
   );
-  useEffect(() => {
-    if (!dropNotice) return;
-    const ms = dropNotice.problem ? DROP_PROBLEM_MS : DROP_NOTICE_MS;
-    const timer = window.setTimeout(() => setDropNotice(null), ms);
-    return () => window.clearTimeout(timer);
-  }, [dropNotice]);
+  const drawer = useDrawer({ onLeave, escapeBusy: marker.recording });
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    onDragDrop({ onHover: setDragging, onDrop: (paths) => void handleDropped(paths) })
-      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
-      .catch((e) => {
-        // Dinlenemezse bırakmalar sessizce kaybolurdu: nedeni hata günlüğüne yazılır.
-        logFrontendError(`Sürükle-bırak dinlenemedi: ${describeError(e)}`).catch(() => {
-          /* Günlüğe yazılamazsa yapılacak bir şey yok. */
-        });
-      });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [handleDropped]);
+  // Çalmaya başlayınca sahne ortaya çıksın; kütüphane düğmesiyle geri açılır.
+  const { close: closeDrawer } = drawer;
+  const playAndReveal = useCallback(
+    (paths: string[], start: string) => {
+      playList(paths, start);
+      closeDrawer();
+    },
+    [playList, closeDrawer],
+  );
+  const playFromLibrary = (track: LibraryTrack, list: LibraryTrack[]) =>
+    playAndReveal(
+      list.map((t) => t.path),
+      track.path,
+    );
+  const drop = useDropToLibrary(
+    library.addDropped,
+    useCallback((tracks: string[]) => playAndReveal(tracks, tracks[0]!), [playAndReveal]),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -272,23 +115,8 @@ export function PlayerScreen() {
     };
   }, []);
 
-  // Klavye: 1–4 sahne seçer, Esc çekmeceyi kapatır (işaretleme sürerken Esc onu bitirir).
-  const { recording } = marker;
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("input, textarea, select, [contenteditable]")) return;
-      const picked = sceneForKey(event.key);
-      if (picked) chooseScene(picked);
-      else if (event.key === "Escape" && drawerOpen && !recording) closeDrawer();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [chooseScene, closeDrawer, drawerOpen, recording]);
-
   const idle = useIdle(IDLE_MS);
-  const cinema = idle && playing && !drawerOpen && !dragging;
+  const cinema = idle && playing && !drawer.open && !drop.dragging;
 
   // Ekranda akıcı saatle ilerleyen konum kullanılır (sarmada anında güncellenir).
   const position = player.position;
@@ -312,10 +140,6 @@ export function PlayerScreen() {
     () => libraryTrack(library.tracks, statusPath),
     [library.tracks, statusPath],
   );
-  const queueLabel =
-    queueActive && activeQueue.paths.length > 1
-      ? `${activeQueue.index + 1} / ${activeQueue.paths.length}`
-      : null;
   const upcomingTrack = useMemo(
     () => libraryTrack(library.tracks, upcoming),
     [library.tracks, upcoming],
@@ -328,48 +152,15 @@ export function PlayerScreen() {
       }
     : null;
 
-  let stage: ReactNode;
-  switch (scene) {
-    case "vu":
-      stage = <VuScene playing={playing} />;
-      break;
-    case "highway":
-      stage = <HighwayScene playing={playing} safe={visualSafe.safe} />;
-      break;
-    case "spectrum":
-      stage = (
-        <div className="spectrum-scene">
-          {/* Şarkı açıkken gerçek spektrum; boştayken gösteri animasyonu. */}
-          {hasTrack ? (
-            <SpectrumView
-              bands={SPECTRUM_BANDS}
-              rows={SPECTRUM_ROWS}
-              playing={playing}
-              className="vfd vfd--primary"
-            />
-          ) : (
-            <SpectrumDemo
-              bands={SPECTRUM_BANDS}
-              rows={SPECTRUM_ROWS}
-              className="vfd vfd--primary"
-            />
-          )}
-        </div>
-      );
-      break;
-    default:
-      stage = <SkyScene playing={playing} safe={visualSafe.safe} />;
-  }
-
   const chromeButton = (id: Panel, label: string, icon: ReactNode, led?: boolean) => (
     <button
       type="button"
-      className={`icon-button${drawerOpen && panel === id ? " is-active" : ""}`}
+      className={`icon-button${drawer.open && drawer.panel === id ? " is-active" : ""}`}
       aria-label={label}
-      aria-expanded={drawerOpen && panel === id}
+      aria-expanded={drawer.open && drawer.panel === id}
       aria-controls="drawer"
       title={label}
-      onClick={() => togglePanel(id)}
+      onClick={() => drawer.toggle(id)}
     >
       {icon}
       {led !== undefined && <span className={`led${led ? " is-on" : ""}`} aria-hidden />}
@@ -378,13 +169,11 @@ export function PlayerScreen() {
 
   return (
     <main
-      className={`app${cinema ? " is-cinema" : ""}${drawerOpen ? " has-drawer" : ""}${
+      className={`app${cinema ? " is-cinema" : ""}${drawer.open ? " has-drawer" : ""}${
         status.state === "error" || player.error ? " is-error" : ""
       }`}
     >
-      <div className="stage" data-scene={scene}>
-        {stage}
-      </div>
+      <SceneStage scene={scene} playing={playing} hasTrack={hasTrack} safe={visualSafe.safe} />
       <div className="stage__shade" aria-hidden />
 
       <header className="topbar chrome">
@@ -417,8 +206,8 @@ export function PlayerScreen() {
         <div className="hero chrome">
           <NowPlaying
             status={shown}
-            album={current?.album ?? null}
-            queueLabel={queueLabel}
+            album={status.track?.album ?? current?.album ?? null}
+            queueLabel={playback.queueLabel}
             error={player.error}
             available={player.available}
           />
@@ -432,81 +221,21 @@ export function PlayerScreen() {
           />
         </div>
 
-        <footer className="dock chrome">
-          <SeekBar
-            positionSecs={position}
-            durationSecs={durationSecs}
-            disabled={!player.available}
-            onSeek={(seconds) => void player.seek(seconds)}
-            layout={layout}
-          />
-          <div className="dock__row">
-            <time className="dock__time">{hasTrack ? formatTime(position) : "--:--"}</time>
-            <div className="transport">
-              <button
-                type="button"
-                className="round-button"
-                onClick={() => void player.stop()}
-                disabled={!player.available || !hasTrack}
-                title="Durdur ve başa dön"
-                aria-label="Durdur"
-              >
-                <StopIcon />
-              </button>
-              <button
-                type="button"
-                className="round-button round-button--large"
-                onClick={previous}
-                disabled={!player.available || !status.track}
-                title="Önceki şarkı (şarkının ortasındaysa başa sarar)"
-                aria-label="Önceki"
-              >
-                <PreviousIcon />
-              </button>
-              <button
-                type="button"
-                className="play-button"
-                onClick={() => void player.toggle()}
-                disabled={!player.available || !hasTrack}
-                title="Çal / Duraklat (Boşluk)"
-                aria-label={playing ? "Duraklat" : "Çal"}
-              >
-                {playing ? <PauseIcon /> : <PlayIcon />}
-              </button>
-              <button
-                type="button"
-                className="round-button round-button--large"
-                onClick={next}
-                disabled={!player.available || !canNext}
-                title="Sonraki şarkı"
-                aria-label="Sonraki"
-              >
-                <NextIcon />
-              </button>
-              <button
-                type="button"
-                className="round-button"
-                onClick={() => void player.openFile()}
-                disabled={!player.available}
-                title="Dosya aç (Ctrl+O)"
-                aria-label="Dosya aç"
-              >
-                <EjectIcon />
-              </button>
-            </div>
-            <time className="dock__time dock__time--end">
-              {hasTrack ? formatTime(durationSecs ?? 0) : "--:--"}
-            </time>
-          </div>
-        </footer>
+        <Dock
+          player={player}
+          layout={layout}
+          canNext={playback.canNext}
+          onPrevious={playback.previous}
+          onNext={playback.next}
+        />
       </div>
 
       <aside
         id="drawer"
-        className={`drawer${drawerOpen ? " is-open" : ""}`}
+        className={`drawer${drawer.open ? " is-open" : ""}`}
         aria-label="Paneller"
-        aria-hidden={!drawerOpen}
-        inert={!drawerOpen}
+        aria-hidden={!drawer.open}
+        inert={!drawer.open}
       >
         <div className="drawer__head">
           <div className="drawer__tabs" role="tablist" aria-label="Paneller">
@@ -517,9 +246,9 @@ export function PlayerScreen() {
                 role="tab"
                 id={`drawer-tab-${id}`}
                 aria-controls={`drawer-panel-${id}`}
-                aria-selected={panel === id}
-                className={`drawer__tab${panel === id ? " is-selected" : ""}`}
-                onClick={() => selectPanel(id)}
+                aria-selected={drawer.panel === id}
+                className={`drawer__tab${drawer.panel === id ? " is-selected" : ""}`}
+                onClick={() => drawer.select(id)}
               >
                 {label}
                 {id === "eq" && (
@@ -533,7 +262,7 @@ export function PlayerScreen() {
             className="icon-button icon-button--small"
             aria-label="Paneli kapat"
             title="Paneli kapat (Esc)"
-            onClick={closeDrawer}
+            onClick={drawer.close}
           >
             <CloseIcon />
           </button>
@@ -544,7 +273,7 @@ export function PlayerScreen() {
           role="tabpanel"
           id="drawer-panel-library"
           aria-labelledby="drawer-tab-library"
-          hidden={panel !== "library"}
+          hidden={drawer.panel !== "library"}
         >
           <LibraryPanel
             library={library}
@@ -560,7 +289,7 @@ export function PlayerScreen() {
           role="tabpanel"
           id="drawer-panel-eq"
           aria-labelledby="drawer-tab-eq"
-          hidden={panel !== "eq"}
+          hidden={drawer.panel !== "eq"}
         >
           <EqualizerPanel equalizer={equalizer} headphone={headphone} />
         </div>
@@ -569,7 +298,7 @@ export function PlayerScreen() {
           role="tabpanel"
           id="drawer-panel-marker"
           aria-labelledby="drawer-tab-marker"
-          hidden={panel !== "marker"}
+          hidden={drawer.panel !== "marker"}
         >
           <MarkerPanel
             marker={marker}
@@ -583,7 +312,7 @@ export function PlayerScreen() {
           role="tabpanel"
           id="drawer-panel-sync"
           aria-labelledby="drawer-tab-sync"
-          hidden={panel !== "sync"}
+          hidden={drawer.panel !== "sync"}
         >
           <SyncPanel sync={sync} playing={playing} available={player.available} />
         </div>
@@ -592,7 +321,7 @@ export function PlayerScreen() {
           role="tabpanel"
           id="drawer-panel-settings"
           aria-labelledby="drawer-tab-settings"
-          hidden={panel !== "settings"}
+          hidden={drawer.panel !== "settings"}
         >
           <SettingsPanel
             info={info}
@@ -603,7 +332,7 @@ export function PlayerScreen() {
         </div>
       </aside>
 
-      <DropOverlay dragging={dragging} notice={dropNotice} />
+      <DropOverlay dragging={drop.dragging} notice={drop.notice} />
     </main>
   );
 }
