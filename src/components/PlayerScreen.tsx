@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
+import { DropOverlay } from "./DropOverlay";
 import { Marquee } from "./Marquee";
 import { EqualizerPanel } from "./EqualizerPanel";
 import { LibraryPanel } from "./LibraryPanel";
@@ -16,7 +17,8 @@ import { textToColumns } from "../lib/dotFont";
 import {
   BROWSER_FALLBACK,
   getAppInfo,
-  onFileDrop,
+  logFrontendError,
+  onDragDrop,
   errorMessage,
   openLog,
   setNextTrack,
@@ -24,7 +26,8 @@ import {
   type LibraryTrack,
   type PlaybackStatus,
 } from "../lib/backend";
-import { splitDropped } from "../lib/drop";
+import { DROP_NOTICE_MS, DROP_PROBLEM_MS, dropSummary, type DropNotice } from "../lib/drop";
+import { describeError } from "../lib/errorReporting";
 import { loadScene, nextScene, saveScene, sceneName, type Scene } from "../lib/scene";
 import { formatBpm, formatTime, signalPathText, trackTechLine, trackTitle } from "../lib/format";
 import {
@@ -167,44 +170,50 @@ export function PlayerScreen() {
     else playQueue(target);
   };
 
-  // Pencereye bırakılanlar: şarkılar bırakılış sırasıyla çalınır, klasörler kütüphaneye eklenir.
-  const { addFolderPath } = library;
-  const extensions = info.supportedExtensions;
-  // Çekirdek hangi türleri çalabildiğini bildirmeden (açılışın ilk anı) bırakılan
-  // dosyalar bekletilir: yoksa şarkılar klasör sanılırdı.
-  const pendingDrops = useRef<string[]>([]);
+  // Pencereye bırakılanlar: şarkılar ve klasörler kütüphaneye eklenir, şarkılar bırakılış
+  // sırasıyla çalınır. Dosya mı klasör mü olduğuna çekirdek diskte bakar. Sonuç (sorunlar
+  // dahil) hangi sekme açık olursa olsun kısa bir bildirimle gösterilir.
+  const { addDropped } = library;
+  const [dragging, setDragging] = useState(false);
+  const [dropNotice, setDropNotice] = useState<DropNotice | null>(null);
   const handleDropped = useCallback(
-    (paths: string[]) => {
-      const { tracks, folders } = splitDropped(paths, extensions);
-      const first = tracks[0];
-      if (first) playQueue(queueFrom(tracks, first));
-      for (const folder of folders) void addFolderPath(folder);
+    async (paths: string[]) => {
+      let notice: DropNotice;
+      try {
+        const outcome = await addDropped(paths);
+        const first = outcome.tracks[0];
+        if (first) playQueue(queueFrom(outcome.tracks, first));
+        notice = dropSummary(outcome);
+      } catch (e) {
+        notice = { text: errorMessage(e), problem: true };
+      }
+      setDropNotice(notice);
     },
-    [extensions, playQueue, addFolderPath],
+    [addDropped, playQueue],
   );
   useEffect(() => {
-    if (extensions.length === 0 || pendingDrops.current.length === 0) return;
-    const waiting = pendingDrops.current;
-    pendingDrops.current = [];
-    handleDropped(waiting);
-  }, [extensions, handleDropped]);
+    if (!dropNotice) return;
+    const ms = dropNotice.problem ? DROP_PROBLEM_MS : DROP_NOTICE_MS;
+    const timer = window.setTimeout(() => setDropNotice(null), ms);
+    return () => window.clearTimeout(timer);
+  }, [dropNotice]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    onFileDrop((paths) => {
-      if (extensions.length === 0) pendingDrops.current.push(...paths);
-      else handleDropped(paths);
-    })
+    onDragDrop({ onHover: setDragging, onDrop: (paths) => void handleDropped(paths) })
       .then((fn) => (cancelled ? fn() : (unlisten = fn)))
-      .catch(() => {
-        /* Sürükle-bırak isteğe bağlı bir kolaylıktır. */
+      .catch((e) => {
+        // Dinlenemezse bırakmalar sessizce kaybolurdu: nedeni hata günlüğüne yazılır.
+        logFrontendError(`Sürükle-bırak dinlenemedi: ${describeError(e)}`).catch(() => {
+          /* Günlüğe yazılamazsa yapılacak bir şey yok. */
+        });
       });
     return () => {
       cancelled = true;
       unlisten?.();
     };
-  }, [extensions, handleDropped]);
+  }, [handleDropped]);
 
   useEffect(() => {
     let cancelled = false;
@@ -525,6 +534,7 @@ export function PlayerScreen() {
         {visualSafe.error && <span className="status__warn">{visualSafe.error}</span>}
         {logError && <span className="status__warn">{logError}</span>}
       </footer>
+      <DropOverlay dragging={dragging} notice={dropNotice} />
     </main>
   );
 }
