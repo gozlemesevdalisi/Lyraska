@@ -30,8 +30,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Şarkılar arası boşluksuz geçiş (AAC kodlayıcı dolgusu dahil); yerel hata/çökme günlüğü ve "Hata günlüğü" düğmesi
 - [x] 3 sahne: nokta matris spektrum, VU ibreleri, "Gece göğü" (WebGL2 gölgelendirici: kuzey ışıkları ve Lyra takımyıldızı).
       0.0.22: sahneler CI'da Windows Edge ile denetlenir; WebGL2 açılamazsa neden hata günlüğüne yazılır ve gece
-      göğü 2D yedek çizimle (Lyra dahil) görünür. Proje sahibinin bilgisayarında doğrulama bekliyor
-      ([#24](https://github.com/gozlemesevdalisi/Lyraska/issues/24))
+      göğü 2D yedek çizimle (Lyra dahil) görünür. Proje sahibinde ışıklar görünüyor (#24 kapandı)
+- [ ] Kuzey ışıklarını göz kamaştırıcı ve estetik yapmak (proje sahibinin isteği; parlamasız, epilepsi sınırı
+      içinde) ([#30](https://github.com/gozlemesevdalisi/Lyraska/issues/30))
+- [ ] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29))
 - [ ] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
       ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27))
 
