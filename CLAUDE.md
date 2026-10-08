@@ -29,7 +29,8 @@ Görselleri şarkıyı **önceden bilen**, tamamen **çevrimdışı** çalışan
   **Pioneer adı, logosu, yazı tipi veya herhangi bir varlığı asla kullanılmaz**; başka markaların da.
 - Program hiçbir zaman internete bağlanmak zorunda değildir. Telemetri yoktur.
 
-Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
+Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md). Mimari, iş parçacıkları ve hangi kuralı
+neyin denetlediği: [docs/MIMARI.md](docs/MIMARI.md).
 
 ## Teknik kararlar (sabit)
 
@@ -53,12 +54,13 @@ lyraska/
 │   ├── components/           # React bileşenleri: PlayerScreen (sahne tüm pencere; üstünde cam katmanlar:
 │   │                         # NowPlaying büyük başlık, InfoStack drop sayacı ve sıradaki, SeekBar şarkı haritası
 │   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, ayarlar)
-│   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useMarker (işaretleme),
-│   │                         # useSync (ses–görüntü senkronu), useVisualFeed (görsel verisi), useSongMap (çalan
-│   │                         # şarkının haritası), useIdle (sinema görünümü: fare durunca düğmeler çekilir)
+│   ├── hooks/                # usePlayback (oynatıcı + çalma sırası), useLibrary, useEqualizer, useHeadphone,
+│   │                         # useMarker (işaretleme), useSync (ses–görüntü senkronu), useVisualFeed (görsel
+│   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
+│   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover), Rust köprüsü
-│   │                         # (backend.ts), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
+│   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
@@ -81,6 +83,7 @@ lyraska/
 │   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama, BPM
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
+│   │   ├── storage.rs        # library.sqlite3 şeması ve sıralı göçleri (kütüphane + analiz önbelleği)
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, güvenli mod, ses gecikmesi)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
@@ -100,9 +103,11 @@ lyraska/
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
-├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi, sahne denetimi)
+├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi, sahne denetimi,
+│                             # komut sözleşmesi denetimi)
 ├── docs/
 │   ├── ROADMAP.md            # Yol haritası
+│   ├── MIMARI.md             # Mimari ve kuralları denetleyen testler
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
 │   ├── LISANSLAR.md          # Dışarıdan alınan varlıklar (yazı tipleri vb.) ve lisansları
 │   └── devlog/               # Oturum devir notları (Türkçe)
@@ -113,8 +118,11 @@ Kurallar:
 
 - Ağır iş (çözme, DSP, analiz) **Rust'ta** yapılır; arayüz yalnızca gösterir ve komut gönderir.
 - `commands.rs` ince kalır: iş ilgili modülde yapılır, komut yalnızca veriyi arayüze uygun biçime çevirir.
-- Rust → arayüz veri yapıları `#[serde(rename_all = "camelCase")]` kullanır ve `src/lib/backend.ts`
-  içinde TypeScript karşılığı tutulur.
+- Rust → arayüz veri yapıları `#[serde(rename_all = "camelCase")]` ve
+  `#[cfg_attr(test, derive(ts_rs::TS), ts(export))]` kullanır. TypeScript karşılıkları `cargo test` ile
+  `src/lib/bindings/` altına **üretilir**, elle yazılmaz; `src/lib/backend.ts` onları dışa verir. CI üretilenin
+  depodakiyle aynı olduğunu, `npm run check:commands` komut adlarının ve argümanlarının eşleştiğini denetler.
+- Veritabanı yapısı yalnızca `storage.rs`'teki sıralı göç adımlarıyla değişir (listenin sonuna eklenir).
 - Ses çıkış geri çağrısında (real-time thread) **bellek ayırma, kilit bekleme, dosya/ağ erişimi ve panic yoktur**.
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
 - Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
@@ -138,7 +146,8 @@ Hepsi depo kökünde çalıştırılır.
 | Arayüz testleri                | `npm test`                                                                           |
 | Arayüz lint / tür / biçim      | `npm run lint`, `npm run typecheck`, `npm run format:check`                          |
 | Biçimlendir                    | `npm run format` ve `cd src-tauri && cargo fmt`                                      |
-| Rust testleri                  | `cd src-tauri && cargo test`                                                         |
+| Rust testleri                  | `cd src-tauri && cargo test` (arayüz veri tiplerini de `src/lib/bindings/`'e üretir) |
+| Komut sözleşmesi               | `npm run check:commands` (arayüzün çağrıları ↔ çekirdeğin komutları)                 |
 | Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
 | Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
 | Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)     |
@@ -164,7 +173,10 @@ Rust:
 - `cargo fmt` ve `cargo clippy -D warnings` temiz olmalı.
 - `unsafe` yasaktır (`unsafe_code = "deny"`). WASAPI gibi zorunlu bir durumda yalnızca ilgili modülde,
   `// GÜVENLİK:` yorumuyla gerekçelendirilerek ve proje sahibine bildirilerek açılır.
-- Kütüphane kodunda `unwrap()`/`expect()` yerine hata türleri döndürülür (testler hariç).
+- Kütüphane kodunda `unwrap()`/`expect()`/`panic!` yerine hata türleri döndürülür (testler hariç). Clippy
+  denetler (`unwrap_used`, `expect_used`, `panic`); sürüm derlemesi panikte kapanır (`panic = "abort"`).
+- Ses çıkış yolunun bellek ayırmadığını `audio::render` testi `ses_yolu_bellek_ayirmaz` ölçer; ses yoluna
+  eklenen her işlem bu testin kapsamına alınır.
 - İç ses işleme `f64`'tür; dönüşüm yalnızca çözme girişinde ve aygıt çıkışında yapılır.
 
 TypeScript / React:
