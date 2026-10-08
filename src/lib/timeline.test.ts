@@ -7,14 +7,14 @@ describe("şarkı haritası şeridi", () => {
       durationSecs: 200,
       sections: [
         { start: 0, end: 50, energy: 0.4 },
-        { start: 50, end: 210, energy: 1.4 },
+        { start: 50, end: 210, energy: 1.4, label: 5 },
       ],
       programDrops: [60, 300],
       markedDrops: [61, -1],
     })!;
     expect(layout.sections).toEqual([
-      { x: 0, width: 0.25, energy: 0.4 },
-      { x: 0.25, width: 0.75, energy: 1 },
+      { x: 0, width: 0.25, energy: 0.4, theme: 0 },
+      { x: 0.25, width: 0.75, energy: 1, theme: 1 },
     ]);
     expect(layout.programDrops).toEqual([0.3]);
     expect(layout.markedDrops).toEqual([0.305]);

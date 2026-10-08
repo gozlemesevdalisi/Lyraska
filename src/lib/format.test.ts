@@ -1,8 +1,12 @@
 import {
+  fileStem,
   formatBpm,
+  formatLabel,
   formatTime,
   progress,
   signalPathText,
+  titleScale,
+  trackName,
   trackTechLine,
   trackTitle,
 } from "./format";
@@ -103,5 +107,41 @@ describe("progress", () => {
     expect(progress(300, 200)).toBe(1);
     expect(progress(10, null)).toBe(0);
     expect(progress(10, 0)).toBe(0);
+  });
+});
+
+describe("büyük başlık", () => {
+  it("etiketteki başlığı, yoksa dosya adını gösterir", () => {
+    expect(trackName(track)).toBe("sarki");
+    expect(trackName({ ...track, title: "Gülümse", artist: "Sezen Aksu" })).toBe("Gülümse");
+    expect(trackName({ ...track, title: "  " })).toBe("sarki");
+  });
+
+  it("uzun adlarda yazı küçülür", () => {
+    expect(titleScale("Gülümse")).toBe("xl");
+    expect(titleScale("Sözüm Meclisten Dışarı")).toBe("l");
+    expect(titleScale("Bir Şarkının Çok Uzun Olabilen Adı (Canlı Kayıt)")).toBe("m");
+  });
+});
+
+describe("ses biçimi etiketi", () => {
+  it("dönüştürme varsa iki hızı da yazar", () => {
+    const output = { deviceName: "", sampleRate: 48000, channels: 2, resampled: true };
+    expect(formatLabel(track, output)).toBe("FLAC 44,1 → 48 kHz");
+  });
+
+  it("dönüştürme yoksa ya da çıkış bilinmiyorsa yalnızca şarkının hızını yazar", () => {
+    const output = { deviceName: "", sampleRate: 44100, channels: 2, resampled: false };
+    expect(formatLabel(track, output)).toBe("FLAC 44,1 kHz");
+    expect(formatLabel({ ...track, codec: "mp3", sampleRate: 48000 }, null)).toBe("MP3 48 kHz");
+  });
+});
+
+describe("dosya adı", () => {
+  it("yoldan uzantısız adı çıkarır", () => {
+    expect(fileStem("D:\\Müzik\\Firuze.flac")).toBe("Firuze");
+    expect(fileStem("/home/ali/Sezen Aksu - Gülümse.mp3")).toBe("Sezen Aksu - Gülümse");
+    expect(fileStem("C:\\Müzik\\.gizli")).toBe(".gizli");
+    expect(fileStem("adsız")).toBe("adsız");
   });
 });

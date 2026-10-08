@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { VuMeter } from "./VuMeter";
 import type { VisualFrame } from "../lib/backend";
 import {
@@ -31,8 +31,6 @@ export function stepMeters(prev: Meters, frame: VisualFrame | null, dt: number):
 
 export interface VuSceneProps {
   playing: boolean;
-  /** Ortada gösterilecek içerik (süre). */
-  center: ReactNode;
 }
 
 /**
@@ -40,7 +38,7 @@ export interface VuSceneProps {
  * önceden analiz edilerek hesaplanır ve 0 VU şarkının yüksek bölümlerine göre
  * ayarlanır; ibreler gerçek VU ölçer gibi yaylı hareket eder.
  */
-export function VuScene({ playing, center }: VuSceneProps) {
+export function VuScene({ playing }: VuSceneProps) {
   const [meters, setMeters] = useState<Meters>(AT_REST);
 
   const onTick = useCallback((frame: VisualFrame | null, dt: number) => {
@@ -56,7 +54,6 @@ export function VuScene({ playing, center }: VuSceneProps) {
   return (
     <div className="vu-scene">
       <VuMeter channel="L" position={meters.needles[0].position} lamp={meters.lamps[0] > 0} />
-      <div className="vu-scene__center">{center}</div>
       <VuMeter channel="R" position={meters.needles[1].position} lamp={meters.lamps[1] > 0} />
     </div>
   );

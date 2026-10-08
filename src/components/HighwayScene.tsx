@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { VisualFrame } from "../lib/backend";
 import { HIGHWAY_AT_REST, stepHighway, type HighwayInput, type HighwayState } from "../lib/highway";
 import { createHighwayRenderer, type HighwayRenderer } from "../lib/highwayRenderer";
@@ -10,8 +10,6 @@ export interface HighwaySceneProps {
   playing: boolean;
   /** Epilepsi güvenli modu: parlaklık yarı hızla değişir, yol iki kat hızlanmaz. */
   safe?: boolean;
-  /** Görüntünün önünde gösterilecek içerik (süre). */
-  center: ReactNode;
 }
 
 /**
@@ -21,7 +19,7 @@ export interface HighwaySceneProps {
  * önce parıltı ufka çekilir, drop'ta yükselir ve yol hızlanır. Ekran kartında
  * (WebGL2) çizilir; WebGL2 yoksa durgun bir görüntü kalır.
  */
-export function HighwayScene({ playing, safe = false, center }: HighwaySceneProps) {
+export function HighwayScene({ playing, safe = false }: HighwaySceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<HighwayRenderer | null>(null);
   const road = useRef<HighwayState>(HIGHWAY_AT_REST);
@@ -63,7 +61,6 @@ export function HighwayScene({ playing, safe = false, center }: HighwaySceneProp
         role="img"
         aria-label="Gece otoyolu: vuruşlarla akan yol, ölçü başlarında geçen sokak lambaları ve ufukta şehir ışıkları"
       />
-      <div className="sky-scene__center">{center}</div>
     </div>
   );
 }

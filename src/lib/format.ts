@@ -54,3 +54,39 @@ export function progress(positionSecs: number, durationSecs: number | null): num
   if (!durationSecs || durationSecs <= 0) return 0;
   return Math.min(1, Math.max(0, positionSecs / durationSecs));
 }
+
+/** Büyük başlıkta gösterilen şarkı adı: etiketteki başlık, yoksa dosya adı. */
+export function trackName(track: TrackInfo): string {
+  return track.title?.trim() || track.fileName;
+}
+
+/**
+ * Büyük başlığın boyu: kısa adlar en büyük, uzun adlar küçülür; böylece ad iki satırı
+ * geçmez ve sahneyi kapatmaz.
+ */
+export function titleScale(title: string): "xl" | "l" | "m" {
+  const length = Array.from(title).length;
+  if (length <= 14) return "xl";
+  if (length <= 28) return "l";
+  return "m";
+}
+
+/**
+ * Ses biçimi etiketi: "FLAC 44,1 kHz"; şarkı aygıtın hızına çevriliyorsa
+ * "FLAC 44,1 → 48 kHz".
+ */
+export function formatLabel(track: TrackInfo, output: PlaybackStatus["output"]): string {
+  const codec = track.codec.toUpperCase();
+  const source = KHZ.format(track.sampleRate / 1000);
+  if (output?.resampled && output.sampleRate !== track.sampleRate) {
+    return `${codec} ${source} → ${KHZ.format(output.sampleRate / 1000)} kHz`;
+  }
+  return `${codec} ${source} kHz`;
+}
+
+/** Yoldaki dosyanın uzantısız adı ("D:\Müzik\Firuze.flac" → "Firuze"). */
+export function fileStem(path: string): string {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}

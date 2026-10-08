@@ -1,5 +1,6 @@
 import { mixColors, parseHexColor, SKY_THEMES, LYRA_LINES, type SkyState } from "./sky";
 import { lyraPositions } from "./skyRenderer";
+import { canvasScale } from "./gl";
 
 /**
  * "Gece göğü"nün yedek çizimi (Canvas 2D). Ekran kartı çizimi (WebGL2) açılamayan
@@ -103,7 +104,7 @@ export function createSkyFallback(canvas: HTMLCanvasElement): SkyFallback | null
 
   return {
     draw(state) {
-      const pixel = Math.min(window.devicePixelRatio || 1, 2);
+      const pixel = canvasScale(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio);
       const width = Math.max(1, Math.round(canvas.clientWidth * pixel));
       const height = Math.max(1, Math.round(canvas.clientHeight * pixel));
       if (canvas.width !== width || canvas.height !== height) {

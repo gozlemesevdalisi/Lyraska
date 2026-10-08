@@ -3,7 +3,6 @@ import {
   errorMessage,
   evaluateAnnotation,
   getAnnotation,
-  getSongMap,
   saveAnnotation,
   type BeatEvaluation,
   type SongMap,
@@ -33,9 +32,6 @@ interface PendingMarks {
   drops: number[];
   change: number;
 }
-/** Şarkı haritası (analiz) hazır olana kadar bu aralıkla sorulur; en fazla 2 dakika. */
-const SONG_MAP_POLL_MS = 1000;
-const SONG_MAP_MAX_TRIES = 120;
 
 export interface MarkerControls {
   marks: Marks;
@@ -66,6 +62,7 @@ export function useMarker(
   trackPath: string | null,
   playing: boolean,
   positionNow: () => number,
+  songMap: SongMap | null,
 ): MarkerControls {
   const [marks, setMarks] = useState<Marks>(EMPTY_MARKS);
   const [recording, setRecordingState] = useState(false);
@@ -77,7 +74,6 @@ export function useMarker(
   const [evaluating, setEvaluating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
-  const [songMap, setSongMap] = useState<SongMap | null>(null);
   const tapId = useRef(0);
   /** Her değişiklikte artar: kayıt sürerken yeni işaret geldiyse kirli kalınır. */
   const changeCount = useRef(0);
@@ -94,32 +90,8 @@ export function useMarker(
     setSavedFile(null);
     setDirty(false);
     setError(null);
-    setSongMap(null);
   }
 
-  // Şarkı haritası analiz bitince gelir: hazır olana kadar ara ara sorulur.
-  useEffect(() => {
-    if (!trackPath) return;
-    let cancelled = false;
-    let tries = 0;
-    let timer = 0;
-    const ask = () => {
-      getSongMap()
-        .then((map) => {
-          if (cancelled) return;
-          if (map) setSongMap(map);
-          else if (++tries < SONG_MAP_MAX_TRIES) timer = window.setTimeout(ask, SONG_MAP_POLL_MS);
-        })
-        .catch(() => {
-          /* Analiz yoksa harita gösterilmez. */
-        });
-    };
-    ask();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [trackPath]);
   useEffect(() => {
     if (!trackPath) return;
     let cancelled = false;

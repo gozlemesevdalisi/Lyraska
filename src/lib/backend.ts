@@ -123,7 +123,8 @@ export interface SongMap {
   meter: number;
   downbeatPhase: number;
   downbeats: number[];
-  sections: { start: number; end: number; energy: number }[];
+  /** `label`: benzer bölümler (ör. her nakarat) aynı etiketi alır; sahnelerin renk teması. */
+  sections: { start: number; end: number; energy: number; label: number }[];
   drops: number[];
   /** Saniyede bir enerji (0..1). */
   energy: number[];

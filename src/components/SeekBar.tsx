@@ -1,12 +1,19 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { formatTime, progress } from "../lib/format";
+import { dropLabels } from "../lib/songMap";
+import type { TimelineLayout } from "../lib/timeline";
 
 export interface SeekBarProps {
   positionSecs: number;
   durationSecs: number | null;
   disabled: boolean;
   onSeek: (seconds: number) => void;
+  /** Şarkı haritası: verilirse çubuk bölümleri, enerjiyi ve drop'ları gösterir. */
+  layout?: TimelineLayout | null;
 }
+
+/** "DROP" yazıları arasında en az bu kadar (çubuk genişliğine oranla) boşluk kalır. */
+const DROP_LABEL_GAP = 0.07;
 
 /** İşaretçinin çubuk üzerindeki oranı (0..1). */
 export function pointerRatio(clientX: number, left: number, width: number): number {
@@ -15,11 +22,19 @@ export function pointerRatio(clientX: number, left: number, width: number): numb
 }
 
 /**
- * Parlayan ilerleme çubuğu ve tutamacı. Fareyle üstüne gelince o noktanın
- * süresini gösterir; tıklayınca oraya atlar; tutamaç (ya da çubuk) sürüklenince
- * gidilecek süreyi gösterir ve bırakınca atlar. Klavyede ←/→ (genel kısayol).
+ * İlerleme çubuğu ve tutamacı. Şarkı haritası hazırsa çubuk, şarkının bölümlerini
+ * (yükseklik enerji, renk bölüm teması) ve drop'larını gösterir; çalınan kısım parlak,
+ * gelecek soluktur. Fareyle üstüne gelince o noktanın süresini gösterir; tıklayınca
+ * oraya atlar; tutamaç (ya da çubuk) sürüklenince gidilecek süreyi gösterir ve
+ * bırakınca atlar. Klavyede ←/→ (genel kısayol).
  */
-export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBarProps) {
+export function SeekBar({
+  positionSecs,
+  durationSecs,
+  disabled,
+  onSeek,
+  layout = null,
+}: SeekBarProps) {
   const [dragRatio, setDragRatio] = useState<number | null>(null);
   const [hoverRatio, setHoverRatio] = useState<number | null>(null);
   // Çizim için state, olaylar için ref: çok hızlı bas-bırak'ta bırakma olayı
@@ -37,7 +52,7 @@ export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBa
 
   return (
     <div
-      className={`seekbar${seekable ? " is-seekable" : ""}${dragRatio !== null ? " is-dragging" : ""}`}
+      className={`seekbar${layout ? " seekbar--map" : ""}${seekable ? " is-seekable" : ""}${dragRatio !== null ? " is-dragging" : ""}`}
       role="slider"
       tabIndex={seekable ? 0 : -1}
       aria-label="Şarkıda konum"
@@ -69,9 +84,13 @@ export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBa
       }}
     >
       <div className="seekbar__track">
-        <div className="display__progress">
-          <div className="display__progress-fill" style={{ transform: `scaleX(${ratio})` }} />
-        </div>
+        {layout ? (
+          <SongMapTrack layout={layout} ratio={ratio} />
+        ) : (
+          <div className="seekbar__line">
+            <div className="seekbar__fill" style={{ transform: `scaleX(${ratio})` }} />
+          </div>
+        )}
         {seekable ? (
           <span className="seekbar__thumb" style={{ left: `${ratio * 100}%` }} aria-hidden />
         ) : null}
@@ -81,6 +100,40 @@ export function SeekBar({ positionSecs, durationSecs, disabled, onSeek }: SeekBa
           {formatTime(tipRatio * durationSecs)}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+const percent = (ratio: number) => `${ratio * 100}%`;
+
+/** Şarkı haritası şeridi: soluk tüm şarkı, üstünde çalınan kısma kadar kırpılmış parlak kopya. */
+function SongMapTrack({ layout, ratio }: { layout: TimelineLayout; ratio: number }) {
+  const sections = layout.sections.map((section, index) => (
+    <span
+      key={index}
+      className={`songmap__section songmap__section--theme-${section.theme}`}
+      style={{
+        left: percent(section.x),
+        width: `calc(${percent(section.width)} - 3px)`,
+        height: percent(0.3 + 0.7 * section.energy),
+      }}
+    />
+  ));
+  const labels = dropLabels(layout.programDrops, DROP_LABEL_GAP);
+  return (
+    <div className="songmap" aria-hidden>
+      <div className="songmap__layer songmap__layer--future">{sections}</div>
+      <div
+        className="songmap__layer songmap__layer--past"
+        style={{ clipPath: `inset(0 ${percent(1 - ratio)} 0 0)` }}
+      >
+        {sections}
+      </div>
+      {layout.programDrops.map((x, index) => (
+        <span key={index} className="songmap__drop" style={{ left: percent(x) }}>
+          {labels[index] ? "DROP" : null}
+        </span>
+      ))}
     </div>
   );
 }
