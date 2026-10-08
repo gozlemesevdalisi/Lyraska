@@ -15,7 +15,7 @@ use wasapi::{
     initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WasapiError, WaveFormat,
 };
 
-use super::{DeviceInfo, OutputSpec};
+use super::{DeviceInfo, FadeWatch, OutputSpec};
 use crate::audio::player::SharedState;
 use crate::audio::render::Renderer;
 use crate::audio::{AudioError, Sample};
@@ -145,6 +145,8 @@ fn run(
     let mut started = false;
     // Şarkı bitince taşma korumasının gecikme hattında kalan son kareler de yazılır.
     let mut tail_left = renderer.latency_frames();
+    // Duraklatma geçişi hoparlöre ulaştı mı (oturum ancak o zaman kapatılır)?
+    let mut fade = FadeWatch::default();
 
     if let Some(tx) = ready.take() {
         let _ = tx.send(Ok(()));
@@ -185,6 +187,8 @@ fn run(
                 if outcome.frames_missing > 0 && !shared.decode_done.load(Ordering::Acquire) {
                     shared.underruns.fetch_add(1, Ordering::Relaxed);
                 }
+                let silent = paused && renderer.gain() == 0.0;
+                fade.wrote(frames, silent, renderer.latency_frames());
             }
         }
 
@@ -204,6 +208,9 @@ fn run(
         let padding = client
             .get_current_padding()
             .map_err(fail("Ses aygıtı okunamadı"))? as u64;
+        shared
+            .faded_out
+            .store(fade.faded_out(padding), Ordering::Release);
         let latency = padding + renderer.latency_frames() as u64;
         shared
             .output_heard

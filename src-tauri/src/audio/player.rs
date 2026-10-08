@@ -41,9 +41,9 @@ const PREFILL_SECONDS: f64 = 0.25;
 const PREFILL_TIMEOUT: Duration = Duration::from_secs(3);
 /// Tampon doluyken çözme iş parçacığının bekleme aralığı.
 const DECODE_IDLE: Duration = Duration::from_millis(5);
-/// Şarkı değiştirirken ya da sararken sesin kısılması için beklenen süre
-/// (render geçişi + aygıt periyodu payı).
-const CUT_FADE: Duration = Duration::from_millis(25);
+/// Şarkı değiştirirken, sararken ya da durdururken sesin kısılmasının hoparlöre
+/// ulaşması için en fazla bu kadar beklenir (aygıt arabelleği ~100 ms + geçiş).
+const FADE_OUT_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// İş parçacıkları arasında paylaşılan durum. Yalnızca atomik değişkenler
 /// gerçek zamanlı yolda kullanılır; `error` kilidi yalnızca hata anında alınır.
@@ -59,6 +59,9 @@ pub struct SharedState {
     pub decode_done: AtomicBool,
     /// Son örnek de hoparlörden çıktı.
     pub ended: AtomicBool,
+    /// Duraklatma geçişi hoparlöre ulaştı (ses tamamen sustu): oturum "tık" sesi
+    /// olmadan kapatılabilir. Çıkış iş parçacığı yazar.
+    pub faded_out: AtomicBool,
     /// Oturum başından beri hoparlörden çıkan çıkış karesi sayısı (aygıt hızında).
     /// Çıkış iş parçacığı yazar; şarkı konumu buradan [`Segment`]'lerle hesaplanır.
     pub output_heard: AtomicU64,
@@ -476,11 +479,15 @@ impl Player {
         autoplay: bool,
         start_secs: Option<f64>,
     ) -> Result<TrackInfo, AudioError> {
-        // Çalan sesi önce yumuşakça kıs, sonra oturumu kapat: "tık" sesi olmasın.
+        // Çalan sesi önce yumuşakça kıs, kısılma hoparlöre ulaşınca oturumu kapat:
+        // "tık" sesi olmasın. (Aygıt arabelleği sesi ~100 ms önden tutar.)
         if let Some(session) = &self.session {
-            if session.state() == PlaybackState::Playing {
+            if matches!(
+                session.state(),
+                PlaybackState::Playing | PlaybackState::Paused
+            ) {
                 session.shared.paused.store(true, Ordering::Release);
-                std::thread::sleep(CUT_FADE);
+                wait_for_fade_out(&session.shared, FADE_OUT_TIMEOUT);
             }
         }
         // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
@@ -897,6 +904,13 @@ fn open_next(
     Some((decoder, converter))
 }
 
+fn wait_for_fade_out(shared: &SharedState, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while !shared.faded_out.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 fn wait_for_prefill(shared: &SharedState, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !shared.prefilled.load(Ordering::Acquire) && Instant::now() < deadline {
@@ -1277,6 +1291,23 @@ mod tests {
         let session = player.session.as_ref().unwrap();
         let start = session.shared.segments.lock().unwrap()[0].start_frame;
         assert_eq!(start, 9_600, "baştan değil, kalınan yerden (1,2 sn)");
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn calarken_sarinca_eski_oturum_sesi_kisilinca_kapanir() {
+        let path = temp_path("sar-kis.wav");
+        write_wav(&path, 8_000, 1, 80_000, |_, _| 0.5);
+        let mut player = Player::new();
+        player.load(&path, true).unwrap();
+        assert!(wait_until(|| player.status().position_secs > 0.5));
+        let old = Arc::clone(&player.session.as_ref().unwrap().shared);
+        assert!(!old.faded_out.load(Ordering::Acquire), "çalarken ses açık");
+
+        player.seek(0.1).unwrap();
+        // Akış ancak kısılma hoparlöre ulaşınca kapatılır (yoksa "tık" duyulur).
+        assert!(old.faded_out.load(Ordering::Acquire));
+        assert!(old.stop.load(Ordering::Acquire));
         std::fs::remove_file(path).ok();
     }
 
