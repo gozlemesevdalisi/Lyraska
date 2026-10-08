@@ -129,6 +129,18 @@ function measure(png) {
 }
 
 /**
+ * Öğenin ekran görüntüsü (base64 PNG). Playwright'ın öğe görüntüsü öğenin "durgun"
+ * olmasını bekler; ekran kartsız CI makinesinde yazılımsal çizim çok yavaş olduğundan
+ * bu bekleme zaman aşımına düşebiliyordu. Konum bir kez okunur, o alan çekilir.
+ */
+async function capture(page, locator) {
+  const box = await locator.boundingBox({ timeout: 60_000 });
+  if (!box) throw new Error("öğe görünmüyor");
+  const shot = await page.screenshot({ clip: box, timeout: 60_000, animations: "allow" });
+  return shot.toString("base64");
+}
+
+/**
  * İki görüntü arasındaki en büyük ortalama parlaklık farkı, WCAG'nin parlama alanı
  * büyüklüğündeki (1024×768 ekranda 341×256 piksel) en kötü pencerede.
  */
@@ -201,7 +213,7 @@ async function checkFlashBound(browser, scene) {
     await page.mouse.click(5, 5);
     await page.keyboard.press("Space");
     await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
-    shots.push((await page.locator(".display").screenshot()).toString("base64"));
+    shots.push(await capture(page, page.locator(".display")));
     await page.close();
   }
   const page = await browser.newPage();
@@ -258,9 +270,9 @@ async function checkScene(browser, scene) {
     error: c.dataset.webglError ?? null,
     gpu: c.dataset.gpu ?? null,
   }));
-  const first = await page.evaluate(measure, (await canvas.screenshot()).toString("base64"));
+  const first = await page.evaluate(measure, await capture(page, canvas));
   await page.waitForTimeout(600);
-  const second = await page.evaluate(measure, (await canvas.screenshot()).toString("base64"));
+  const second = await page.evaluate(measure, await capture(page, canvas));
   // Hareket: örneklenen noktaların ne kadarı belirgin biçimde değişti (şerit çizgileri,
   // ışık perdeleri; gökyüzünün büyük kısmı durgundur).
   let moved = 0;
