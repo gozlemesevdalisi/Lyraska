@@ -29,6 +29,7 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
 /// Açılan şarkının bilgileri.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct TrackInfo {
     pub path: PathBuf,
     /// Dosya adı (uzantısız); etiket yoksa başlık olarak kullanılır.

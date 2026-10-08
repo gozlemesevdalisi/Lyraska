@@ -19,6 +19,7 @@ pub const FORMAT: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Annotation {
     pub format: u32,
     pub app_version: String,
@@ -35,6 +36,7 @@ pub struct Annotation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct AnnotatedTrack {
     /// Bu bilgisayardaki yol (yeniden değerlendirme için; başka yere gönderilmez).
     pub path: PathBuf,
@@ -42,6 +44,7 @@ pub struct AnnotatedTrack {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub duration_secs: Option<f64>,
+    #[cfg_attr(test, ts(type = "number | null"))]
     pub size_bytes: Option<u64>,
 }
 

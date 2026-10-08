@@ -36,6 +36,7 @@ fn reported(error: impl std::fmt::Display) -> String {
 /// Karşılama ekranında gösterilen program bilgisi.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct AppInfo {
     pub name: String,
     pub version: String,
@@ -307,6 +308,7 @@ pub async fn audio_delay_set(
 /// Senkron ölçümü için tıklama kaydı: dosya yolu ve tıklamaların zamanları.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct CalibrationTrack {
     pub path: PathBuf,
     pub clicks: Vec<f64>,

@@ -26,6 +26,8 @@ pub use service::{DropOutcome, LibraryService, LibraryStatus};
 pub enum LibraryError {
     #[error("Kütüphane veritabanı hatası: {0}")]
     Database(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Schema(#[from] crate::storage::SchemaError),
     #[error("Klasör okunamadı: {0}")]
     Io(#[from] std::io::Error),
     #[error("Bu zaten kütüphanede.")]

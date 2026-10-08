@@ -21,6 +21,10 @@ const track: TrackInfo = {
   sampleRate: 44100,
   channels: 2,
   durationSecs: 225,
+  album: null,
+  albumArtist: null,
+  trackNumber: null,
+  discNumber: null,
 };
 
 describe("formatTime", () => {

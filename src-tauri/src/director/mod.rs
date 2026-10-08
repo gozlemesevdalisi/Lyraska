@@ -40,6 +40,7 @@ const TREBLE_FROM_BAND: usize = 22;
 /// Bir anın yönetmen notu.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct DirectorFrame {
     pub atmosphere: Atmosphere,
     pub rhythm: Rhythm,
@@ -48,6 +49,7 @@ pub struct DirectorFrame {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Atmosphere {
     /// Bölümün sırası.
     pub section: usize,
@@ -61,6 +63,7 @@ pub struct Atmosphere {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Rhythm {
     /// Vuruş nabzı: vuruşta 1'e çıkar, sonra söner (0..1).
     pub pulse: f32,
@@ -77,6 +80,7 @@ pub struct Rhythm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Texture {
     /// Ayrıntı: tizlerin canlılığı (0..1, şarkıya göre).
     pub detail: f32,

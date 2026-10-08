@@ -156,6 +156,7 @@ struct Segment {
 /// Oynatıcının durumu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum PlaybackState {
     /// Şarkı açılmadı.
     Idle,
@@ -169,10 +170,12 @@ pub enum PlaybackState {
 /// Arayüzün düzenli aralıklarla sorguladığı durum özeti.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct PlaybackStatus {
     pub state: PlaybackState,
     pub track: Option<TrackInfo>,
     pub position_secs: f64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub underruns: u64,
     pub error: Option<String>,
     /// Şarkının temposu (BPM); analiz bitene kadar ya da belirgin ritim yoksa `None`.
@@ -184,6 +187,7 @@ pub struct PlaybackStatus {
 /// Sesin şarkıdan hoparlöre giden yolu (profesyonel çalarlardaki "sinyal yolu").
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct SignalPath {
     /// Aygıtın adı (ör. "Hoparlörler (Realtek(R) Audio)"); bilinmiyorsa boş.
     pub device_name: String,

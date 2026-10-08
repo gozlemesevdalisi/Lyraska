@@ -37,6 +37,7 @@ const DROP_MIN_GAP_BARS: usize = 16;
 /// Şarkının yapısı.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct SongMap {
     /// Ölçüdeki vuruş sayısı (3 ya da 4).
     pub meter: usize,
@@ -53,6 +54,7 @@ pub struct SongMap {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Section {
     pub start: f64,
     pub end: f64,

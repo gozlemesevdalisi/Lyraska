@@ -1,0 +1,4 @@
+# Rust → arayüz veri tiplerinin TypeScript karşılıkları `cargo test` ile buraya üretilir
+# (ts-rs). Elle düzenlenmez; CI üretilenin depodakiyle aynı olduğunu denetler.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/lib/bindings", relative = true }

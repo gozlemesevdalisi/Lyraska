@@ -29,23 +29,6 @@ use super::structure::SongMap;
 /// vuruş gecikmesi örnekleme hızına göre düşülüyor.
 pub const ANALYSIS_VERSION: i64 = 2;
 
-/// Önbellek tablosu. Kütüphane veritabanı da aynı tabloyu kurar (BPM sütunu için).
-pub const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS analyses (
-    path      TEXT PRIMARY KEY,
-    file_size INTEGER NOT NULL,
-    modified  INTEGER NOT NULL,
-    version   INTEGER NOT NULL,
-    frames    INTEGER NOT NULL,
-    bpm       REAL,
-    levels    BLOB NOT NULL,
-    meters    BLOB NOT NULL,
-    onset     BLOB NOT NULL,
-    beats     TEXT,
-    song_map  TEXT
-);
-";
-
 /// Sıkıştırma düzeyi (0–10): 6 hız ve boyut arasında iyi bir denge.
 const COMPRESSION_LEVEL: u8 = 6;
 
@@ -57,6 +40,8 @@ pub enum CacheError {
     Io(#[from] std::io::Error),
     #[error("Analiz önbelleği kilitlenemedi")]
     Lock,
+    #[error("{0}")]
+    Schema(#[from] crate::storage::SchemaError),
 }
 
 /// Bir dosyanın değişip değişmediğini anlamak için boyutu ve değişme zamanı
@@ -106,11 +91,12 @@ impl AnalysisCache {
         Self::init(Connection::open_in_memory()?)
     }
 
-    fn init(conn: Connection) -> Result<Self, CacheError> {
+    fn init(mut conn: Connection) -> Result<Self, CacheError> {
         // Kütüphane taraması aynı dosyaya yazarken kısa süre beklenir.
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
-        conn.execute_batch(SCHEMA)?;
+        // Tablo kütüphaneyle ortak şemada (`crate::storage`).
+        crate::storage::migrate(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

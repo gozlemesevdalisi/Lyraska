@@ -42,6 +42,13 @@ unsafe_code = "deny"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
 
 [target."cfg(windows)".dependencies]
 wasapi = "0.25"
+
+[dev-dependencies]
+allocation-counter = "0.8.1"
+ts-rs = "12.0.1"

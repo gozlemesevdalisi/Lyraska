@@ -1,210 +1,60 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { previewEqState } from "./eq";
+import type { Annotation } from "./bindings/Annotation";
+import type { AppInfo } from "./bindings/AppInfo";
+import type { BeatEvaluation } from "./bindings/BeatEvaluation";
+import type { BeatFrame } from "./bindings/BeatFrame";
+import type { CalibrationTrack } from "./bindings/CalibrationTrack";
+import type { DirectorFrame } from "./bindings/DirectorFrame";
+import type { DropOutcome } from "./bindings/DropOutcome";
+import type { EqSettings } from "./bindings/EqSettings";
+import type { EqState } from "./bindings/EqState";
+import type { HeadphoneFilter } from "./bindings/HeadphoneFilter";
+import type { HeadphoneProfile } from "./bindings/HeadphoneProfile";
+import type { HeadphoneState } from "./bindings/HeadphoneState";
+import type { LibraryFolder } from "./bindings/LibraryFolder";
+import type { LibraryStatus } from "./bindings/LibraryStatus";
+import type { LibraryTrack } from "./bindings/LibraryTrack";
+import type { PlaybackState } from "./bindings/PlaybackState";
+import type { PlaybackStatus } from "./bindings/PlaybackStatus";
+import type { ScanProgress } from "./bindings/ScanProgress";
+import type { SignalPath } from "./bindings/SignalPath";
+import type { SongMap } from "./bindings/SongMap";
+import type { TrackInfo } from "./bindings/TrackInfo";
+import type { VisualFrame } from "./bindings/VisualFrame";
 
-/** Rust tarafındaki `commands::AppInfo` yapısının TypeScript karşılığı. */
-export interface AppInfo {
-  name: string;
-  version: string;
-  phase: string;
-  audioEngine: string;
-  analysis: string;
-  visualBridge: string;
-  supportedExtensions: string[];
-}
-
-/** Rust tarafındaki `audio::decode::TrackInfo`. */
-export interface TrackInfo {
-  path: string;
-  fileName: string;
-  title: string | null;
-  artist: string | null;
-  codec: string;
-  sampleRate: number;
-  channels: number;
-  durationSecs: number | null;
-}
-
-/** Rust tarafındaki `audio::player::PlaybackState`. */
-export type PlaybackState = "idle" | "playing" | "paused" | "ended" | "error";
-
-/** Rust tarafındaki `audio::player::PlaybackStatus`. */
-export interface PlaybackStatus {
-  state: PlaybackState;
-  track: TrackInfo | null;
-  positionSecs: number;
-  underruns: number;
-  error: string | null;
-  /** Şarkının temposu; analiz bitene kadar ya da belirgin ritim yoksa `null`. */
-  bpm: number | null;
-  /** Sesin aygıta giden yolu; şarkı açık değilse `null`. */
-  output: SignalPath | null;
-}
-
-/** Rust tarafındaki `audio::player::SignalPath`. */
-export interface SignalPath {
-  /** Aygıtın adı; bilinmiyorsa boş. */
-  deviceName: string;
-  /** Aygıta giden örnekleme hızı ve kanal sayısı. */
-  sampleRate: number;
-  channels: number;
-  /** Şarkı aygıtın hızına Lyraska'nın dönüştürücüsüyle çevriliyor mu? */
-  resampled: boolean;
-}
-
-/** Rust tarafındaki `visual_bridge::VisualFrame`. */
-export interface VisualFrame {
-  positionSecs: number;
-  /** Logaritmik aralıklı frekans bantları (bastan tize), 0..1. */
-  bands: number[];
-  /** Sol/sağ etkin (RMS) seviye, dBFS; sessizlik −60. */
-  rmsDb: [number, number];
-  /** Sol/sağ tepe seviye, dBFS; sessizlik −60. */
-  peakDb: [number, number];
-  /** 0 VU'ya denk gelen seviye (dBFS), şarkıya göre; analiz bitene kadar `null`. */
-  vuReferenceDb: number | null;
-  /** Tempo ve vuruş konumu; analiz bitene kadar ya da ritim yoksa `null`. */
-  beat: BeatFrame | null;
-  /** Şarkının o anki enerjisi (0..1, şarkıya göre); analiz bitene kadar `null`. */
-  energy: number | null;
-  /** O anki bölümün sırası; analiz bitene kadar `null`. */
-  section: number | null;
-  /** Görsel Yönetmen'in o anki notu; analiz bitene kadar `null`. */
-  director: DirectorFrame | null;
-}
-
-/**
- * Rust tarafındaki `director::DirectorFrame`: Görsel Yönetmen'in bir anın notu.
- * Bütün değerler 0..1. Nabız olayları (`pulse`, `accent`, `release`) arasında en az
- * 0,34 sn (güvenli modda `pulse` için 1 sn) vardır; diğerleri yumuşak değişir.
- */
-export interface DirectorFrame {
-  atmosphere: {
-    section: number;
-    /** Benzer bölümler (ör. her nakarat) aynı temayı alır. */
-    theme: number;
-    /** 0 sakin … 1 yoğun. */
-    mood: number;
-    /** 0 soğuk … 1 sıcak. */
-    warmth: number;
-  };
-  rhythm: {
-    pulse: number;
-    accent: number;
-    beatPhase: number;
-    barPhase: number;
-    /** Droptan önceki gerilim (drop anında 1). */
-    anticipation: number;
-    /** Drop anındaki açılım (1 → 0). */
-    release: number;
-  };
-  texture: {
-    detail: number;
-    motion: number;
-  };
-}
-
-/** Rust tarafındaki `visual_bridge::BeatFrame`. */
-export interface BeatFrame {
-  bpm: number;
-  /** Son vuruşun sırası (0'dan başlar). */
-  index: number;
-  /** Son vuruştan bu yana geçen süre, vuruş aralığına oranla (0..1). */
-  phase: number;
-  /** Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`. */
-  barBeat: number | null;
-  /** Ölçüdeki vuruş sayısı (3 ya da 4); yapı analizi bitene kadar `null`. */
-  meter: number | null;
-}
-
-/** Rust tarafındaki `analysis::structure::SongMap`. */
-export interface SongMap {
-  /** Ölçüdeki vuruş sayısı (3 ya da 4). */
-  meter: number;
-  downbeatPhase: number;
-  downbeats: number[];
-  /** `label`: benzer bölümler (ör. her nakarat) aynı etiketi alır; sahnelerin renk teması. */
-  sections: { start: number; end: number; energy: number; label: number }[];
-  drops: number[];
-  /** Saniyede bir enerji (0..1). */
-  energy: number[];
-}
+// Rust → arayüz veri tipleri Rust tanımlarından üretilir (ts-rs: `cd src-tauri && cargo test`,
+// çıktı `./bindings/`). Elle yazılmaz; CI üretilenin depodakiyle aynı olduğunu denetler.
+export type {
+  Annotation,
+  AppInfo,
+  BeatEvaluation,
+  BeatFrame,
+  CalibrationTrack,
+  DirectorFrame,
+  DropOutcome,
+  EqSettings,
+  EqState,
+  HeadphoneFilter,
+  HeadphoneProfile,
+  HeadphoneState,
+  LibraryFolder,
+  LibraryStatus,
+  LibraryTrack,
+  PlaybackState,
+  PlaybackStatus,
+  ScanProgress,
+  SignalPath,
+  SongMap,
+  TrackInfo,
+  VisualFrame,
+};
 
 /** Çalan şarkının yapısı; analiz bitmediyse `null`. */
 export async function getSongMap(): Promise<SongMap | null> {
   if (!isTauri()) return null;
   return invoke<SongMap | null>("song_map");
-}
-
-/** Rust tarafındaki `library::FolderRow`. */
-export interface LibraryFolder {
-  id: number;
-  path: string;
-}
-
-/** Rust tarafındaki `library::TrackRow`. */
-export interface LibraryTrack {
-  id: number;
-  path: string;
-  title: string;
-  artist: string | null;
-  album: string | null;
-  trackNumber: number | null;
-  durationSecs: number | null;
-  codec: string;
-  /** Tempo (önbellekteki analizden); analiz edilmediyse ya da ritim yoksa `null`. */
-  bpm: number | null;
-  /** Şarkı haritası hazır mı (ritimsiz şarkılar da analiz edilmiş sayılır). */
-  analyzed: boolean;
-}
-
-/** Rust tarafındaki `library::scan::ScanProgress`. */
-export interface ScanProgress {
-  scanning: boolean;
-  found: number;
-  processed: number;
-  current: string | null;
-}
-
-/** Rust tarafındaki `library::LibraryStatus`. */
-export interface LibraryStatus {
-  folders: LibraryFolder[];
-  trackCount: number;
-  /** Şarkı haritası (arka plan analizi) hazır şarkı sayısı. */
-  analyzed: number;
-  scan: ScanProgress;
-  problems: string[];
-}
-
-/** Rust tarafındaki `library::service::DropOutcome`: pencereye bırakılanların sonucu. */
-export interface DropOutcome {
-  /** Çalınacak şarkılar, bırakılış sırasıyla (zaten kütüphanede olanlar dahil). */
-  tracks: string[];
-  addedTracks: number;
-  /** Yeni eklenen klasörler (şarkıları arka planda taranır). */
-  addedFolders: number;
-  /** Zaten kütüphanede olanlar (şarkı ya da klasör). */
-  already: number;
-  /** Eklenemeyenler; her biri kullanıcıya gösterilecek bir cümle. */
-  problems: string[];
-}
-
-/** Rust tarafındaki `audio::eq::EqSettings`. */
-export interface EqSettings {
-  enabled: boolean;
-  /** Bant başına kazanç (dB, ±12), bastan tize 10 bant. */
-  gainsDb: number[];
-}
-
-/** Rust tarafındaki `audio::eq::EqState`. */
-export interface EqState extends EqSettings {
-  bandsHz: number[];
-  maxGainDb: number;
-  /** Kırpılmayı önlemek için düşürülen kazanç (dB, ≤ 0). */
-  preampDb: number;
-  /** Gerçekten uygulanan eğri (ön kazanç hariç). */
-  curveHz: number[];
-  curveDb: number[];
 }
 
 export const EMPTY_LIBRARY: LibraryStatus = {
@@ -268,30 +118,6 @@ export function togglePlayback(): Promise<PlaybackStatus> {
 
 export function stopPlayback(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("stop_playback");
-}
-
-/** Rust tarafındaki `analysis::evaluate::BeatEvaluation`. */
-export interface BeatEvaluation {
-  fMeasure: number;
-  tapOffsetMs: number;
-  fMeasureAligned: number;
-  detectedBpm: number | null;
-  markedBpm: number | null;
-  detectedCount: number;
-  markedCount: number;
-  /** Programın bulduğu droplar (saniye). */
-  detectedDrops: number[];
-  /** İşaretlenen droplardan programın ±1 sn içinde bulduğu. */
-  dropHits: number;
-  markedDrops: number;
-}
-
-/** Rust tarafındaki `analysis::annotation::Annotation` (yalnızca arayüzün kullandığı alanlar). */
-export interface Annotation {
-  savedAt: string;
-  beats: number[];
-  drops: number[];
-  evaluation: BeatEvaluation | null;
 }
 
 /** Şarkının kayıtlı işaretleri (yoksa `null`). Tarayıcı önizlemesinde hep `null`. */
@@ -441,39 +267,8 @@ export async function setAudioDelay(ms: number): Promise<number> {
   return invoke<number>("audio_delay_set", { ms });
 }
 
-/** Rust tarafındaki `commands::CalibrationTrack`: tıklama kaydı ve tıklama zamanları. */
-export interface CalibrationTrack {
-  path: string;
-  /** Tıklamaların kayıttaki zamanları (saniye). */
-  clicks: number[];
-}
-
 export function getCalibrationTrack(): Promise<CalibrationTrack> {
   return invoke<CalibrationTrack>("calibration_track");
-}
-
-/** Rust tarafındaki `audio::peq::PeqFilter`. */
-export interface HeadphoneFilter {
-  kind: "peaking" | "lowShelf" | "highShelf";
-  freqHz: number;
-  gainDb: number;
-  q: number;
-}
-
-/** Rust tarafındaki `audio::peq::HeadphoneProfile`. */
-export interface HeadphoneProfile {
-  name: string;
-  preampDb: number;
-  filters: HeadphoneFilter[];
-}
-
-/** Rust tarafındaki `audio::peq::HeadphoneState`. */
-export interface HeadphoneState {
-  enabled: boolean;
-  profile: HeadphoneProfile | null;
-  /** Düzeltme eğrisi (ön kazanç dahil); profil yoksa boş. */
-  curveHz: number[];
-  curveDb: number[];
 }
 
 export const NO_HEADPHONE: HeadphoneState = {

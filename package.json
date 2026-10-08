@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:licenses": "node scripts/check-licenses.mjs",
+    "check:commands": "node scripts/check-commands.mjs",
     "check:audio": "node scripts/check-no-audio.mjs",
     "check:scenes": "node scripts/check-scenes.mjs"
   },

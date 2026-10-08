@@ -5,3 +5,6 @@ src-tauri/target
 src-tauri/gen
 package-lock.json
 LICENSE
+
+# Rust tanımlarından üretilir (ts-rs); elle düzenlenmez.
+src/lib/bindings

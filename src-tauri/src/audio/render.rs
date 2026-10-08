@@ -290,6 +290,87 @@ mod tests {
         assert!((db + 12.0).abs() < 1.0, "{db:.2} dB");
     }
 
+    /// CLAUDE.md kuralı: ses çıkış geri çağrısında bellek ayırma yok. Ekolayzer ve kulaklık
+    /// düzeltmesi açıkken, çalarken ayarlar değişirken (filtreler ses iş parçacığında yeniden
+    /// tasarlanır), duraklatıp devam ederken ve veri yetişmezken tek bir ayırma bile olmamalı.
+    #[test]
+    fn ses_yolu_bellek_ayirmaz() {
+        use crate::audio::eq::{EqSettings, BANDS};
+        use crate::audio::peq::{FilterKind, HeadphoneProfile, PeqControl, PeqFilter};
+
+        // Hazırlık (burada ayırma serbest).
+        let rate = 48_000;
+        let eq = Arc::new(EqControl::new(EqSettings {
+            enabled: true,
+            gains_db: [6.0, 5.0, 3.0, 1.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0],
+        }));
+        let headphone = Arc::new(PeqControl::default());
+        let profile = HeadphoneProfile {
+            name: "Deneme".into(),
+            preamp_db: -4.0,
+            filters: vec![
+                PeqFilter {
+                    kind: FilterKind::LowShelf,
+                    freq_hz: 105.0,
+                    gain_db: 4.0,
+                    q: 0.7,
+                },
+                PeqFilter {
+                    kind: FilterKind::Peaking,
+                    freq_hz: 3000.0,
+                    gain_db: -3.0,
+                    q: 2.0,
+                },
+                PeqFilter {
+                    kind: FilterKind::HighShelf,
+                    freq_hz: 10_000.0,
+                    gain_db: 2.0,
+                    q: 0.7,
+                },
+            ],
+        };
+        headphone.set(Some(&profile), true);
+        let w = 2.0 * std::f64::consts::PI * 220.0 / f64::from(rate);
+        let samples: Vec<Sample> = (0..rate * 2)
+            .map(|i| 0.9 * (w * f64::from(i / 2)).sin())
+            .collect();
+        let mut source = filled(&samples);
+        let mut renderer = Renderer::new(2, rate, eq.clone(), headphone.clone());
+        let mut out = vec![0.0f32; 2 * 480]; // 10 ms
+        let flat = EqSettings {
+            enabled: true,
+            gains_db: [0.0; BANDS],
+        };
+        let boosted = EqSettings {
+            enabled: true,
+            gains_db: [12.0; BANDS],
+        };
+
+        let info = allocation_counter::measure(|| {
+            for block in 0..250 {
+                match block {
+                    40 => {
+                        eq.set(boosted);
+                    }
+                    80 => headphone.set(Some(&profile), false),
+                    100 => {
+                        eq.set(flat);
+                    }
+                    _ => {}
+                }
+                let paused = (120..140).contains(&block);
+                renderer.render(&mut source, &mut out, paused);
+            }
+        });
+        // Son bloklarda tampon boşaldı: veri yetişmeme yolu da çalıştı.
+        assert_eq!(source.slots(), 0);
+        assert_eq!(
+            info.count_total, 0,
+            "ses yolu {} kez bellek ayırdı ({} bayt)",
+            info.count_total, info.bytes_total
+        );
+    }
+
     #[test]
     fn tasmalari_kirpar() {
         assert_eq!(to_device(1.7), 1.0);
