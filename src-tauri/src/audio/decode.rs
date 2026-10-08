@@ -226,6 +226,13 @@ impl Decoder {
                     }
                     self.buffer.resize(audio.samples_interleaved(), 0.0);
                     audio.copy_to_slice_interleaved(&mut self.buffer);
+                    // Bozuk kayan noktalı kayıtlarda NaN ya da sonsuz değer olabilir:
+                    // filtrelerin belleğine girerse şarkının geri kalanı bozulur. Sessizlik say.
+                    for sample in &mut self.buffer {
+                        if !sample.is_finite() {
+                            *sample = 0.0;
+                        }
+                    }
 
                     // Paketin çalınacak kısmı [from, to): sarma hedefinden ve baştaki
                     // dolgudan önceki örnekler, sondaki dolgu da atılır.
@@ -318,6 +325,54 @@ fn non_empty(value: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::audio::test_util::{sine, temp_path, write_wav};
+
+    /// 32 bit kayan noktalı mono WAV (biçim 3) yazar: bozuk dosyaları taklit etmek için.
+    fn write_float_wav(path: &std::path::Path, samples: &[f32]) {
+        let data_len = (samples.len() * 4) as u32;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8_000u32.to_le_bytes());
+        bytes.extend_from_slice(&32_000u32.to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&32u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for s in samples {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn bozuk_sayilar_sessizlige_cevrilir() {
+        // Bozuk bir kayıt: araya NaN ve sonsuz değerler karışmış.
+        let path = temp_path("bozuk-float.wav");
+        let mut samples = vec![0.25f32; 4_000];
+        samples[100] = f32::NAN;
+        samples[200] = f32::INFINITY;
+        samples[300] = f32::NEG_INFINITY;
+        write_float_wav(&path, &samples);
+        let mut decoder = Decoder::open(&path).unwrap();
+        let mut decoded = Vec::new();
+        while let Some(chunk) = decoder.next_chunk().unwrap() {
+            decoded.extend_from_slice(chunk);
+        }
+        assert_eq!(decoded.len(), samples.len());
+        assert!(
+            decoded.iter().all(|s| s.is_finite()),
+            "geçersiz sayı kalmamalı"
+        );
+        assert_eq!(decoded[100], 0.0);
+        assert_eq!(decoded[200], 0.0);
+        assert_eq!(decoded[300], 0.0);
+        assert!((decoded[101] - 0.25).abs() < 1e-6);
+        std::fs::remove_file(path).ok();
+    }
 
     #[test]
     fn wav_dosyasini_dogru_cozer() {

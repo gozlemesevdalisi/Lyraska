@@ -137,9 +137,14 @@ impl Renderer {
 }
 
 /// 64-bit iç örneği aygıt biçimine çevirir. Taşma koruması tepeleri zaten sınırın
-/// altına indirir; bu kırpma yalnızca son güvenlik önlemidir.
+/// altına indirir; bu kırpma ve geçersiz sayının sessizliğe çevrilmesi yalnızca son
+/// güvenlik önlemidir (aygıta asla NaN gitmez).
 fn to_device(sample: Sample) -> f32 {
-    sample.clamp(-1.0, 1.0) as f32
+    if sample.is_nan() {
+        0.0
+    } else {
+        sample.clamp(-1.0, 1.0) as f32
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +165,14 @@ mod tests {
             producer.push(s).unwrap();
         }
         consumer
+    }
+
+    #[test]
+    fn aygita_gecersiz_sayi_gitmez() {
+        assert_eq!(to_device(Sample::NAN), 0.0);
+        assert_eq!(to_device(Sample::INFINITY), 1.0);
+        assert_eq!(to_device(Sample::NEG_INFINITY), -1.0);
+        assert_eq!(to_device(0.5), 0.5);
     }
 
     #[test]
