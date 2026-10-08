@@ -524,13 +524,24 @@ fn open_folder(dir: &std::path::Path) -> std::io::Result<()> {
 
 #[cfg(windows)]
 fn reveal(path: &std::path::Path) -> std::io::Result<()> {
-    // `explorer /select,<dosya>`: klasörü açar ve dosyayı seçili gösterir.
-    let mut argument = std::ffi::OsString::from("/select,");
-    argument.push(path);
+    use std::os::windows::process::CommandExt;
+    // Olduğu gibi verilir: `arg` boşluklu yolu bütünüyle tırnaklardı.
     std::process::Command::new("explorer")
-        .arg(argument)
+        .raw_arg(select_argument(path))
         .spawn()
         .map(|_| ())
+}
+
+/// `explorer /select,"<dosya>"`: klasörü açar ve dosyayı seçili gösterir. Tırnak
+/// yalnızca yolun çevresinde olmalı. Explorer bütünüyle tırnaklı `"/select,C:\…"`
+/// biçimini anlamaz ve dosyayı seçmek yerine Belgeler'i açar. Kullanıcı adında
+/// boşluk varsa ("C:\Users\Ali Veli\…") olan buydu. Windows yollarında `"` olmaz.
+#[cfg(any(windows, test))]
+fn select_argument(path: &std::path::Path) -> std::ffi::OsString {
+    let mut argument = std::ffi::OsString::from("/select,\"");
+    argument.push(path);
+    argument.push("\"");
+    argument
 }
 
 #[cfg(not(windows))]
@@ -551,6 +562,15 @@ pub async fn playback_status(player: State<'_, PlayerState>) -> Result<PlaybackS
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gezginde_secme_yolu_bosluklu_kullanici_adinda_da_dogru() {
+        let path = std::path::Path::new(r"C:\Users\Ali Veli\AppData\logs\lyraska.log");
+        assert_eq!(
+            select_argument(path),
+            r#"/select,"C:\Users\Ali Veli\AppData\logs\lyraska.log""#
+        );
+    }
 
     #[test]
     fn surum_cargo_toml_ile_ayni() {
