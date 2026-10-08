@@ -50,10 +50,14 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 ```
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
-│   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
+│   ├── components/           # React bileşenleri: PlayerScreen (sahne tüm pencere; üstünde cam katmanlar:
+│   │                         # NowPlaying büyük başlık, InfoStack drop sayacı ve sıradaki, SeekBar şarkı haritası
+│   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, ayarlar)
 │   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useMarker (işaretleme),
-│   │                         # useSync (ses–görüntü senkronu), useVisualFeed (görsel verisi)
-│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync), Rust köprüsü
+│   │                         # useSync (ses–görüntü senkronu), useVisualFeed (görsel verisi), useSongMap (çalan
+│   │                         # şarkının haritası), useIdle (sinema görünümü: fare durunca düğmeler çekilir)
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
+│   │                         # timeline, cover), Rust köprüsü
 │   │                         # (backend.ts), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
