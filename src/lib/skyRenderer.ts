@@ -1,9 +1,22 @@
-import { LYRA_LINES, LYRA_STARS, AURORA_BASE, parseHexColor, type SkyState } from "./sky";
+import {
+  AURORA_BASE,
+  BLOOM_LUMINANCE,
+  LYRA_LINES,
+  LYRA_STARS,
+  SKY_THEMES,
+  mixColors,
+  parseHexColor,
+  type SkyState,
+} from "./sky";
 
 /**
  * "Gece göğü" sahnesinin WebGL2 çizimi. Tüm gök tek bir tam ekran
  * üçgende, parça gölgelendiricisinde hesaplanır: gökyüzü geçişi, yıldızlar,
  * Lyra takımyıldızı, kuzey ışıkları perdeleri ve uzak tepeler.
+ *
+ * Görsel Yönetmen'den gelenler: perde renkleri bölüm temasından (`--sky-theme-N-*`),
+ * gerilimde perdeler ufka çekilip daralır, açılımda yükselip genişler, ölçü
+ * başında perdenin boyunca bir dalga akar (yalnızca şekil; parlaklık değişmez).
  */
 export interface SkyRenderer {
   draw(state: SkyState): void;
@@ -16,11 +29,15 @@ type Rgb = [number, number, number];
 const COLORS: { uniform: UniformName; variable: string; fallback: Rgb }[] = [
   { uniform: "uZenith", variable: "--sky-zenith", fallback: [0.01, 0.016, 0.043] },
   { uniform: "uHorizon", variable: "--sky-horizon", fallback: [0.04, 0.1, 0.16] },
-  { uniform: "uAuroraLow", variable: "--sky-aurora-low", fallback: [0.29, 0.94, 0.63] },
-  { uniform: "uAuroraHigh", variable: "--sky-aurora-high", fallback: [0.48, 0.36, 1] },
   { uniform: "uStar", variable: "--sky-star", fallback: [0.91, 0.94, 1] },
   { uniform: "uGround", variable: "--sky-ground", fallback: [0.004, 0.008, 0.012] },
 ];
+
+/** Tema renkleri okunamazsa: tema 0'ın renkleri. */
+const AURORA_FALLBACK: { low: Rgb; high: Rgb } = {
+  low: [0.27, 0.94, 0.65],
+  high: [0.49, 0.36, 1],
+};
 
 /** Takımyıldızın ekrandaki yeri ve boyu (ekran yüksekliğine oranla). */
 const LYRA_ANCHOR = { x: 0.84, y: 0.86 };
@@ -40,6 +57,9 @@ uniform float uPixel;
 uniform float uFlow;
 uniform float uTwinkle;
 uniform vec3 uEnergy;
+uniform float uTension;
+uniform float uBloom;
+uniform float uRipple;
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
 uniform vec3 uAuroraLow;
@@ -127,11 +147,18 @@ ${LYRA_LINES.map(
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
     float x = p.x * (0.85 + 0.2 * fi) + fi * 3.7;
+    // Ölçü başı dalgası: ekranın ortasından iki yana yayılıp söner.
+    float spread = abs(p.x - 0.5 * aspect);
+    float ripple = 0.018 * exp(-uRipple * 1.4) * sin(spread * 9.0 - uRipple * 7.0)
+      * smoothstep(uRipple * 0.9 + 0.1, uRipple * 0.9 - 0.2, spread);
     float center = 0.5 + 0.08 * fi
       - 0.12 * (fbm(vec2(x * 0.7 - uFlow * 0.05 * (1.0 + 0.3 * fi), fi * 1.7)) - 0.5)
-      + 0.05 * sin(x * 1.3 + uFlow * 0.11 * (1.0 + 0.2 * fi));
+      + 0.05 * sin(x * 1.3 + uFlow * 0.11 * (1.0 + 0.2 * fi))
+      - 0.12 * uTension + 0.05 * uBloom + ripple;
     float dy = uv.y - center;
-    float shape = dy < 0.0 ? exp(-dy * dy / 0.0015) : exp(-dy / (0.16 + 0.04 * fi));
+    // Gerilimde perde daralır, açılımda yukarı doğru uzar.
+    float tail = (0.16 + 0.04 * fi) * (1.0 - 0.45 * uTension) * (1.0 + 0.12 * uBloom);
+    float shape = dy < 0.0 ? exp(-dy * dy / 0.0015) : exp(-dy / tail);
     // Perdenin dikey ışınları ve kıvrımları.
     float fold = fbm(vec2(x * 2.2 + uFlow * 0.07, fi * 3.1));
     float rays = 0.3 + 0.7 * smoothstep(0.25, 0.8, fbm(vec2(x * 11.0 + uFlow * 0.15 + fold * 2.0, uv.y * 0.5 - uFlow * 0.03)));
@@ -140,7 +167,8 @@ ${LYRA_LINES.map(
     float tint = clamp(dy * 3.0 + 0.2 + 0.2 * fi, 0.0, 1.0);
     aurora += mix(uAuroraLow, uAuroraHigh, tint) * shape * rays * strength * (1.0 - 0.22 * fi);
   }
-  col += aurora * 0.55;
+  // Açılım: uzama (%12) ile birlikte toplam parlaklık payı BLOOM_LUMINANCE kadar.
+  col += aurora * 0.55 * (1.0 + ${(BLOOM_LUMINANCE - 0.12).toFixed(2)} * uBloom);
 
   // Uzak tepeler: ışıkların önünde koyu siluet.
   float ridge = 0.04 + 0.16 * fbm(vec2(p.x * 1.1, 2.0)) + 0.03 * fbm(vec2(p.x * 6.0, 5.0));
@@ -197,6 +225,14 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
       ctx.uniform1f(uniforms.uFlow, state.flowTime);
       ctx.uniform1f(uniforms.uTwinkle, state.twinkleTime);
       ctx.uniform3f(uniforms.uEnergy, ...state.energies);
+      ctx.uniform1f(uniforms.uTension, state.tension);
+      ctx.uniform1f(uniforms.uBloom, state.bloom);
+      ctx.uniform1f(uniforms.uRipple, state.rippleTime);
+      const { from, to, mix } = state.palette;
+      const a = resources.themes[from % resources.themes.length] ?? AURORA_FALLBACK;
+      const b = resources.themes[to % resources.themes.length] ?? AURORA_FALLBACK;
+      ctx.uniform3f(uniforms.uAuroraLow, ...mixColors(a.low, b.low, mix));
+      ctx.uniform3f(uniforms.uAuroraHigh, ...mixColors(a.high, b.high, mix));
       if (lyraAspect !== width / height) {
         lyraAspect = width / height;
         ctx.uniform3fv(uniforms.uLyra, lyraPositions(lyraAspect));
@@ -229,6 +265,9 @@ type UniformName =
   | "uFlow"
   | "uTwinkle"
   | "uEnergy"
+  | "uTension"
+  | "uBloom"
+  | "uRipple"
   | "uLyra"
   | "uZenith"
   | "uHorizon"
@@ -241,6 +280,8 @@ interface Resources {
   program: WebGLProgram;
   vao: WebGLVertexArrayObject;
   uniforms: Record<UniformName, WebGLUniformLocation | null>;
+  /** Bölüm temalarının perde renkleri (`--sky-theme-N-low/high`). */
+  themes: { low: Rgb; high: Rgb }[];
 }
 
 function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources | null {
@@ -255,6 +296,9 @@ function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources
     uFlow: location("uFlow"),
     uTwinkle: location("uTwinkle"),
     uEnergy: location("uEnergy"),
+    uTension: location("uTension"),
+    uBloom: location("uBloom"),
+    uRipple: location("uRipple"),
     uLyra: location("uLyra"),
     uZenith: location("uZenith"),
     uHorizon: location("uHorizon"),
@@ -269,7 +313,11 @@ function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources
   for (const { uniform, variable, fallback } of COLORS) {
     gl.uniform3f(uniforms[uniform], ...parseHexColor(style.getPropertyValue(variable), fallback));
   }
-  return { program, vao, uniforms };
+  const themes = Array.from({ length: SKY_THEMES }, (_, i) => ({
+    low: parseHexColor(style.getPropertyValue(`--sky-theme-${i}-low`), AURORA_FALLBACK.low),
+    high: parseHexColor(style.getPropertyValue(`--sky-theme-${i}-high`), AURORA_FALLBACK.high),
+  }));
+  return { program, vao, uniforms, themes };
 }
 
 function linkProgram(gl: WebGL2RenderingContext): WebGLProgram | null {

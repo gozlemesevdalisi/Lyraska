@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { VisualFrame } from "../lib/backend";
-import { SKY_AT_REST, bandEnergies, stepSky, type SkyState } from "../lib/sky";
+import { SKY_AT_REST, bandEnergies, stepSky, type DirectorInput, type SkyState } from "../lib/sky";
 import { createSkyRenderer, type SkyRenderer } from "../lib/skyRenderer";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
 import { useVisualFeed } from "../hooks/useVisualFeed";
 
 export interface SkySceneProps {
   playing: boolean;
+  /** Epilepsi güvenli modu: parlaklık yarı hızla değişir. */
+  safe?: boolean;
   /** Gökyüzünün önünde gösterilecek içerik (süre). */
   center: ReactNode;
 }
@@ -14,10 +16,12 @@ export interface SkySceneProps {
 /**
  * "Gece göğü" sahnesi: uzak tepelerin üstünde kuzey ışıkları ve yıldızlar,
  * köşede Lyra takımyıldızı. Bas, orta ve tiz üç ayrı ışık perdesini yavaşça
- * güçlendirir; vuruşlar ışıkların akışını hızlandırır. Ekran kartında (WebGL2)
- * çizilir; WebGL2 yoksa durgun bir gök görünür.
+ * güçlendirir; vuruşlar ışıkların akışını hızlandırır. Görsel Yönetmen şarkıyı
+ * önceden bildiği için perdelerin rengini bölüme göre seçer, droptan önce
+ * ışıkları toplar ve drop anında açar. Ekran kartında (WebGL2) çizilir; WebGL2
+ * yoksa durgun bir gök görünür.
  */
-export function SkyScene({ playing, center }: SkySceneProps) {
+export function SkyScene({ playing, safe = false, center }: SkySceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<SkyRenderer | null>(null);
   const sky = useRef<SkyState>(SKY_AT_REST);
@@ -43,10 +47,12 @@ export function SkyScene({ playing, center }: SkySceneProps) {
         frame ? bandEnergies(frame.bands) : null,
         dt,
         reducedMotion,
+        frame ? directorInput(frame) : null,
+        safe,
       );
       renderer.current?.draw(sky.current);
     },
-    [reducedMotion],
+    [reducedMotion, safe],
   );
   useVisualFeed(playing, onTick);
 
@@ -61,4 +67,18 @@ export function SkyScene({ playing, center }: SkySceneProps) {
       <div className="sky-scene__center">{center}</div>
     </div>
   );
+}
+
+/** Yönetmen notunun göğün kullandığı kısmı; analiz bitmediyse `null`. */
+function directorInput(frame: VisualFrame): DirectorInput | null {
+  const d = frame.director;
+  if (!d) return null;
+  return {
+    mood: d.atmosphere.mood,
+    theme: d.atmosphere.theme,
+    pulse: d.rhythm.pulse,
+    accent: d.rhythm.accent,
+    anticipation: d.rhythm.anticipation,
+    release: d.rhythm.release,
+  };
 }

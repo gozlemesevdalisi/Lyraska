@@ -31,6 +31,8 @@ const backend = vi.hoisted(() => ({
   saveMarks: vi.fn(),
   annotation: null as import("../lib/backend").Annotation | null,
   songMap: null as import("../lib/backend").SongMap | null,
+  safe: false,
+  setSafe: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -90,6 +92,12 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return actual.setEqualizer(settings);
     },
     openLog: async () => backend.openLog(),
+    getVisualSafe: async () => backend.safe,
+    setVisualSafe: async (enabled: boolean) => {
+      backend.setSafe(enabled);
+      backend.safe = enabled;
+      return enabled;
+    },
     getAnnotation: async () => backend.annotation,
     getSongMap: async () => backend.songMap,
     saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
@@ -552,6 +560,23 @@ describe("sahneler", () => {
       screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ }),
     ).toBeInTheDocument();
     getContext.mockRestore();
+  });
+
+  it("epilepsi güvenli modu düğmeyle açılır, kaydedilir ve SAFE ışığı yanar", async () => {
+    backend.safe = false;
+    const { container } = render(<App />);
+    const toggle = await screen.findByRole("button", { name: /Epilepsi güvenli modu: Kapalı/ });
+    const lamp = () =>
+      [...container.querySelectorAll(".display__indicators li")].find(
+        (li) => li.textContent === "SAFE",
+      );
+    expect(lamp()).not.toHaveClass("is-on");
+    await act(async () => fireEvent.click(toggle));
+    expect(backend.setSafe).toHaveBeenCalledWith(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveTextContent("Açık");
+    expect(lamp()).toHaveClass("is-on");
+    backend.safe = false;
   });
 
   it("VU ölçerler sese göre ilerler, susunca dinlenmeye döner", async () => {

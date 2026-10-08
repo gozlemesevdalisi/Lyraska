@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AURORA_BASE,
   AURORA_MAX_LUMINANCE,
+  BLOOM_LUMINANCE,
   ENERGY_SLEW_PER_SECOND,
   LYRA_LINES,
   LYRA_STARS,
@@ -9,7 +10,9 @@ import {
   auroraLuminance,
   bandEnergies,
   parseHexColor,
+  mixColors,
   stepSky,
+  type DirectorInput,
   type Energies,
   type SkyState,
 } from "./sky";
@@ -110,8 +113,12 @@ describe("gece göğü", () => {
   });
 
   it("parlaklık sınırları doğru", () => {
-    expect(auroraLuminance([0, 0, 0])).toBeCloseTo(AURORA_MAX_LUMINANCE * AURORA_BASE, 10);
-    expect(auroraLuminance([1, 1, 1])).toBeCloseTo(AURORA_MAX_LUMINANCE, 10);
+    const calm = AURORA_MAX_LUMINANCE / (1 + BLOOM_LUMINANCE);
+    expect(auroraLuminance([0, 0, 0])).toBeCloseTo(calm * AURORA_BASE, 10);
+    expect(auroraLuminance([1, 1, 1])).toBeCloseTo(calm, 10);
+    // Açılım dahil en parlak hâl bile üst sınırı aşmaz.
+    expect(auroraLuminance([1, 1, 1], 1)).toBeCloseTo(AURORA_MAX_LUMINANCE, 10);
+    expect(auroraLuminance([1, 1, 1], 5)).toBeCloseTo(AURORA_MAX_LUMINANCE, 10);
   });
 
   it("vuruşlar akışı hızlandırır", () => {
@@ -132,6 +139,108 @@ describe("gece göğü", () => {
   it("uzun bir sekme aradan sonra sıçramaz", () => {
     const after = stepSky(SKY_AT_REST, [1, 1, 1], 30);
     expect(after.energies[0]).toBeLessThanOrEqual(ENERGY_SLEW_PER_SECOND * 0.25 + 1e-12);
+  });
+});
+
+const CALM: DirectorInput = {
+  mood: 0,
+  theme: 0,
+  pulse: 0,
+  accent: 0,
+  anticipation: 0,
+  release: 0,
+};
+
+function runDirected(
+  state: SkyState,
+  director: DirectorInput,
+  seconds: number,
+  reduced = false,
+  safe = false,
+) {
+  let s = state;
+  for (let i = 0; i < Math.round(seconds / DT); i++) {
+    s = stepSky(s, [0.5, 0.5, 0.5], DT, reduced, director, safe);
+  }
+  return s;
+}
+
+describe("Görsel Yönetmen ile gök", () => {
+  it("en kötü durumda bile saniyede 3'ten fazla parlamaz (normal ve güvenli mod)", () => {
+    // Yönetmenin bütün değerleri ve bantlar aynı anda tam ölçekle gidip geliyor.
+    for (const safe of [false, true]) {
+      for (const hz of [0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 20, 30]) {
+        let s = SKY_AT_REST;
+        const luminance: number[] = [];
+        let flips = 0;
+        for (let i = 0; i < 600; i++) {
+          const on = Math.floor(i * DT * hz * 2) % 2 === 0;
+          const director: DirectorInput = on
+            ? { mood: 1, theme: flips++, pulse: 1, accent: 1, anticipation: 0, release: 1 }
+            : { ...CALM, anticipation: 1 };
+          s = stepSky(s, on ? [1, 1, 1] : [0, 0, 0], DT, false, director, safe);
+          luminance.push(auroraLuminance(s.energies, s.bloom));
+        }
+        expect(countFlashes(luminance) / 10, `${hz} Hz, güvenli: ${safe}`).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("güvenli modda parlaklık yarı hızla değişir", () => {
+    const loud: DirectorInput = { ...CALM, mood: 1, release: 1 };
+    const normal = stepSky(SKY_AT_REST, [1, 1, 1], 0.1, false, loud);
+    const safe = stepSky(SKY_AT_REST, [1, 1, 1], 0.1, false, loud, true);
+    expect(safe.bloom).toBeCloseTo(normal.bloom / 2, 10);
+    expect(safe.energies[0]).toBeLessThanOrEqual(normal.energies[0] / 2 + 1e-12);
+  });
+
+  it("drop öncesi gerilim akışı yavaşlatır, drop açılımı hızlandırır", () => {
+    const calm = runDirected(SKY_AT_REST, CALM, 3);
+    const tense = runDirected(SKY_AT_REST, { ...CALM, anticipation: 1 }, 3);
+    const bloom = runDirected(SKY_AT_REST, { ...CALM, release: 1 }, 3);
+    expect(tense.tension).toBeCloseTo(1, 5);
+    expect(tense.flowTime).toBeLessThan(calm.flowTime * 0.6);
+    expect(bloom.bloom).toBeCloseTo(1, 5);
+    expect(bloom.flowTime).toBeGreaterThan(calm.flowTime * 2);
+  });
+
+  it("sakin bölümde perdeler sönük, yoğun bölümde canlı", () => {
+    const calm = runDirected(SKY_AT_REST, CALM, 3);
+    const intense = runDirected(SKY_AT_REST, { ...CALM, mood: 1 }, 3);
+    expect(calm.energies[0]).toBeCloseTo(0.5 * 0.55, 3);
+    expect(intense.energies[0]).toBeCloseTo(0.5, 3);
+  });
+
+  it("tema değişince renk yumuşakça geçer", () => {
+    const first = runDirected(SKY_AT_REST, { ...CALM, theme: 2 }, 0.5);
+    expect(first.palette).toMatchObject({ from: 0, to: 2 });
+    expect(first.palette.mix).toBeCloseTo(0.25, 2);
+    const done = runDirected(first, { ...CALM, theme: 2 }, 2);
+    expect(done.palette.mix).toBe(1);
+    // Geçiş yarıda kesilirse çoğunluktaki temadan devam edilir.
+    const back = runDirected(first, { ...CALM, theme: 1 }, DT);
+    expect(back.palette.from).toBe(0);
+    expect(mixColors([0, 0, 0], [1, 0.5, 0], 0.5)).toEqual([0.5, 0.25, 0]);
+  });
+
+  it("ölçü başında dalga başlar; animasyonları azalt açıkken başlamaz", () => {
+    const before = runDirected(SKY_AT_REST, CALM, 1);
+    const hit = stepSky(before, [0.5, 0.5, 0.5], DT, false, { ...CALM, accent: 1 });
+    expect(hit.rippleTime).toBe(0);
+    // Vurgu sönerken yeni dalga başlamaz.
+    const fading = stepSky(hit, [0.5, 0.5, 0.5], DT, false, { ...CALM, accent: 0.9 });
+    expect(fading.rippleTime).toBeCloseTo(DT, 10);
+    const reduced = stepSky(before, [0.5, 0.5, 0.5], DT, true, { ...CALM, accent: 1 });
+    expect(reduced.rippleTime).toBeGreaterThan(1);
+  });
+
+  it("çalmıyorken Yönetmen yok sayılır", () => {
+    let s = runDirected(SKY_AT_REST, { ...CALM, release: 1, anticipation: 1 }, 2);
+    for (let i = 0; i < 300; i++) {
+      s = stepSky(s, null, DT, false, { ...CALM, release: 1, anticipation: 1 });
+    }
+    expect(s.bloom).toBe(0);
+    expect(s.tension).toBe(0);
   });
 });
 

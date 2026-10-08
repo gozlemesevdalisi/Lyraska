@@ -20,6 +20,8 @@ pub struct Settings {
     pub equalizer: EqSettings,
     /// Kulaklık düzeltmesi (AutoEq profili).
     pub headphone: HeadphoneSettings,
+    /// Epilepsi güvenli modu: görseller daha seyrek nabız atar, parlaklık yarı hızla değişir.
+    pub visual_safe: bool,
 }
 
 /// Ayarları bellekte tutar ve her değişiklikte diske yazar.
@@ -41,6 +43,7 @@ impl SettingsStore {
             current: Mutex::new(Settings {
                 equalizer: settings.equalizer.sanitized(),
                 headphone: settings.headphone.sanitized(),
+                visual_safe: settings.visual_safe,
             }),
         }
     }

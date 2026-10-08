@@ -35,8 +35,16 @@
   /* Gece göğü sahnesi (WebGL gölgelendiricisi bu değerleri okur; yalnızca #rrggbb) */
   --sky-zenith: #02040b;
   --sky-horizon: #0b1b2c;
-  --sky-aurora-low: #46f0a6;
-  --sky-aurora-high: #7c5cff;
+  /* Kuzey ışıklarının bölüm temaları: alt kenar ve üst uç renkleri. Benzer bölümler
+     (ör. her nakarat) aynı temayı alır; tema 0 şarkı analiz edilmeden önce de görünür. */
+  --sky-theme-0-low: #46f0a6;
+  --sky-theme-0-high: #7c5cff;
+  --sky-theme-1-low: #3fd2ee;
+  --sky-theme-1-high: #4a62ff;
+  --sky-theme-2-low: #f0b45a;
+  --sky-theme-2-high: #d6589e;
+  --sky-theme-3-low: #9ae86a;
+  --sky-theme-3-high: #36b8d4;
   --sky-star: #e8f0ff;
   --sky-ground: #010203;
 

@@ -36,9 +36,11 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Şarkı haritası analizi: beat (tempo ve vuruşlar), ölçü başı (4/4–3/4), bölümler, drop, enerji — gerçek
       şarkılarda doğruluk işaretleme aracıyla ölçülecek
 - [ ] Gecikme telafisi ve kalibrasyon
-- [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); sahneler bağlanacak
+- [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
+      bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu bağlanacak
 - [ ] "Gece otoyolu" sahnesi
-- [ ] Epilepsi güvenli modu (saniyede en fazla 3 parlama)
+- [x] Epilepsi güvenli modu (0.0.18): her zaman saniyede en fazla 3 parlama (testle sınanır); güvenli modda
+      saniyede en fazla 1 nabız ve yarı hızda parlaklık değişimi. Ayar kaydedilir, ekranda SAFE ışığı yanar
 
 ## Faz 3 — Profesyonel ses, v0.3 (21 Aralık 2026 – 17 Ocak 2027)
 
