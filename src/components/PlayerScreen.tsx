@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DotMatrix } from "./DotMatrix";
 import { Marquee } from "./Marquee";
 import { EqualizerPanel } from "./EqualizerPanel";
@@ -170,14 +170,31 @@ export function PlayerScreen() {
   // Pencereye bırakılanlar: şarkılar bırakılış sırasıyla çalınır, klasörler kütüphaneye eklenir.
   const { addFolderPath } = library;
   const extensions = info.supportedExtensions;
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    onFileDrop((paths) => {
+  // Çekirdek hangi türleri çalabildiğini bildirmeden (açılışın ilk anı) bırakılan
+  // dosyalar bekletilir: yoksa şarkılar klasör sanılırdı.
+  const pendingDrops = useRef<string[]>([]);
+  const handleDropped = useCallback(
+    (paths: string[]) => {
       const { tracks, folders } = splitDropped(paths, extensions);
       const first = tracks[0];
       if (first) playQueue(queueFrom(tracks, first));
       for (const folder of folders) void addFolderPath(folder);
+    },
+    [extensions, playQueue, addFolderPath],
+  );
+  useEffect(() => {
+    if (extensions.length === 0 || pendingDrops.current.length === 0) return;
+    const waiting = pendingDrops.current;
+    pendingDrops.current = [];
+    handleDropped(waiting);
+  }, [extensions, handleDropped]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    onFileDrop((paths) => {
+      if (extensions.length === 0) pendingDrops.current.push(...paths);
+      else handleDropped(paths);
     })
       .then((fn) => (cancelled ? fn() : (unlisten = fn)))
       .catch(() => {
@@ -187,7 +204,7 @@ export function PlayerScreen() {
       cancelled = true;
       unlisten?.();
     };
-  }, [extensions, playQueue, addFolderPath]);
+  }, [extensions, handleDropped]);
 
   useEffect(() => {
     let cancelled = false;
