@@ -1,5 +1,13 @@
 import { scrollToRow, visibleRange } from "./virtual";
-import { EMPTY_QUEUE, currentPath, nextInQueue, previousInQueue, queueFrom } from "./queue";
+import {
+  EMPTY_QUEUE,
+  currentPath,
+  followQueue,
+  nextInQueue,
+  previousInQueue,
+  queueFrom,
+  upcomingPath,
+} from "./queue";
 
 describe("visibleRange", () => {
   it("görünen satırları ve kenar payını hesaplar", () => {
@@ -37,6 +45,22 @@ describe("çalma sırası", () => {
     const queue = queueFrom(list, "b.mp3");
     expect(currentPath(previousInQueue(queue)!)).toBe("a.mp3");
     expect(previousInQueue(queueFrom(list, "a.mp3"))).toBeNull();
+  });
+
+  it("boşluksuz geçiş: sıradaki önceden bildirilir, çekirdek geçince sıra ilerler", () => {
+    const queue = queueFrom(list, "a.mp3");
+    expect(upcomingPath(queue, "a.mp3")).toBe("b.mp3");
+    // Çalan şarkı sıradan değilse (ör. "Dosya aç") sıradaki bildirilmez.
+    expect(upcomingPath(queue, "x.mp3")).toBeNull();
+    expect(upcomingPath(queue, null)).toBeNull();
+    expect(upcomingPath(queueFrom(list, "c.mp3"), "c.mp3")).toBeNull();
+    // Çekirdek b'ye geçti: sıra b'de sayılır ve sıradaki c olur.
+    const followed = followQueue(queue, "b.mp3");
+    expect(currentPath(followed)).toBe("b.mp3");
+    expect(upcomingPath(followed, "b.mp3")).toBe("c.mp3");
+    // Değişiklik yoksa aynı sıra döner.
+    expect(followQueue(queue, "a.mp3")).toBe(queue);
+    expect(followQueue(queue, "x.mp3")).toBe(queue);
   });
 
   it("listede olmayan şarkı tek başına sıra olur; boş sıra güvenlidir", () => {

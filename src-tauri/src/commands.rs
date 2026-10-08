@@ -112,6 +112,16 @@ pub async fn open_track(
     player.lock()?.load(&path, true).map_err(|e| e.to_string())
 }
 
+/// Boşluksuz geçiş için sıradaki şarkıyı bildirir (`null`: sıra yok).
+#[tauri::command]
+pub async fn set_next_track(
+    path: Option<PathBuf>,
+    player: State<'_, PlayerState>,
+) -> Result<(), String> {
+    player.lock()?.set_next(path);
+    Ok(())
+}
+
 /// Çalıyorsa duraklatır, değilse çalar.
 #[tauri::command]
 pub async fn toggle_playback(player: State<'_, PlayerState>) -> Result<PlaybackStatus, String> {

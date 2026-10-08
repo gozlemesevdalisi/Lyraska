@@ -190,6 +190,12 @@ export function stopPlayback(): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("stop_playback");
 }
 
+/** Boşluksuz geçiş için sıradaki şarkıyı çekirdeğe bildirir (`null`: sıra yok). */
+export async function setNextTrack(path: string | null): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("set_next_track", { path });
+}
+
 export function seekPlayback(seconds: number): Promise<PlaybackStatus> {
   return invoke<PlaybackStatus>("seek_playback", { seconds });
 }

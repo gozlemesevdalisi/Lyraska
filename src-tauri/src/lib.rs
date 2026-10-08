@@ -62,6 +62,7 @@ pub fn run() {
             commands::library_search,
             commands::equalizer_get,
             commands::equalizer_set,
+            commands::set_next_track,
             commands::headphone_get,
             commands::headphone_import,
             commands::headphone_set_enabled,

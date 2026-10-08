@@ -110,3 +110,32 @@ fn her_bicimde_sarma_dogru_yere_gider() {
         assert_near(dominant_frequency(&after), 880.0, &format!("{ext} 1,05 sn"));
     }
 }
+
+#[test]
+fn bosluksuz_calma_icin_dolgu_atilir() {
+    // Her dosyada tam 3 saniye (66 150 örnek) ses var. Kodlayıcının başa ve sona
+    // eklediği dolgu atılmazsa ard arda çalınan şarkılar arasında boşluk duyulur.
+    for ext in FORMATS {
+        let mut decoder = Decoder::open(&fixture(ext)).unwrap();
+        let mut samples = Vec::new();
+        while let Some(chunk) = decoder.next_chunk().unwrap() {
+            samples.extend_from_slice(chunk);
+        }
+        // MP3: symphonia, 22,05 kHz (MPEG-2) dosyalarda sondan ~47 örnek (2 ms) fazla atıyor;
+        // 44,1/48 kHz MP3'lerde uzunluk ffmpeg ile birebir aynı (devir notu 2026-10-08).
+        let tolerance = if *ext == "mp3" { 64 } else { 0 };
+        assert!(
+            samples.len().abs_diff(66_150) <= tolerance,
+            "{ext}: örnek sayısı {}",
+            samples.len()
+        );
+        // Ses ilk örneklerden başlar: baştaki sessizlik (dolgu) yok.
+        let first_loud = samples.iter().position(|s| s.abs() > 0.05).unwrap();
+        assert!(first_loud < 20, "{ext}: ses {first_loud}. örnekte başlıyor");
+        let duration = decoder.info().duration_secs.unwrap();
+        assert!(
+            (duration - 3.0).abs() < 1e-9 || *ext == "ogg",
+            "{ext}: süre {duration}"
+        );
+    }
+}
