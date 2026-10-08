@@ -81,6 +81,7 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         let settings = store.get();
         player.set_equalizer(settings.equalizer);
         player.set_headphone(settings.headphone);
+        player.set_visual_safe(settings.visual_safe);
     }
 }
 
@@ -229,6 +230,26 @@ pub async fn equalizer_set(
         .update(|s| s.equalizer = applied)
         .map_err(|e| reported(format!("Ekolayzer ayarı kaydedilemedi: {e}")))?;
     Ok(EqState::new(applied))
+}
+
+/// Epilepsi güvenli modu açık mı.
+#[tauri::command]
+pub async fn visual_safe_get(player: State<'_, PlayerState>) -> Result<bool, String> {
+    Ok(player.lock()?.visual_safe())
+}
+
+/// Epilepsi güvenli modunu açar ya da kapatır (görsellere hemen yansır) ve kaydeder.
+#[tauri::command]
+pub async fn visual_safe_set(
+    enabled: bool,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<bool, String> {
+    player.lock()?.set_visual_safe(enabled);
+    store
+        .update(|s| s.visual_safe = enabled)
+        .map_err(|e| reported(format!("Güvenli mod ayarı kaydedilemedi: {e}")))?;
+    Ok(enabled)
 }
 
 /// Kulaklık düzeltmesi ve eğrisi.
@@ -481,6 +502,7 @@ mod tests {
         store
             .update(|s| {
                 s.equalizer.gains_db[4] = 7.0;
+                s.visual_safe = true;
                 s.headphone = HeadphoneSettings {
                     enabled: true,
                     profile: Some(profile.clone()),
@@ -492,6 +514,7 @@ mod tests {
         let restored = player.lock().unwrap();
         assert_eq!(restored.equalizer().gains_db[4], 7.0);
         assert!(restored.headphone().enabled);
+        assert!(restored.visual_safe());
         assert_eq!(restored.headphone().profile.unwrap().name, "Deneme");
     }
 
@@ -502,6 +525,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(settings.headphone, HeadphoneSettings::default());
+        assert!(!settings.visual_safe);
     }
 
     #[test]

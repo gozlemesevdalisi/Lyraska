@@ -35,10 +35,29 @@
   /* Gece göğü sahnesi (WebGL gölgelendiricisi bu değerleri okur; yalnızca #rrggbb) */
   --sky-zenith: #02040b;
   --sky-horizon: #0b1b2c;
-  --sky-aurora-low: #46f0a6;
-  --sky-aurora-high: #7c5cff;
+  /* Kuzey ışıklarının bölüm temaları: alt kenar ve üst uç renkleri. Benzer bölümler
+     (ör. her nakarat) aynı temayı alır; tema 0 şarkı analiz edilmeden önce de görünür. */
+  --sky-theme-0-low: #46f0a6;
+  --sky-theme-0-high: #7c5cff;
+  --sky-theme-1-low: #3fd2ee;
+  --sky-theme-1-high: #4a62ff;
+  --sky-theme-2-low: #f0b45a;
+  --sky-theme-2-high: #d6589e;
+  --sky-theme-3-low: #9ae86a;
+  --sky-theme-3-high: #36b8d4;
   --sky-star: #e8f0ff;
   --sky-ground: #010203;
+
+  /* Gece otoyolu sahnesi (WebGL gölgelendiricisi okur; yalnızca #rrggbb). Ufuk parıltısı
+     gece göğüyle aynı bölüm temalarını kullanır. */
+  --road-sky-top: #03030a;
+  --road-sky-bottom: #0d0b1e;
+  --road-asphalt: #0b0c10;
+  --road-line: #c9ccd6;
+  --road-lamp: #ffc56e;
+  --road-window: #ffcf7a;
+  --road-city: #040409;
+  --road-ground: #050508;
 
   color-scheme: dark;
   font-family:
@@ -592,6 +611,16 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+/* Otoyol: WebGL2 yoksa ya da ilk kare çizilene kadar görünen durgun gece. */
+.highway-scene__canvas {
+  background: linear-gradient(
+    to top,
+    var(--road-ground) 44%,
+    var(--road-sky-bottom) 44%,
+    var(--road-sky-top)
+  );
+}
+
 .sky-scene__center {
   position: absolute;
   left: 3%;
@@ -624,16 +653,20 @@ body {
   background: var(--accent);
   box-shadow: 0 0 4px var(--accent-glow);
   transform-origin: 50% 12px;
-  transform: translateX(-50%) rotate(-40deg);
+  transform: translateX(-50%) rotate(-60deg);
   transition: transform 0.25s ease;
 }
 
 .knob--button[data-scene="vu"]::after {
-  transform: translateX(-50%) rotate(0deg);
+  transform: translateX(-50%) rotate(-20deg);
 }
 
 .knob--button[data-scene="sky"]::after {
-  transform: translateX(-50%) rotate(40deg);
+  transform: translateX(-50%) rotate(20deg);
+}
+
+.knob--button[data-scene="highway"]::after {
+  transform: translateX(-50%) rotate(60deg);
 }
 
 .knob--button:hover {

@@ -7,6 +7,7 @@ import { MarkerPanel } from "./MarkerPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
+import { HighwayScene } from "./HighwayScene";
 import { SkyScene } from "./SkyScene";
 import { VuScene } from "./VuScene";
 import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
@@ -38,6 +39,7 @@ import {
 } from "../lib/queue";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
+import { useVisualSafe } from "../hooks/useVisualSafe";
 import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
@@ -85,6 +87,7 @@ export function PlayerScreen() {
   const library = useLibrary();
   const equalizer = useEqualizer();
   const headphone = useHeadphone();
+  const visualSafe = useVisualSafe();
   // "EQ" ışığı: ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa yanar.
   const soundShaped = equalizer.active || headphone.active;
   const [deck, setDeck] = useState<Deck>("library");
@@ -217,6 +220,7 @@ export function PlayerScreen() {
     { label: "EQ", on: soundShaped },
     { label: "BIT-PERFECT", on: false },
     { label: "SYNC", on: false },
+    { label: "SAFE", on: visualSafe.safe },
   ];
 
   return (
@@ -242,7 +246,11 @@ export function PlayerScreen() {
             </div>
           ) : scene === "sky" ? (
             <div className="display__main display__main--sky">
-              <SkyScene playing={playing} center={headlineMatrix} />
+              <SkyScene playing={playing} safe={visualSafe.safe} center={headlineMatrix} />
+            </div>
+          ) : scene === "highway" ? (
+            <div className="display__main display__main--sky">
+              <HighwayScene playing={playing} safe={visualSafe.safe} center={headlineMatrix} />
             </div>
           ) : (
             <div className="display__main">
@@ -469,6 +477,16 @@ export function PlayerScreen() {
             Hata günlüğü
           </button>
         )}
+        <button
+          type="button"
+          className="status__link"
+          aria-pressed={visualSafe.safe}
+          title="Açıkken görseller daha sakin olur: saniyede en fazla bir vuruş, parlaklık daha yavaş değişir."
+          onClick={() => void visualSafe.setSafe(!visualSafe.safe)}
+        >
+          Epilepsi güvenli modu: {visualSafe.safe ? "Açık" : "Kapalı"}
+        </button>
+        {visualSafe.error && <span className="status__warn">{visualSafe.error}</span>}
         {logError && <span className="status__warn">{logError}</span>}
       </footer>
     </main>

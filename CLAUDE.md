@@ -52,9 +52,9 @@ lyraska/
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
 │   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useMarker (işaretleme),
 │   │                         # useVisualFeed (görsel verisi)
-│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, queue), Rust köprüsü (backend.ts),
-│   │                         # arayüz hatalarını günlüğe yazma (errorReporting.ts),
-│   │                         # WebGL2 çizimi (skyRenderer.ts)
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue), Rust köprüsü
+│   │                         # (backend.ts), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
+│   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
 │   ├── src/

@@ -31,6 +31,8 @@ const backend = vi.hoisted(() => ({
   saveMarks: vi.fn(),
   annotation: null as import("../lib/backend").Annotation | null,
   songMap: null as import("../lib/backend").SongMap | null,
+  safe: false,
+  setSafe: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -90,6 +92,12 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return actual.setEqualizer(settings);
     },
     openLog: async () => backend.openLog(),
+    getVisualSafe: async () => backend.safe,
+    setVisualSafe: async (enabled: boolean) => {
+      backend.setSafe(enabled);
+      backend.safe = enabled;
+      return enabled;
+    },
     getAnnotation: async () => backend.annotation,
     getSongMap: async () => backend.songMap,
     saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
@@ -547,11 +555,84 @@ describe("sahneler", () => {
     expect(getContext).toHaveBeenCalledWith("webgl2", expect.anything());
     expect(screen.getByRole("button", { name: /Sahne: Gece göğü/ })).toBeInTheDocument();
     expect(window.localStorage.getItem("lyraska.scene")).toBe("sky");
+    getContext.mockRestore();
+  });
+
+  it("dördüncü basış gece otoyoluna geçer; WebGL2 yoksa durgun görüntü kalır", async () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation(() => null);
+    window.localStorage.setItem("lyraska.scene", "sky");
+    render(<App />);
+    const knob = screen.getByRole("button", { name: /Sahne: Gece göğü/ });
+    await act(async () => fireEvent.click(knob));
+    const road = screen.getByRole("img", { name: /Gece otoyolu/ });
+    expect(road).toHaveAttribute("data-webgl", "off");
+    expect(window.localStorage.getItem("lyraska.scene")).toBe("highway");
     await act(async () => fireEvent.click(knob));
     expect(
       screen.getByRole("button", { name: /Sahne: Nokta matris spektrum/ }),
     ).toBeInTheDocument();
     getContext.mockRestore();
+  });
+
+  it("otoyol görsel veriden vuruşu ve Yönetmen notunu alır", async () => {
+    const { highwayInput } = await import("./HighwayScene");
+    const base = {
+      positionSecs: 1,
+      bands: Array(32).fill(0.8),
+      rmsDb: [-20, -20] as [number, number],
+      peakDb: [-6, -6] as [number, number],
+      vuReferenceDb: null,
+      energy: null,
+      section: null,
+    };
+    expect(highwayInput({ ...base, beat: null, director: null })).toMatchObject({
+      beat: null,
+      director: null,
+    });
+    const input = highwayInput({
+      ...base,
+      beat: { bpm: 128, index: 3, phase: 0.25, barBeat: 4 },
+      director: {
+        atmosphere: { section: 1, theme: 2, mood: 0.7, warmth: 0.5 },
+        rhythm: {
+          pulse: 0,
+          accent: 0,
+          beatPhase: 0.25,
+          barPhase: 0.81,
+          anticipation: 0.4,
+          release: 0,
+        },
+        texture: { detail: 0.5, motion: 0.5 },
+      },
+    });
+    expect(input.beat).toEqual({ bpm: 128, phase: 0.25 });
+    expect(input.director).toEqual({
+      mood: 0.7,
+      theme: 2,
+      barPhase: 0.81,
+      anticipation: 0.4,
+      release: 0,
+    });
+    expect(input.energies[0]).toBeCloseTo(1, 5);
+  });
+
+  it("epilepsi güvenli modu düğmeyle açılır, kaydedilir ve SAFE ışığı yanar", async () => {
+    backend.safe = false;
+    const { container } = render(<App />);
+    const toggle = await screen.findByRole("button", { name: /Epilepsi güvenli modu: Kapalı/ });
+    const lamp = () =>
+      [...container.querySelectorAll(".display__indicators li")].find(
+        (li) => li.textContent === "SAFE",
+      );
+    expect(lamp()).not.toHaveClass("is-on");
+    await act(async () => fireEvent.click(toggle));
+    expect(backend.setSafe).toHaveBeenCalledWith(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveTextContent("Açık");
+    expect(lamp()).toHaveClass("is-on");
+    backend.safe = false;
   });
 
   it("VU ölçerler sese göre ilerler, susunca dinlenmeye döner", async () => {

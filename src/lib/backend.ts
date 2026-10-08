@@ -386,6 +386,18 @@ export async function setEqualizer(settings: EqSettings): Promise<EqState> {
   return invoke<EqState>("equalizer_set", { settings });
 }
 
+/** Epilepsi güvenli modu açık mı. Tarayıcı önizlemesinde kapalı başlar. */
+export async function getVisualSafe(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("visual_safe_get");
+}
+
+/** Epilepsi güvenli modunu açar/kapatır ve kaydeder; uygulanan değeri döndürür. */
+export async function setVisualSafe(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) return enabled;
+  return invoke<boolean>("visual_safe_set", { enabled });
+}
+
 /** Rust tarafındaki `audio::peq::PeqFilter`. */
 export interface HeadphoneFilter {
   kind: "peaking" | "lowShelf" | "highShelf";
