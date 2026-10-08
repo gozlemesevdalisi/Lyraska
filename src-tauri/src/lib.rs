@@ -111,6 +111,9 @@ pub fn run() {
             commands::headphone_clear,
             commands::visual_safe_get,
             commands::visual_safe_set,
+            commands::audio_delay_get,
+            commands::audio_delay_set,
+            commands::calibration_track,
         ])
         .build(tauri::generate_context!())
         .expect("Lyraska başlatılamadı")

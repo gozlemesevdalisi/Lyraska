@@ -677,6 +677,24 @@ describe("sahneler", () => {
   });
 });
 
+describe("senkron", () => {
+  it("sekmede ses gecikmesi ayarlanır ve vuruş göstergesi görünür", async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Senkron" })));
+    const slider = screen.getByRole("slider", { name: "Ses gecikmesi" });
+    expect(slider).toHaveValue("0");
+    await act(async () => fireEvent.change(slider, { target: { value: "185" } }));
+    expect(screen.getByText("185 ms")).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "10 ms artır" })));
+    expect(screen.getByText("195 ms")).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Sıfırla" })));
+    expect(screen.getByText("0 ms")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Vuruş göstergesi" })).toBeInTheDocument();
+    // Tarayıcı önizlemesinde ses çalınamaz: ölçüm başlatılamaz.
+    expect(screen.getByRole("button", { name: "Ölçümü başlat" })).toBeDisabled();
+  });
+});
+
 describe("pointerRatio", () => {
   it("işaretçi konumunu 0..1 aralığına çevirir", () => {
     expect(pointerRatio(150, 100, 200)).toBe(0.25);

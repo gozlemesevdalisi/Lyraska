@@ -1579,6 +1579,77 @@ body {
   box-shadow: 0 0 6px var(--vu-lamp-glow);
 }
 
+/* ---------- Senkron ---------- */
+
+.sync__setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.sync__setting input[type="range"] {
+  flex: 1 1 220px;
+  accent-color: var(--accent);
+}
+
+.sync__value {
+  min-width: 64px;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color: #e3e8eb;
+  text-align: right;
+}
+
+.sync__caption {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Vuruş göstergesi: nokta her vuruşta bir kenara değer (yalnızca hareket). */
+.sync__track {
+  position: relative;
+  height: 28px;
+  margin: 0 14px;
+  border-radius: 14px;
+  background: #0b0c0e;
+  border: 1px solid var(--panel-edge);
+}
+
+.sync__edge {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--panel-edge);
+}
+
+.sync__edge--left {
+  left: 0;
+}
+
+.sync__edge--right {
+  right: 0;
+}
+
+.sync__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.sync__dot[data-active="off"] {
+  opacity: 0.25;
+}
+
 .marker__actions {
   display: flex;
   flex-wrap: wrap;

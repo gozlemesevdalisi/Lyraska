@@ -9,6 +9,7 @@ import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
 import { HighwayScene } from "./HighwayScene";
 import { SkyScene } from "./SkyScene";
+import { SyncPanel } from "./SyncPanel";
 import { VuScene } from "./VuScene";
 import { EjectIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, StopIcon } from "./icons";
 import { textToColumns } from "../lib/dotFont";
@@ -39,13 +40,14 @@ import {
 } from "../lib/queue";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
+import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
 import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
 
 const TITLE = "LYRASKA";
-type Deck = "library" | "eq" | "marker";
+type Deck = "library" | "eq" | "marker" | "sync";
 const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
@@ -206,6 +208,11 @@ export function PlayerScreen() {
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
   const marker = useMarker(statusPath, playing, player.positionNow);
+  const sync = useSync(
+    player.openPath,
+    player.positionNow,
+    status.state === "ended" ? statusPath : null,
+  );
   const hasTrack = status.track !== null;
   const signalPath = signalPathText(status);
   const headlineLabel = hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska";
@@ -373,6 +380,7 @@ export function PlayerScreen() {
                 ["library", "Kütüphane"],
                 ["eq", "Ekolayzer"],
                 ["marker", "İşaretle"],
+                ["sync", "Senkron"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -387,6 +395,8 @@ export function PlayerScreen() {
                   setDeck(id);
                   // Sekmeden çıkınca işaretleme biter: Boşluk yine çal/duraklat olur.
                   if (id !== "marker") marker.setRecording(false);
+                  // Senkron ölçümü de sekmeden çıkınca biter.
+                  if (id !== "sync") sync.finishCalibration();
                 }}
               >
                 {label}
@@ -444,6 +454,15 @@ export function PlayerScreen() {
             playing={playing}
             durationSecs={status.track?.durationSecs ?? null}
           />
+        </div>
+        <div
+          className="deck__panel"
+          role="tabpanel"
+          id="deck-panel-sync"
+          aria-labelledby="deck-tab-sync"
+          hidden={deck !== "sync"}
+        >
+          <SyncPanel sync={sync} playing={playing} available={player.available} />
         </div>
       </div>
 

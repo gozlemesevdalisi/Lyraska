@@ -1,12 +1,41 @@
 //! Görsel köprüsü.
 //!
 //! Ses motorunun çalma zamanını ve analiz sonuçlarını arayüzdeki görsellere
-//! taşır. Şimdilik spektrum ve kanal seviyeleri; Faz 2'de şarkı haritası, gecikme
-//! telafisi ve kalibrasyon (hedef: ±20 ms senkron) burada yapılacak.
+//! taşır: spektrum, kanal seviyeleri, vuruşlar, şarkı haritası ve Görsel
+//! Yönetmen'in notu.
+//!
+//! **Gecikme telafisi** (hedef: ±20 ms senkron). Oynatıcı "şu an duyulan" anı ses
+//! aygıtının tamponunu ve taşma korumasını hesaba katarak bilir. İki gecikme kalır:
+//!
+//! - **Ekran:** görsel veri istendikten sonra ekranda ortalama ~1,5 kare (60 Hz'de
+//!   ~25 ms) sonra görünür. Görseller bu kadar ileriden okunur ([`DISPLAY_LEAD_SECONDS`]).
+//! - **Ses aygıtı:** bazı aygıtlar (özellikle Bluetooth kulaklıklar) sesi Windows'un
+//!   bildirdiğinden 100–300 ms geç çalar; yazılım bunu bilemez. Kullanıcı ayarlar
+//!   ya da [`calibration`] tıklama kaydıyla ölçer; görseller o kadar geriden okunur.
+
+pub mod calibration;
 
 use serde::Serialize;
 
 use crate::audio::player::VisualData;
+
+/// Görsel verinin istenmesiyle ekranda görünmesi arasındaki ortalama süre (saniye).
+pub const DISPLAY_LEAD_SECONDS: f64 = 0.025;
+/// Ses gecikmesi ayarının sınırları (milisaniye). Eksi değer: ses beklenenden önce duyuluyor.
+pub const MIN_AUDIO_DELAY_MS: i32 = -100;
+pub const MAX_AUDIO_DELAY_MS: i32 = 400;
+
+/// Ses gecikmesi ayarını sınırlar içine alır.
+pub fn clamp_audio_delay_ms(ms: i32) -> i32 {
+    ms.clamp(MIN_AUDIO_DELAY_MS, MAX_AUDIO_DELAY_MS)
+}
+
+/// Görsellerin okunacağı şarkı anı: duyulan an + ekran gecikmesi − ses aygıtının
+/// ek gecikmesi. Şarkının başından önceye gitmez.
+pub fn visual_time(heard_secs: f64, audio_delay_ms: i32) -> f64 {
+    let delay = f64::from(clamp_audio_delay_ms(audio_delay_ms)) / 1000.0;
+    (heard_secs + DISPLAY_LEAD_SECONDS - delay).max(0.0)
+}
 
 /// Arayüzün her ekran karesinde istediği görsel veri.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -71,28 +100,42 @@ impl From<VisualData> for VisualFrame {
 /// Görsel köprüsünün durumu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeStatus {
-    /// Spektrum ve kanal seviyeleri aktarılıyor; şarkı haritası Faz 2'de.
-    Spectrum,
+    /// Spektrum, şarkı haritası ve Yönetmen aktarılıyor; gecikme telafili.
+    Synced,
 }
 
 impl BridgeStatus {
     /// Kullanıcıya gösterilen Türkçe durum metni.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Spectrum => "spektrum ve VU aktif",
+            Self::Synced => "spektrum, şarkı haritası ve Görsel Yönetmen; gecikme telafili",
         }
     }
 }
 
 /// Görsel köprüsünün şu anki durumu.
 pub fn status() -> BridgeStatus {
-    BridgeStatus::Spectrum
+    BridgeStatus::Synced
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::analysis::levels::ChannelLevels;
+
+    #[test]
+    fn gorsel_zamani_ekran_ve_ses_gecikmesini_telafi_eder() {
+        // Gecikme yok: yalnızca ekran gecikmesi kadar ileri.
+        assert!((visual_time(10.0, 0) - (10.0 + DISPLAY_LEAD_SECONDS)).abs() < 1e-12);
+        // Bluetooth kulaklık 200 ms geç çalıyor: görseller o kadar geriden.
+        assert!((visual_time(10.0, 200) - (10.0 + DISPLAY_LEAD_SECONDS - 0.2)).abs() < 1e-12);
+        // Ses erken: görseller ileriden.
+        assert!((visual_time(10.0, -50) - (10.0 + DISPLAY_LEAD_SECONDS + 0.05)).abs() < 1e-12);
+        // Sınırlar ve şarkı başı.
+        assert!((visual_time(10.0, 5_000) - visual_time(10.0, MAX_AUDIO_DELAY_MS)).abs() < 1e-12);
+        assert_eq!(visual_time(0.1, 400), 0.0);
+        assert_eq!(clamp_audio_delay_ms(-1_000), MIN_AUDIO_DELAY_MS);
+    }
 
     #[test]
     fn arayuze_camel_case_gonderilir() {

@@ -84,6 +84,7 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         player.set_equalizer(settings.equalizer);
         player.set_headphone(settings.headphone);
         player.set_visual_safe(settings.visual_safe);
+        player.set_audio_delay_ms(settings.audio_delay_ms);
     }
 }
 
@@ -258,6 +259,51 @@ pub async fn equalizer_set(
         .update(|s| s.equalizer = applied)
         .map_err(|e| reported(format!("Ekolayzer ayarı kaydedilemedi: {e}")))?;
     Ok(EqState::new(applied))
+}
+
+/// Ses aygıtının ek gecikmesi (ms; görseller bu kadar geriden gösterilir).
+#[tauri::command]
+pub async fn audio_delay_get(player: State<'_, PlayerState>) -> Result<i32, String> {
+    Ok(player.lock()?.audio_delay_ms())
+}
+
+/// Ses gecikmesini ayarlar (görsellere hemen yansır), kaydeder ve uygulanan değeri döndürür.
+#[tauri::command]
+pub async fn audio_delay_set(
+    ms: i32,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<i32, String> {
+    let applied = player.lock()?.set_audio_delay_ms(ms);
+    store
+        .update(|s| s.audio_delay_ms = applied)
+        .map_err(|e| reported(format!("Senkron ayarı kaydedilemedi: {e}")))?;
+    Ok(applied)
+}
+
+/// Senkron ölçümü için tıklama kaydı: dosya yolu ve tıklamaların zamanları.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationTrack {
+    pub path: PathBuf,
+    pub clicks: Vec<f64>,
+}
+
+/// Tıklama kaydını uygulama veri klasörüne yazar (her seferinde yeniden; küçük bir dosya).
+#[tauri::command]
+pub async fn calibration_track(app: tauri::AppHandle) -> Result<CalibrationTrack, String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| reported(format!("Uygulama klasörü bulunamadı: {e}")))?;
+    let path = dir.join("kalibrasyon").join("tiklama.wav");
+    visual_bridge::calibration::write(&path)
+        .map_err(|e| reported(format!("Tıklama kaydı yazılamadı: {e}")))?;
+    Ok(CalibrationTrack {
+        path,
+        clicks: visual_bridge::calibration::click_times(),
+    })
 }
 
 /// Epilepsi güvenli modu açık mı.
@@ -531,6 +577,7 @@ mod tests {
             .update(|s| {
                 s.equalizer.gains_db[4] = 7.0;
                 s.visual_safe = true;
+                s.audio_delay_ms = 180;
                 s.headphone = HeadphoneSettings {
                     enabled: true,
                     profile: Some(profile.clone()),
@@ -543,6 +590,7 @@ mod tests {
         assert_eq!(restored.equalizer().gains_db[4], 7.0);
         assert!(restored.headphone().enabled);
         assert!(restored.visual_safe());
+        assert_eq!(restored.audio_delay_ms(), 180);
         assert_eq!(restored.headphone().profile.unwrap().name, "Deneme");
     }
 
@@ -554,6 +602,7 @@ mod tests {
         .unwrap();
         assert_eq!(settings.headphone, HeadphoneSettings::default());
         assert!(!settings.visual_safe);
+        assert_eq!(settings.audio_delay_ms, 0);
     }
 
     #[test]

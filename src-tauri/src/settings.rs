@@ -22,6 +22,8 @@ pub struct Settings {
     pub headphone: HeadphoneSettings,
     /// Epilepsi güvenli modu: görseller daha seyrek nabız atar, parlaklık yarı hızla değişir.
     pub visual_safe: bool,
+    /// Ses aygıtının ek gecikmesi (ms; ör. Bluetooth): görseller bu kadar geriden okunur.
+    pub audio_delay_ms: i32,
 }
 
 /// Ayarları bellekte tutar ve her değişiklikte diske yazar.
@@ -44,6 +46,7 @@ impl SettingsStore {
                 equalizer: settings.equalizer.sanitized(),
                 headphone: settings.headphone.sanitized(),
                 visual_safe: settings.visual_safe,
+                audio_delay_ms: crate::visual_bridge::clamp_audio_delay_ms(settings.audio_delay_ms),
             }),
         }
     }
