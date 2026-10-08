@@ -100,6 +100,7 @@ lyraska/
 ├── docs/
 │   ├── ROADMAP.md            # Yol haritası
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
+│   ├── LISANSLAR.md          # Dışarıdan alınan varlıklar (yazı tipleri vb.) ve lisansları
 │   └── devlog/               # Oturum devir notları (Türkçe)
 └── .github/                  # CI, test sürümü yayını, hata kaydı formu
 ```
@@ -191,10 +192,11 @@ Görsel güvenlik (zorunlu):
 - **AGPL lisanslı** ve **ticari kullanımı yasaklayan** (NonCommercial, SSPL, BUSL, Commons Clause,
   Elastic, PolyForm Noncommercial vb.) hiçbir bağımlılık, veri seti, yazı tipi, shader veya görsel eklenmez.
 - İzin verilen lisanslar `src-tauri/deny.toml` içinde listelidir (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0,
-  LGPL, GPL-3.0 vb.). Listede olmayan bir lisans gerekirse önce proje sahibine sorulur.
+  LGPL, GPL-3.0, yazı tipleri için OFL-1.1 vb.). Listede olmayan bir lisans gerekirse önce proje sahibine sorulur.
 - CI iki denetim yapar: `cargo deny check licenses bans sources` ve `npm run check:licenses`.
 - Dışarıdan alınan veri ve varlıkların (AutoEq profilleri, MilkDrop presetleri, örnek şarkılar, yazı tipleri)
-  lisansı eklemeden önce doğrulanır ve kaynağıyla birlikte `docs/` altında not edilir.
+  lisansı eklemeden önce doğrulanır ve kaynağıyla birlikte `docs/LISANSLAR.md` içinde not edilir. Lisans metni
+  dağıtım gerektiriyorsa `public/lisanslar/` altına konur (programla birlikte paketlenir).
 - Marka adları ve varlıkları (özellikle Pioneer) kullanılmaz; nostalji tasarımları özgün çizilir.
 - **Ses dosyaları depoya asla girmez** (işaretleme için kullanılan şarkılar dahil). Tek istisna projenin
   ffmpeg ile ürettiği sentetik test sesleri (`src-tauri/tests/data/`). `.gitignore` ve CI (`check:audio`) denetler.

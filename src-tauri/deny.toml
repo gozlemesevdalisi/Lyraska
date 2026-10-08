@@ -35,6 +35,8 @@ allow = [
   "GPL-3.0-only",
   "GPL-3.0-or-later",
   "CDLA-Permissive-2.0",
+  # Yazı tipleri (Inter, arayüzde; bkz. docs/LISANSLAR.md). Proje sahibi 8 Ekim 2026'da onayladı.
+  "OFL-1.1",
 ]
 
 [bans]
