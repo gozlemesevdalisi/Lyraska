@@ -8,12 +8,14 @@
 //! bu komutlar arka plandaki iş parçacıklarında çalışır.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use tauri::State;
 
 use crate::analysis::annotation::{AnnotatedTrack, Annotation, AnnotationStore};
+use crate::analysis::background::BackgroundAnalysis;
+use crate::analysis::cache::AnalysisCache;
 use crate::analysis::evaluate;
 use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
@@ -82,6 +84,32 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         player.set_equalizer(settings.equalizer);
         player.set_headphone(settings.headphone);
         player.set_visual_safe(settings.visual_safe);
+    }
+}
+
+/// Analiz önbelleğini oynatıcıya bağlar ve kütüphanenin arka plan analizini başlatır
+/// (program açılırken). Oynatıcının kendi analizleri sürerken arka plan bekler.
+pub fn start_analysis_cache(
+    player: &PlayerState,
+    cache: Arc<AnalysisCache>,
+) -> Option<BackgroundAnalysis> {
+    let mut player = player.lock().ok()?;
+    player.set_analysis_cache(Arc::clone(&cache));
+    Some(BackgroundAnalysis::start(
+        cache,
+        player.foreground_analyses(),
+    ))
+}
+
+/// Tauri'nin yönettiği arka plan analizi (önbellek açılamadıysa yok).
+pub struct BackgroundState(pub Option<BackgroundAnalysis>);
+
+impl BackgroundState {
+    /// Program kapanırken süren arka plan analizini durdurur.
+    pub fn shutdown(&self) {
+        if let Some(background) = &self.0 {
+            background.stop();
+        }
     }
 }
 

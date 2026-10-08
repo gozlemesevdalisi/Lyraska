@@ -12,7 +12,7 @@
 //! değişkenler üzerinden konuşur; gerçek zamanlı çıkış hiçbir zaman beklemez.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -26,9 +26,12 @@ use super::output::{self, DeviceInfo, OutputSpec};
 use super::peq::{HeadphoneSettings, PeqControl};
 use super::resample::Converter;
 use super::{AudioError, Sample};
+use crate::analysis::background::ForegroundGuard;
 use crate::analysis::beats::BeatPosition;
+use crate::analysis::cache::{AnalysisCache, FileStamp};
 use crate::analysis::levels::ChannelLevels;
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
+use crate::diagnostics;
 
 /// Halka tamponun süresi. Çözme iş parçacığı bu kadar önden gider.
 const RING_SECONDS: usize = 2;
@@ -357,14 +360,58 @@ struct Analysis {
     thread: Option<JoinHandle<()>>,
 }
 
+/// Analizlerin ortak bağlamı: önbellek ve oynatıcının süren analiz sayacı
+/// (arka plan analizi bu sayaç sıfırdan büyükken bekler).
+#[derive(Clone, Default)]
+struct AnalysisContext {
+    cache: Option<Arc<AnalysisCache>>,
+    foreground: Arc<AtomicUsize>,
+}
+
 impl Analysis {
-    fn start(path: &Path) -> Option<Self> {
+    /// Şarkının analizini başlatır. Önbellekte geçerli kaydı varsa anında hazırdır.
+    /// `after` verilirse (sıradaki şarkı) o analiz bitene kadar bekler: önce çalan şarkı.
+    fn start(
+        path: &Path,
+        context: &AnalysisContext,
+        after: Option<Arc<Spectrogram>>,
+    ) -> Option<Self> {
+        let stamp = FileStamp::of(path);
+        if let (Some(cache), Some(stamp)) = (&context.cache, stamp) {
+            match cache.load(path, stamp) {
+                Ok(Some(saved)) => {
+                    return Some(Self {
+                        path: path.to_path_buf(),
+                        spectrogram: Spectrogram::from_saved(saved),
+                        thread: None,
+                    })
+                }
+                Ok(None) => {}
+                Err(e) => diagnostics::error(&e.to_string()),
+            }
+        }
         let decoder = Decoder::open(path).ok()?;
         let spectrogram = Spectrogram::new();
         let target = Arc::clone(&spectrogram);
+        let busy = ForegroundGuard::new(&context.foreground);
+        let cache = context.cache.clone();
+        let file = path.to_path_buf();
         let thread = std::thread::Builder::new()
             .name("lyraska-analiz".to_owned())
-            .spawn(move || spectrogram::analyze(decoder, &target))
+            .spawn(move || {
+                let _busy = busy;
+                if let Some(first) = after {
+                    while !first.is_done() && !first.is_cancelled() && !target.is_cancelled() {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+                spectrogram::analyze(decoder, &target);
+                if let (Some(cache), Some(stamp), Some(saved)) = (cache, stamp, target.saved()) {
+                    if let Err(e) = cache.store(&file, stamp, &saved) {
+                        diagnostics::error(&e.to_string());
+                    }
+                }
+            })
             .ok()?;
         Some(Self {
             path: path.to_path_buf(),
@@ -401,6 +448,8 @@ pub struct Player {
     headphone: HeadphoneSettings,
     /// Epilepsi güvenli modu: Görsel Yönetmen nabızları saniyede en fazla bire indirir.
     visual_safe: bool,
+    /// Analiz önbelleği ve süren analiz sayacı.
+    analysis_context: AnalysisContext,
     /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
     /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
     visual_eq: Option<(u64, u32, [f64; BANDS])>,
@@ -473,9 +522,23 @@ impl Player {
             Some(p) if self.next_analysis.as_ref().is_some_and(|a| &a.path == p) => {
                 self.next_analysis.take()
             }
-            Some(p) if self.analysis.as_ref().is_none_or(|a| &a.path != p) => Analysis::start(p),
+            Some(p) if self.analysis.as_ref().is_none_or(|a| &a.path != p) => {
+                // Sıradaki şarkı, çalanın analizi bitince analiz edilir.
+                let current = self.analysis.as_ref().map(|a| Arc::clone(&a.spectrogram));
+                Analysis::start(p, &self.analysis_context, current)
+            }
             _ => None,
         };
+    }
+
+    /// Analiz önbelleğini bağlar: analizler önce önbellekten okunur, bitenler yazılır.
+    pub fn set_analysis_cache(&mut self, cache: Arc<AnalysisCache>) {
+        self.analysis_context.cache = Some(cache);
+    }
+
+    /// Oynatıcının süren analiz sayacı (arka plan analizi bununla bekler).
+    pub fn foreground_analyses(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.analysis_context.foreground)
     }
 
     /// Analizi verilen şarkınınkine geçirir: önceden başlatılmışsa onu kullanır.
@@ -487,7 +550,7 @@ impl Player {
             self.analysis = self.next_analysis.take();
         } else {
             self.analysis = None;
-            self.analysis = Analysis::start(path);
+            self.analysis = Analysis::start(path, &self.analysis_context, None);
         }
     }
 
@@ -1220,6 +1283,57 @@ mod tests {
         std::fs::remove_file(path).ok();
         std::fs::remove_file(other).ok();
     }
+    #[test]
+    fn analiz_onbellege_yazilir_ve_sonraki_acilista_aninda_hazir() {
+        let path = ramp_song("onbellek.wav");
+        let cache = Arc::new(AnalysisCache::open_in_memory().unwrap());
+        let stamp = FileStamp::of(&path).unwrap();
+
+        let mut first = Player::new();
+        first.set_analysis_cache(Arc::clone(&cache));
+        first.load(&path, false).unwrap();
+        let analyzed = Arc::clone(&first.analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| cache.load(&path, stamp).unwrap().is_some()));
+        assert!(analyzed.is_done());
+
+        // Yeni açılış (ör. program yeniden başladı): şarkı çözülmeden, anında hazır.
+        let mut second = Player::new();
+        second.set_analysis_cache(Arc::clone(&cache));
+        second.load(&path, false).unwrap();
+        let analysis = second.analysis.as_ref().unwrap();
+        assert!(
+            analysis.thread.is_none(),
+            "önbellekten okundu, analiz başlamadı"
+        );
+        assert!(analysis.spectrogram.is_done());
+        assert_eq!(analysis.spectrogram.frame_at(1.0), analyzed.frame_at(1.0));
+        assert_eq!(second.foreground_analyses().load(Ordering::Acquire), 0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn siradaki_sarki_calanin_analizi_bitince_analiz_edilir() {
+        let current = temp_path("once-calan.wav");
+        write_wav(&current, 44_100, 2, 44_100 * 6, |frame, _| {
+            0.3 * crate::audio::test_util::sine(440.0, 44_100, frame)
+        });
+        let next = ramp_song("sonra-siradaki.wav");
+        let mut player = Player::new();
+        let foreground = player.foreground_analyses();
+        player.load(&current, false).unwrap();
+        player.set_next(Some(next.clone()));
+        let first = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
+        let second = Arc::clone(&player.next_analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| {
+            // Sıradakinin ilk karesi ancak çalanın analizi bittikten sonra gelir.
+            assert!(second.ready_frames() == 0 || first.is_done());
+            second.is_done()
+        }));
+        assert!(wait_until(|| foreground.load(Ordering::Acquire) == 0));
+        std::fs::remove_file(current).ok();
+        std::fs::remove_file(next).ok();
+    }
+
     #[test]
     fn ekolayzer_her_oturuma_ulasir_ve_gorsellere_yansir() {
         use crate::audio::eq::BANDS as EQ_BANDS;

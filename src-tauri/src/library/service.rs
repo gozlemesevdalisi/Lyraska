@@ -17,6 +17,8 @@ use super::{path_covers, FolderRow, Library, LibraryError, TrackRow};
 pub struct LibraryStatus {
     pub folders: Vec<FolderRow>,
     pub track_count: usize,
+    /// Analizi hazır şarkı sayısı (BPM ve şarkı haritası önbellekte).
+    pub analyzed: usize,
     pub scan: ScanProgress,
     /// Son taramadaki sorunlar (ör. "Klasör bulunamadı: D:\Müzik").
     pub problems: Vec<String>,
@@ -57,6 +59,7 @@ impl LibraryService {
         Ok(LibraryStatus {
             folders: lib.folders()?,
             track_count: lib.track_count()?,
+            analyzed: lib.analyzed_count()?,
             scan: self.scan.progress(),
             problems: self.problems.lock().map(|p| p.clone()).unwrap_or_default(),
         })

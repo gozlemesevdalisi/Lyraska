@@ -13,9 +13,12 @@ import {
   type LibraryStatus,
   type LibraryTrack,
 } from "../lib/backend";
+import { analysisPending, analysisRefreshKey } from "../lib/analysis";
 
 /** Tarama sürerken durum sorgulama aralığı. */
 const SCAN_POLL_MS = 600;
+/** Arka plan analizi sürerken durum sorgulama aralığı (BPM sütunu dolsun). */
+const ANALYSIS_POLL_MS = 3000;
 /** Yazmayı bitirmeyi beklemeden aramaya başlamak için kısa gecikme. */
 const SEARCH_DELAY_MS = 120;
 
@@ -66,6 +69,9 @@ export function useLibrary(): LibraryControls {
       .finally(() => setLoading(false));
   }, [available]);
 
+  // Analiz ilerledikçe BPM sütunu dolsun diye liste ara ara tazelenir.
+  const analysisKey = analysisRefreshKey(status.analyzed, status.trackCount);
+
   // Arama: yazı ya da şarkı sayısı değişince (tarama ilerledikçe) listeyi tazele.
   // Yalnızca en son aramanın sonucu uygulanır.
   useEffect(() => {
@@ -79,7 +85,7 @@ export function useLibrary(): LibraryControls {
         .catch((e) => setError(errorMessage(e)));
     }, SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [available, query, status.trackCount]);
+  }, [available, query, status.trackCount, analysisKey]);
 
   // Tarama sürerken ilerlemeyi izle.
   const scanning = status.scan.scanning;
@@ -88,6 +94,14 @@ export function useLibrary(): LibraryControls {
     const timer = window.setInterval(() => void refreshStatus(), SCAN_POLL_MS);
     return () => window.clearInterval(timer);
   }, [available, scanning, refreshStatus]);
+
+  // Arka plan analizi sürerken ilerlemeyi izle (tarama yokken, daha seyrek).
+  const analyzing = analysisPending(status.analyzed, status.trackCount);
+  useEffect(() => {
+    if (!available || scanning || !analyzing) return;
+    const timer = window.setInterval(() => void refreshStatus(), ANALYSIS_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [available, scanning, analyzing, refreshStatus]);
 
   const apply = useCallback(async (action: () => Promise<LibraryStatus>) => {
     try {

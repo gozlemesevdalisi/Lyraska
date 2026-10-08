@@ -9,6 +9,7 @@ import {
   SearchIcon,
 } from "./icons";
 import type { LibraryTrack } from "../lib/backend";
+import { analysisPending, bpmLabel } from "../lib/analysis";
 import { formatTime } from "../lib/format";
 import { scrollToRow, visibleRange } from "../lib/virtual";
 import type { LibraryControls } from "../hooks/useLibrary";
@@ -95,6 +96,7 @@ export function LibraryPanel({
   const range = visibleRange(scrollTop, viewport, ROW_HEIGHT, tracks.length);
   const scan = status.scan;
   const noFolders = status.folders.length === 0;
+  const analyzing = analysisPending(status.analyzed, status.trackCount);
 
   return (
     <section className="library" aria-label="Kütüphane">
@@ -167,12 +169,18 @@ export function LibraryPanel({
         </ul>
       )}
 
-      {(scan.scanning || status.problems.length > 0 || library.error) && (
+      {(scan.scanning || analyzing || status.problems.length > 0 || library.error) && (
         <div className="library__notice" role="status">
           {scan.scanning && (
             <span>
               Taranıyor: {NUMBER.format(scan.processed)} / {NUMBER.format(scan.found)} dosya
               {scan.current ? ` · ${folderName(scan.current)}` : ""}
+            </span>
+          )}
+          {!scan.scanning && analyzing && (
+            <span title="Şarkılar arka planda, çalan şarkıyı yavaşlatmadan analiz ediliyor (tempo, ölçü, bölümler, drop). Biten şarkı bir daha analiz edilmez.">
+              Şarkı haritası: {NUMBER.format(status.analyzed)} / {NUMBER.format(status.trackCount)}{" "}
+              şarkı analiz edildi
             </span>
           )}
           {[...status.problems, ...(library.error ? [library.error] : [])].map((problem) => (
@@ -225,6 +233,9 @@ export function LibraryPanel({
             <span role="columnheader" className="library__album">
               Albüm
             </span>
+            <span role="columnheader" className="library__bpm" title="Tempo (vuruş/dakika)">
+              BPM
+            </span>
             <span role="columnheader" className="library__time">
               Süre
             </span>
@@ -273,6 +284,12 @@ export function LibraryPanel({
                       <span className="library__cell library__muted">{track.artist ?? "—"}</span>
                       <span className="library__cell library__muted library__album">
                         {track.album ?? "—"}
+                      </span>
+                      <span
+                        className="library__time library__bpm"
+                        title={track.analyzed ? undefined : "Analiz bekliyor"}
+                      >
+                        {bpmLabel(track)}
                       </span>
                       <span className="library__time">
                         {track.durationSecs ? formatTime(track.durationSecs) : ""}

@@ -1,0 +1,330 @@
+//! Kütüphanenin arka plan analizi: henüz analiz edilmemiş (ya da dosyası veya
+//! analiz sürümü değişmiş) şarkılar tek tek analiz edilip önbelleğe yazılır.
+//!
+//! Öncelik sırası: **çalan şarkı**, **sıradaki şarkı**, **geri kalan kütüphane**.
+//! Çalan ve sıradaki şarkıyı oynatıcı kendisi, tam hızla analiz eder (sıradaki,
+//! çalanınki bitince başlar). Bu iş parçacığı yalnızca geri kalanlara bakar ve
+//! düşük önceliklidir: oynatıcının analizi sürerken hiç çalışmaz, kendi işinde de
+//! zamanının yarısında bekler; böylece işlemcinin en fazla bir çekirdeğinin
+//! yarısını kullanır ve ses ya da görüntü hiç etkilenmez.
+
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use super::cache::{AnalysisCache, FileStamp};
+use super::spectrogram::{self, Spectrogram};
+use crate::audio::decode::Decoder;
+use crate::diagnostics;
+
+/// Bekleyen şarkı yokken veritabanına bu aralıkla yeniden bakılır (yeni tarama vb.).
+const IDLE_POLL: Duration = Duration::from_secs(15);
+/// Oynatıcının analizi sürerken bu aralıkla yeniden bakılır.
+const FOREGROUND_POLL: Duration = Duration::from_millis(100);
+/// Çalışılan her sürenin bu katı kadar beklenir (1,0: zamanın yarısı iş, yarısı bekleme).
+const REST_PER_WORK: f64 = 1.0;
+/// Beklemeler bu kadar iş biriktikçe yapılır (çok kısa uykular işletim sistemini yorar).
+const PACE_SLICE: Duration = Duration::from_millis(20);
+/// Veritabanından bir seferde alınan şarkı sayısı.
+const BATCH: usize = 16;
+
+/// Oynatıcının o an süren analizlerinin sayacı. Analiz iş parçacığı başlarken
+/// artırır, biterken (bu nesne düşünce) azaltır.
+pub struct ForegroundGuard(Arc<AtomicUsize>);
+
+impl ForegroundGuard {
+    pub fn new(counter: &Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::AcqRel);
+        Self(Arc::clone(counter))
+    }
+}
+
+impl Drop for ForegroundGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+struct Shared {
+    stop: AtomicBool,
+    /// Uyandırma işareti (yeni şarkılar eklendi).
+    wake: Mutex<bool>,
+    signal: Condvar,
+    /// Bu oturumda arka planda analiz edilen şarkı sayısı.
+    analyzed: AtomicUsize,
+}
+
+/// Arka plan analizi. Program kapanırken [`BackgroundAnalysis::stop`] çağrılır.
+pub struct BackgroundAnalysis {
+    shared: Arc<Shared>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl BackgroundAnalysis {
+    /// Arka plan analizini başlatır. `foreground`: oynatıcının süren analiz sayısı.
+    pub fn start(cache: Arc<AnalysisCache>, foreground: Arc<AtomicUsize>) -> Self {
+        let shared = Arc::new(Shared {
+            stop: AtomicBool::new(false),
+            wake: Mutex::new(false),
+            signal: Condvar::new(),
+            analyzed: AtomicUsize::new(0),
+        });
+        let worker = Arc::clone(&shared);
+        let thread = std::thread::Builder::new()
+            .name("lyraska-arka-plan-analiz".to_owned())
+            .spawn(move || run(&cache, &foreground, &worker))
+            .map_err(|e| diagnostics::error(&format!("Arka plan analizi başlatılamadı: {e}")))
+            .ok();
+        Self {
+            shared,
+            thread: Mutex::new(thread),
+        }
+    }
+
+    /// Yeni şarkılar eklendiğinde beklemeden bakması için uyandırır.
+    pub fn wake(&self) {
+        if let Ok(mut wake) = self.shared.wake.lock() {
+            *wake = true;
+            self.shared.signal.notify_all();
+        }
+    }
+
+    /// Bu oturumda arka planda analiz edilen şarkı sayısı.
+    pub fn analyzed(&self) -> usize {
+        self.shared.analyzed.load(Ordering::Acquire)
+    }
+
+    /// Durdurur ve iş parçacığının bitmesini bekler (süren analiz yarıda kesilir).
+    pub fn stop(&self) {
+        self.shared.stop.store(true, Ordering::Release);
+        self.wake();
+        let thread = self.thread.lock().ok().and_then(|mut t| t.take());
+        if let Some(thread) = thread {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for BackgroundAnalysis {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn run(cache: &AnalysisCache, foreground: &AtomicUsize, shared: &Shared) {
+    // Açılamayan ya da çözülemeyen dosyalar bu oturumda bir daha denenmez.
+    let mut failed: HashSet<PathBuf> = HashSet::new();
+    while !shared.stop.load(Ordering::Acquire) {
+        let batch: Vec<PathBuf> = match cache.pending_library_tracks(BATCH + failed.len()) {
+            Ok(paths) => paths.into_iter().filter(|p| !failed.contains(p)).collect(),
+            Err(e) => {
+                diagnostics::error(&e.to_string());
+                Vec::new()
+            }
+        };
+        if batch.is_empty() {
+            idle(shared);
+            continue;
+        }
+        for path in batch.into_iter().take(BATCH) {
+            if shared.stop.load(Ordering::Acquire) {
+                return;
+            }
+            wait_for_foreground(foreground, shared);
+            match analyze_one(&path, cache, foreground, shared) {
+                Outcome::Stored => {
+                    shared.analyzed.fetch_add(1, Ordering::AcqRel);
+                }
+                Outcome::Failed => {
+                    failed.insert(path);
+                }
+                Outcome::Interrupted => {}
+            }
+        }
+    }
+}
+
+/// Bekleyen iş yokken uyandırılana ya da `IDLE_POLL` dolana kadar bekler.
+fn idle(shared: &Shared) {
+    let Ok(wake) = shared.wake.lock() else {
+        return;
+    };
+    let wake = shared.signal.wait_timeout_while(wake, IDLE_POLL, |w| {
+        !*w && !shared.stop.load(Ordering::Acquire)
+    });
+    if let Ok((mut wake, _)) = wake {
+        *wake = false;
+    }
+}
+
+fn wait_for_foreground(foreground: &AtomicUsize, shared: &Shared) {
+    while foreground.load(Ordering::Acquire) > 0 && !shared.stop.load(Ordering::Acquire) {
+        std::thread::sleep(FOREGROUND_POLL);
+    }
+}
+
+enum Outcome {
+    Stored,
+    Failed,
+    /// Program kapanıyor; şarkı sonra yeniden denenir.
+    Interrupted,
+}
+
+fn analyze_one(
+    path: &Path,
+    cache: &AnalysisCache,
+    foreground: &AtomicUsize,
+    shared: &Shared,
+) -> Outcome {
+    let Some(stamp) = FileStamp::of(path) else {
+        return Outcome::Failed;
+    };
+    let Ok(decoder) = Decoder::open(path) else {
+        return Outcome::Failed;
+    };
+    let target = Spectrogram::new();
+    let mut pacer = Pacer::new();
+    spectrogram::analyze_paced(decoder, &target, &mut || {
+        if shared.stop.load(Ordering::Acquire) {
+            target.cancel();
+            return;
+        }
+        pacer.pace(foreground, shared);
+    });
+    let Some(saved) = target.saved() else {
+        return if shared.stop.load(Ordering::Acquire) {
+            Outcome::Interrupted
+        } else {
+            Outcome::Failed
+        };
+    };
+    // Analiz sürerken dosya değiştiyse sonuç eskidir; bir sonraki turda yeniden denenir.
+    if FileStamp::of(path) != Some(stamp) {
+        return Outcome::Interrupted;
+    }
+    match cache.store(path, stamp, &saved) {
+        Ok(()) => Outcome::Stored,
+        Err(e) => {
+            diagnostics::error(&e.to_string());
+            Outcome::Failed
+        }
+    }
+}
+
+/// İş ve bekleme sürelerini dengeler; oynatıcının analizi başlarsa onu bekler.
+struct Pacer {
+    since: Instant,
+    worked: Duration,
+}
+
+impl Pacer {
+    fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            worked: Duration::ZERO,
+        }
+    }
+
+    fn pace(&mut self, foreground: &AtomicUsize, shared: &Shared) {
+        self.worked += self.since.elapsed();
+        if foreground.load(Ordering::Acquire) > 0 {
+            wait_for_foreground(foreground, shared);
+            self.worked = Duration::ZERO;
+        } else if self.worked >= PACE_SLICE {
+            std::thread::sleep(self.worked.mul_f64(REST_PER_WORK));
+            self.worked = Duration::ZERO;
+        }
+        self.since = Instant::now();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::test_util::temp_path;
+    use crate::library::LibraryService;
+
+    fn wait_until(mut condition: impl FnMut() -> bool, seconds: u64) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(seconds);
+        while Instant::now() < deadline {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        condition()
+    }
+
+    /// Test verisindeki şarkıları içeren, taranmış bir kütüphane ve aynı dosyada önbellek.
+    fn library_with_songs() -> (LibraryService, Arc<AnalysisCache>, Vec<PathBuf>) {
+        let dir = temp_path("arka-plan-muzik");
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let mut songs = Vec::new();
+        for ext in ["mp3", "flac", "ogg"] {
+            let name = format!("uc-uc-ton.{ext}");
+            std::fs::copy(data.join(&name), dir.join(&name)).unwrap();
+            songs.push(dir.join(name));
+        }
+        // Çözülemeyen dosya: sonsuza dek yeniden denenmemeli.
+        std::fs::write(dir.join("bozuk.mp3"), b"ses degil").unwrap();
+        let db = dir.join("library.sqlite3");
+        let service = LibraryService::open(&db).unwrap();
+        service.add_folder(&dir).unwrap();
+        assert!(wait_until(|| !service.is_scanning(), 10));
+        let cache = Arc::new(AnalysisCache::open(&db).unwrap());
+        (service, cache, songs)
+    }
+
+    #[test]
+    fn kutuphane_arka_planda_analiz_edilip_onbellege_yazilir() {
+        let (service, cache, songs) = library_with_songs();
+        assert_eq!(service.status().unwrap().analyzed, 0);
+        let foreground = Arc::new(AtomicUsize::new(0));
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), foreground);
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        for song in &songs {
+            let saved = cache.load(song, FileStamp::of(song).unwrap()).unwrap();
+            assert!(
+                saved.is_some_and(|s| s.frames() > 100),
+                "{song:?} önbellekte yok"
+            );
+        }
+        // Bozuk dosya bekleyenlerde kalır ama yeniden denenmez; analiz sayısı artmaz.
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(background.analyzed(), songs.len());
+        assert_eq!(service.status().unwrap().analyzed, songs.len());
+        background.stop();
+    }
+
+    #[test]
+    fn calan_sarkinin_analizi_surerken_beklenir() {
+        let (_service, cache, songs) = library_with_songs();
+        let foreground = Arc::new(AtomicUsize::new(0));
+        let busy = ForegroundGuard::new(&foreground);
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), Arc::clone(&foreground));
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(
+            background.analyzed(),
+            0,
+            "oynatıcı analiz ederken arka plan bekler"
+        );
+        drop(busy);
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        assert_eq!(foreground.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn durdurunca_hemen_biter() {
+        let (_service, cache, _songs) = library_with_songs();
+        let foreground = Arc::new(AtomicUsize::new(1)); // hep meşgul: iş parçacığı bekliyor
+        let background = BackgroundAnalysis::start(cache, foreground);
+        std::thread::sleep(Duration::from_millis(50));
+        let started = Instant::now();
+        background.stop();
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+}

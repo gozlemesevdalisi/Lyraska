@@ -149,6 +149,10 @@ export interface LibraryTrack {
   trackNumber: number | null;
   durationSecs: number | null;
   codec: string;
+  /** Tempo (önbellekteki analizden); analiz edilmediyse ya da ritim yoksa `null`. */
+  bpm: number | null;
+  /** Şarkı haritası hazır mı (ritimsiz şarkılar da analiz edilmiş sayılır). */
+  analyzed: boolean;
 }
 
 /** Rust tarafındaki `library::scan::ScanProgress`. */
@@ -163,6 +167,8 @@ export interface ScanProgress {
 export interface LibraryStatus {
   folders: LibraryFolder[];
   trackCount: number;
+  /** Şarkı haritası (arka plan analizi) hazır şarkı sayısı. */
+  analyzed: number;
   scan: ScanProgress;
   problems: string[];
 }
@@ -188,6 +194,7 @@ export interface EqState extends EqSettings {
 export const EMPTY_LIBRARY: LibraryStatus = {
   folders: [],
   trackCount: 0,
+  analyzed: 0,
   scan: { scanning: false, found: 0, processed: 0, current: null },
   problems: [],
 };

@@ -35,6 +35,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] İşaretleme aracı: şarkı çalarken beat (Boşluk) ve drop (D) işaretleme, doğruluk ölçümü (F-ölçüsü)
 - [x] Şarkı haritası analizi: beat (tempo ve vuruşlar), ölçü başı (4/4–3/4), bölümler, drop, enerji — gerçek
       şarkılarda doğruluk işaretleme aracıyla ölçülecek
+- [x] Şarkı haritası önbelleği (0.0.20): analiz sonuçları (spektrum, beat, ölçü başı, bölümler, drop, enerji)
+      SQLite'ta; anahtar yol + boyut + değiştirilme zamanı + analiz sürümü (algoritma değişince kendiliğinden yeniden
+      hesaplanır). Kütüphane arka planda, düşük öncelikle analiz edilir (önce çalan, sonra sıradaki, sonra geri
+      kalan); kütüphane listesinde BPM sütunu
 - [ ] Gecikme telafisi ve kalibrasyon
 - [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
       bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu

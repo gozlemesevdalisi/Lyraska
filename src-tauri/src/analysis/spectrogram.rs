@@ -81,6 +81,34 @@ impl Spectrogram {
         self.done.load(Ordering::Acquire)
     }
 
+    /// Analiz iptal edildi mi (bitmeden başka şarkı açıldı)?
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Önbellekteki sonuçtan hazır (bitmiş) bir spektrogram kurar: şarkı yeniden
+    /// çözülmez. Koreografi ve VU referansı saklanan veriden hesaplanır.
+    pub fn from_saved(saved: SavedAnalysis) -> Arc<Self> {
+        let spectrogram = Self::new();
+        spectrogram.push(&saved.levels, &saved.meters, &saved.onset);
+        spectrogram.complete(saved.beats, saved.song_map);
+        spectrogram
+    }
+
+    /// Bitmiş analizin saklanacak hâli; analiz bitmediyse (ya da yarıda kesildiyse) `None`.
+    pub fn saved(&self) -> Option<SavedAnalysis> {
+        if !self.is_done() {
+            return None;
+        }
+        Some(SavedAnalysis {
+            levels: self.levels.read().ok()?.clone(),
+            meters: self.meters.read().ok()?.clone(),
+            onset: self.onset.read().ok()?.clone(),
+            beats: self.beat_grid().map(|b| (*b).clone()),
+            song_map: self.song_map().map(|m| (*m).clone()),
+        })
+    }
+
     pub fn ready_frames(&self) -> usize {
         self.ready.load(Ordering::Acquire)
     }
@@ -151,14 +179,6 @@ impl Spectrogram {
     }
 
     fn finish(&self) {
-        let reference = self
-            .meters
-            .read()
-            .ok()
-            .and_then(|m| levels::vu_reference_db(&m, FRAMES_PER_SECOND));
-        if let Ok(mut stored) = self.vu_reference.write() {
-            *stored = reference;
-        }
         let grid = self
             .onset
             .read()
@@ -175,6 +195,19 @@ impl Spectrogram {
                 .collect();
             structure::map_song(&levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
         });
+        self.complete(grid, map);
+    }
+
+    /// Analizi tamamlar: VU referansı ve koreografi hesaplanır, sonuçlar yayımlanır.
+    fn complete(&self, grid: Option<BeatGrid>, map: Option<SongMap>) {
+        let reference = self
+            .meters
+            .read()
+            .ok()
+            .and_then(|m| levels::vu_reference_db(&m, FRAMES_PER_SECOND));
+        if let Ok(mut stored) = self.vu_reference.write() {
+            *stored = reference;
+        }
         let choreography = match (&grid, &map) {
             (Some(grid), Some(map)) => {
                 let levels = self.levels.read().ok();
@@ -198,8 +231,43 @@ impl Spectrogram {
     }
 }
 
+/// Bir şarkının saklanabilir analiz sonucu (önbellek için): ham kareler ve
+/// onlardan çıkarılan vuruş ızgarası ile şarkı haritası.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedAnalysis {
+    /// Kare başına `BANDS` bant seviyesi (0..255).
+    pub levels: Vec<u8>,
+    /// Kare başına kanal seviyeleri ([`levels`] modülünün saklama biçimi).
+    pub meters: Vec<u8>,
+    /// Kare başına başlangıç gücü.
+    pub onset: Vec<f32>,
+    pub beats: Option<BeatGrid>,
+    pub song_map: Option<SongMap>,
+}
+
+impl SavedAnalysis {
+    /// Kare sayısı.
+    pub fn frames(&self) -> usize {
+        self.levels.len() / BANDS
+    }
+
+    /// Veri kendi içinde tutarlı mı (bozuk önbellek kaydına karşı)?
+    pub fn is_consistent(&self) -> bool {
+        let frames = self.frames();
+        self.levels.len() == frames * BANDS
+            && self.meters.len() == frames * VALUES_PER_FRAME
+            && self.onset.len() == frames
+    }
+}
+
 /// Şarkıyı baştan sona çözerek spektrogramı doldurur. Ayrı iş parçacığında çalışır.
-pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
+pub fn analyze(decoder: Decoder, target: &Spectrogram) {
+    analyze_paced(decoder, target, &mut || {});
+}
+
+/// [`analyze`] gibi; ama her çözülen parçadan sonra `pace` çağrılır (arka plan
+/// analizi burada bekleyerek işlemciyi çalan şarkıya bırakır).
+pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn FnMut()) {
     let info = decoder.info().clone();
     let channels = info.channels.max(1);
     let hop = (f64::from(info.sample_rate) / FRAMES_PER_SECOND).round() as usize;
@@ -220,6 +288,7 @@ pub fn analyze(mut decoder: Decoder, target: &Spectrogram) {
         if target.cancelled.load(Ordering::Acquire) {
             return;
         }
+        pace();
         let chunk = match decoder.next_chunk() {
             Ok(Some(chunk)) => chunk,
             Ok(None) | Err(_) => break,
@@ -457,6 +526,45 @@ mod tests {
         assert!((reference + 9.0).abs() < 0.3, "{reference}");
         assert!(spectrogram.meters_at(2.5).is_none());
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn saklanan_analizden_ayni_spektrogram_kurulur() {
+        // 120 BPM tıklamalar üstünde 200 Hz ton: vuruşlar ve seviyeler olsun.
+        let path = temp_path("spektrum-sakla.wav");
+        let rate = 22_050;
+        write_wav(&path, rate, 2, rate as usize * 8, |frame, _| {
+            let t = frame as f64 / f64::from(rate);
+            let click = if (t * 2.0).fract() < 0.01 { 0.8 } else { 0.0 };
+            click + 0.2 * (2.0 * std::f64::consts::PI * 200.0 * t).sin()
+        });
+        let original = Spectrogram::new();
+        analyze(Decoder::open(&path).unwrap(), &original);
+        let saved = original.saved().expect("analiz bitti");
+        assert!(saved.is_consistent());
+        assert!(saved.beats.is_some(), "tıklamalarda tempo bulunur");
+
+        let restored = Spectrogram::from_saved(saved.clone());
+        assert!(restored.is_done());
+        assert_eq!(restored.ready_frames(), original.ready_frames());
+        assert_eq!(restored.saved(), Some(saved));
+        for seconds in [0.5, 3.0, 7.5] {
+            assert_eq!(restored.frame_at(seconds), original.frame_at(seconds));
+            assert_eq!(restored.meters_at(seconds), original.meters_at(seconds));
+        }
+        assert_eq!(restored.vu_reference_db(), original.vu_reference_db());
+        assert_eq!(restored.beat_grid(), original.beat_grid());
+        assert_eq!(restored.song_map(), original.song_map());
+        assert_eq!(
+            restored.choreography().is_some(),
+            original.choreography().is_some()
+        );
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn bitmeyen_analiz_saklanmaz() {
+        assert_eq!(Spectrogram::new().saved(), None);
     }
 
     #[test]

@@ -13,6 +13,7 @@
 //!    tepe noktası parabolle inceltilir.
 
 use rustfft::num_complex::Complex;
+use serde::{Deserialize, Serialize};
 
 /// Başlangıç gücü için logaritmik bant sayısı.
 const ONSET_BANDS: usize = 48;
@@ -41,7 +42,7 @@ const MIN_RHYTHM_STRENGTH: f64 = 0.08;
 const ONSET_LATENCY_SECONDS: f64 = 0.0;
 
 /// Şarkının vuruş ızgarası.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BeatGrid {
     /// Tempo (vuruş/dakika).
     pub bpm: f64,

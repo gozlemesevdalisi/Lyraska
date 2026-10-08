@@ -72,7 +72,7 @@ lyraska/
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
-│   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama
+│   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama, BPM
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
@@ -83,7 +83,9 @@ lyraska/
 │   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   ├── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
-│   │   │   └── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
+│   │   │   ├── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
+│   │   │   ├── cache.rs      #   şarkı haritası önbelleği (SQLite; yol + boyut + değişme zamanı + ANALYSIS_VERSION)
+│   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)
 │   │   ├── director/         # Görsel Yönetmen: şarkı haritasından koreografi (atmosfer, ritim, doku),
 │   │   │                     # drop beklentisi/açılımı; nabız hız garantisi (≤ 3/sn, güvenli modda ≤ 1/sn)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
@@ -109,6 +111,8 @@ Kurallar:
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
 - Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
   konumuna karşılık gelen analiz karesini `visual_bridge` üzerinden okur.
+- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Spektrum, beat, ölçü, bölüm, drop ya da enerji
+  hesabını değiştiren her iş `ANALYSIS_VERSION`'ı artırır; eski kayıtlar böylece kendiliğinden yeniden hesaplanır.
 - Sahneler hareket ve parlaklığı Görsel Yönetmen'in notundan (`VisualFrame.director`) türetir; parlaklığı
   yalnızca nabız olaylarına ve yumuşak değerlere bağlar ve kendi parlama testini taşır.
 - Oynatıcı akışları (aç, sar, durdur, şarkı sonu) birim testlerinde sanal çıkışla sınanır; gerçek
