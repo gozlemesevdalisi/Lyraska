@@ -68,7 +68,7 @@ lyraska/
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
 │   │   │   ├── peq.rs        #   kulaklık düzeltmesi: AutoEq/Equalizer APO profili, parametrik EQ (RBJ)
 │   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
-│   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (−0,3 dBFS)
+│   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (0 dBFS)
 │   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, taşma koruması, duraklatma geçişi
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış

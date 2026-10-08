@@ -14,8 +14,10 @@
 
 use super::Sample;
 
-/// Sınır: −0,3 dBFS.
-pub const CEILING: Sample = 0.966_050_878_95;
+/// Sınır: 0 dBFS (tam ölçek). Yalnızca gerçekten taşan tepeler sınırlanır; tam
+/// ölçeğe kadar olan ses bit bit aynen geçer. (Eskiden −0,3 dBFS idi: bugünün yüksek
+/// basılmış kayıtlarında sınırlayıcı neredeyse sürekli çalışıp sesi hafifçe değiştiriyordu.)
+pub const CEILING: Sample = 1.0;
 /// İleriye bakma süresi.
 const LOOKAHEAD_SECONDS: f64 = 0.0015;
 /// Kazancın geri dönüş süresi (zaman sabiti).
@@ -149,6 +151,23 @@ mod tests {
             &input[..input.len() - d * 2],
             "bit bit aynı, yalnızca gecikmeli"
         );
+        assert_eq!(limiter.gain(), 1.0);
+    }
+
+    #[test]
+    fn tam_olcege_kadar_ses_aynen_gecer() {
+        // Bugünün kayıtlarının tepeleri genellikle 0 ile −0,1 dBFS arasında: taşma
+        // yoksa ses değişmemeli (ekolayzer kapalıyken ses bit bit aynı geçsin).
+        let rate = 44_100;
+        let mut limiter = Limiter::new(1, rate);
+        let d = limiter.latency_frames();
+        let mut input: Vec<Sample> = (0..20_000)
+            .map(|i| 0.99 * (2.0 * PI * 1000.0 * i as f64 / f64::from(rate)).sin())
+            .collect();
+        input[5_000] = 1.0;
+        input[9_000] = -1.0;
+        let out = run(&mut limiter, &input, 1);
+        assert_eq!(&out[d..], &input[..input.len() - d]);
         assert_eq!(limiter.gain(), 1.0);
     }
 
