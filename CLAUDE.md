@@ -204,7 +204,13 @@ Görsel güvenlik (zorunlu):
 ## Oturum sonu: devir notu
 
 Her oturumun sonunda `docs/devlog/YYYY-AA-GG.md` dosyasına (aynı gün ikinci oturumsa sonuna `-2` eklenir)
-kısa bir Türkçe devir notu yazılır, commit edilir ve push edilir. Şablon:
+kısa bir Türkçe devir notu yazılır, commit edilir ve push edilir.
+
+Devir notunun **"Durum"** ve **"Sıradaki adım"** bölümleri oturum sonunu beklemeden **her PR'dan sonra** güncellenir:
+her PR, o günün devir notundaki bu iki bölümü kendi içinde günceller (CI durumu, açık PR'lar, biten iş artık
+"Sıradaki adım"da durmaz). Bir PR birleştikten sonra değişen durum bir sonraki PR'da yazılır.
+
+Şablon:
 
 ```markdown
 # Devir notu — GG Ay YYYY
