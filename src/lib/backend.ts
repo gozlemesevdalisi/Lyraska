@@ -113,6 +113,8 @@ export interface BeatFrame {
   phase: number;
   /** Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`. */
   barBeat: number | null;
+  /** Ölçüdeki vuruş sayısı (3 ya da 4); yapı analizi bitene kadar `null`. */
+  meter: number | null;
 }
 
 /** Rust tarafındaki `analysis::structure::SongMap`. */
@@ -403,6 +405,29 @@ export async function getVisualSafe(): Promise<boolean> {
 export async function setVisualSafe(enabled: boolean): Promise<boolean> {
   if (!isTauri()) return enabled;
   return invoke<boolean>("visual_safe_set", { enabled });
+}
+
+/** Ses aygıtının ek gecikmesi (ms). Tarayıcı önizlemesinde 0. */
+export async function getAudioDelay(): Promise<number> {
+  if (!isTauri()) return 0;
+  return invoke<number>("audio_delay_get");
+}
+
+/** Ses gecikmesini uygular ve kaydeder; uygulanan (sınırlanmış) değeri döndürür. */
+export async function setAudioDelay(ms: number): Promise<number> {
+  if (!isTauri()) return ms;
+  return invoke<number>("audio_delay_set", { ms });
+}
+
+/** Rust tarafındaki `commands::CalibrationTrack`: tıklama kaydı ve tıklama zamanları. */
+export interface CalibrationTrack {
+  path: string;
+  /** Tıklamaların kayıttaki zamanları (saniye). */
+  clicks: number[];
+}
+
+export function getCalibrationTrack(): Promise<CalibrationTrack> {
+  return invoke<CalibrationTrack>("calibration_track");
 }
 
 /** Rust tarafındaki `audio::peq::PeqFilter`. */

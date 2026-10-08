@@ -216,6 +216,8 @@ pub struct VisualData {
 pub struct StructureNow {
     /// Vuruşun ölçüdeki yeri (1 = ölçü başı).
     pub bar_beat: Option<usize>,
+    /// Ölçüdeki vuruş sayısı (3 ya da 4).
+    pub meter: usize,
     pub energy: Option<f32>,
     pub section: Option<usize>,
 }
@@ -450,6 +452,8 @@ pub struct Player {
     visual_safe: bool,
     /// Analiz önbelleği ve süren analiz sayacı.
     analysis_context: AnalysisContext,
+    /// Ses aygıtının ek gecikmesi (ms): görseller bu kadar geriden okunur.
+    audio_delay_ms: i32,
     /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
     /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
     visual_eq: Option<(u64, u32, [f64; BANDS])>,
@@ -653,7 +657,9 @@ impl Player {
     /// Spektrum ekolayzerden önce çıkarıldığı için ekolayzerin etkisi burada eklenir:
     /// görseller duyulanı gösterir.
     pub fn visual_now(&mut self) -> Option<VisualData> {
-        let (track, seconds) = self.session.as_ref()?.now_playing();
+        let (track, heard) = self.session.as_ref()?.now_playing();
+        // Gecikme telafisi: ekranda görüneceği an ve ses aygıtının ek gecikmesi.
+        let seconds = crate::visual_bridge::visual_time(heard, self.audio_delay_ms);
         // Boşluksuz geçişle şarkı değiştiyse analizi de değiştir.
         self.adopt_analysis(&track.path);
         let rate = track.sample_rate;
@@ -669,6 +675,7 @@ impl Player {
             .map(|c| c.frame_at(seconds, self.visual_safe));
         let structure = spectrogram.song_map().map(|map| StructureNow {
             bar_beat: beat.map(|(_, position)| map.bar_beat(position.index)),
+            meter: map.meter,
             energy: map.energy_at(seconds),
             section: map.section_at(seconds),
         });
@@ -685,6 +692,17 @@ impl Player {
             structure,
             director,
         })
+    }
+
+    /// Ses aygıtının ek gecikmesi (ms).
+    pub fn audio_delay_ms(&self) -> i32 {
+        self.audio_delay_ms
+    }
+
+    /// Ses gecikmesini ayarlar (sınırlar içine alınır) ve uygulanan değeri döndürür.
+    pub fn set_audio_delay_ms(&mut self, ms: i32) -> i32 {
+        self.audio_delay_ms = crate::visual_bridge::clamp_audio_delay_ms(ms);
+        self.audio_delay_ms
     }
 
     /// Epilepsi güvenli modu açık mı?
@@ -1265,8 +1283,16 @@ mod tests {
             visual.vu_reference_db.is_some(),
             "analiz bitti: referans hazır"
         );
-        assert!((seconds - 1.0).abs() < 1e-9);
+        // Görseller ekranda görünecekleri an için okunur (ekran gecikmesi kadar ileri).
+        let lead = crate::visual_bridge::DISPLAY_LEAD_SECONDS;
+        assert!((seconds - (1.0 + lead)).abs() < 1e-9, "{seconds}");
         assert_eq!(bands.len(), BANDS);
+        // Ses aygıtı 200 ms geç çalıyorsa görseller o kadar geriden okunur.
+        assert_eq!(player.set_audio_delay_ms(200), 200);
+        let delayed = player.visual_now().unwrap().seconds;
+        assert!((delayed - (1.0 + lead - 0.2)).abs() < 1e-9, "{delayed}");
+        assert_eq!(player.set_audio_delay_ms(10_000), 400, "sınır");
+        player.set_audio_delay_ms(0);
         // Aynı şarkıda sarma analizi yeniden başlatmaz.
         assert!(Arc::ptr_eq(
             &first,

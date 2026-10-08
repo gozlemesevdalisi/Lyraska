@@ -51,8 +51,8 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
 │   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useMarker (işaretleme),
-│   │                         # useVisualFeed (görsel verisi)
-│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue), Rust köprüsü
+│   │                         # useSync (ses–görüntü senkronu), useVisualFeed (görsel verisi)
+│   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync), Rust köprüsü
 │   │                         # (backend.ts), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
@@ -76,7 +76,7 @@ lyraska/
 │   │   │   ├── scan.rs       #   paralel etiket okuma, değişmeyeni atlama, silineni çıkarma
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
-│   │   ├── settings.rs       # Kalıcı ayarlar (settings.json, uygulama veri klasöründe; ekolayzer, kulaklık)
+│   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, güvenli mod, ses gecikmesi)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
 │   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
@@ -88,7 +88,8 @@ lyraska/
 │   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)
 │   │   ├── director/         # Görsel Yönetmen: şarkı haritasından koreografi (atmosfer, ritim, doku),
 │   │   │                     # drop beklentisi/açılımı; nabız hız garantisi (≤ 3/sn, güvenli modda ≤ 1/sn)
-│   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
+│   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi (ekran +
+│   │                         # ses aygıtı), calibration.rs: senkron ölçümü için tıklama kaydı
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları

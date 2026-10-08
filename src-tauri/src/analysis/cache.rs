@@ -367,6 +367,28 @@ mod tests {
     }
 
     #[test]
+    fn onbellek_yazarken_kutuphane_taramasi_bekler_hata_vermez() {
+        use crate::library::Library;
+        let db = crate::audio::test_util::temp_path("kilit.sqlite3");
+        let mut library = Library::open(&db).unwrap();
+        let folder = library.add_folder("/muzik").unwrap();
+        let cache = AnalysisCache::open(&db).unwrap();
+        // Önbellek bir analiz sonucunu yazarken (yazma kilidi elinde) kütüphane taraması gelir.
+        cache
+            .lock()
+            .unwrap()
+            .execute_batch("BEGIN IMMEDIATE")
+            .unwrap();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            cache.lock().unwrap().execute_batch("COMMIT").unwrap();
+        });
+        let result = library.apply_changes(folder.id, &[], &["/muzik/yok.mp3".to_owned()]);
+        writer.join().unwrap();
+        assert!(result.is_ok(), "kütüphane beklemeli: {result:?}");
+    }
+
+    #[test]
     fn kutuphane_tablosu_yoksa_bekleyen_sarki_yok() {
         let cache = AnalysisCache::open_in_memory().unwrap();
         assert!(cache.pending_library_tracks(10).unwrap().is_empty());
