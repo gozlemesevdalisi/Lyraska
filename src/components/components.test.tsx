@@ -565,6 +565,8 @@ describe("sahneler", () => {
     await act(async () => fireEvent.click(knob));
     const sky = screen.getByRole("img", { name: /Gece göğü/ });
     expect(sky).toHaveAttribute("data-webgl", "off");
+    // Neden tuvale işlenir ve hata günlüğüne yazılır (kullanıcı bize iletebilir).
+    expect(sky.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(getContext).toHaveBeenCalledWith("webgl2", expect.anything());
     expect(screen.getByRole("button", { name: /Sahne: Gece göğü/ })).toBeInTheDocument();
     expect(window.localStorage.getItem("lyraska.scene")).toBe("sky");
@@ -581,6 +583,7 @@ describe("sahneler", () => {
     await act(async () => fireEvent.click(knob));
     const road = screen.getByRole("img", { name: /Gece otoyolu/ });
     expect(road).toHaveAttribute("data-webgl", "off");
+    expect(road.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(window.localStorage.getItem("lyraska.scene")).toBe("highway");
     await act(async () => fireEvent.click(knob));
     expect(

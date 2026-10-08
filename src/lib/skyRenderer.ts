@@ -8,7 +8,7 @@ import {
   parseHexColor,
   type SkyState,
 } from "./sky";
-import { fitCanvas, getWebGl2, linkFullscreenProgram } from "./gl";
+import { fitCanvas, linkFullscreenProgram, openScene, retrySetup } from "./gl";
 
 /**
  * "Gece göğü" sahnesinin WebGL2 çizimi. Tüm gök tek bir tam ekran
@@ -25,6 +25,9 @@ export interface SkyRenderer {
 }
 
 type Rgb = [number, number, number];
+
+/** Hata günlüğünde görünen sahne adı. */
+const SCENE_NAME = "Gece göğü";
 
 /** Renkler `:root` içindeki `--sky-*` değişkenlerinden okunur. */
 const COLORS: { uniform: UniformName; variable: string; fallback: Rgb }[] = [
@@ -177,14 +180,14 @@ ${LYRA_LINES.map(
 
 /**
  * Tuvale gök çizicisini kurar. WebGL2 yoksa ya da gölgelendirici derlenemezse
- * `null` döner (sahne o zaman CSS ile çizilmiş durgun göğü gösterir).
+ * `null` döner (sahne o zaman CSS ile çizilmiş durgun göğü gösterir); neden hata
+ * günlüğüne yazılır.
  */
 export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null {
-  const ctx = getWebGl2(canvas);
-  if (!ctx) return null;
-
-  let resources = setup(ctx, canvas);
-  if (!resources) return null;
+  const opened = openScene(canvas, SCENE_NAME, (gl) => setup(gl, canvas));
+  if (!opened) return null;
+  const ctx = opened.gl;
+  let resources: Resources | null = opened.resources;
   let lost = false;
   // Takımyıldız konumları yalnızca en-boy oranı değişince yeniden gönderilir.
   let lyraAspect = 0;
@@ -194,7 +197,7 @@ export function createSkyRenderer(canvas: HTMLCanvasElement): SkyRenderer | null
     lost = true;
   };
   const onRestored = () => {
-    resources = setup(ctx, canvas);
+    resources = retrySetup(canvas, SCENE_NAME, () => setup(ctx, canvas));
     lost = resources === null;
     lyraAspect = 0;
   };
@@ -265,10 +268,11 @@ interface Resources {
   themes: { low: Rgb; high: Rgb }[];
 }
 
-function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources | null {
-  const program = linkFullscreenProgram(gl, FRAGMENT_SHADER, "Gece göğü");
+/** Gölgelendiriciyi derler ve renkleri yükler; olmazsa nedeni içeren hata fırlatır. */
+function setup(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): Resources {
+  const program = linkFullscreenProgram(gl, FRAGMENT_SHADER);
   const vao = gl.createVertexArray();
-  if (!program || !vao) return null;
+  if (!vao) throw new Error("köşe dizisi oluşturulamadı");
 
   const location = (name: UniformName) => gl.getUniformLocation(program, name);
   const uniforms: Record<UniformName, WebGLUniformLocation | null> = {
