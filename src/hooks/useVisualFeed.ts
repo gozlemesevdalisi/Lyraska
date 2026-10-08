@@ -1,10 +1,16 @@
 import { useEffect, useRef } from "react";
 import { getVisualFrame, type VisualFrame } from "../lib/backend";
+import { extrapolateFrame } from "../lib/sync";
 
 /**
  * Her ekran karesinde `onTick(frame, dt)` çağırır. Çalarken `frame`, Rust'tan
  * alınan en son görsel veridir (o an duyulan anın önceden yapılmış analizi);
  * çalmıyorken `null`. Aynı anda tek istek gönderilir: IPC kuyruğu birikmez.
+ *
+ * Veri ekran karelerine tam denk gelmez (bazen aynı veri iki karede kullanılır).
+ * Bu yüzden her karede verinin hesaplandığı andan bu yana geçen süre ölçülür ve
+ * vuruşa bağlı değerler o kadar ileri alınır (`extrapolateFrame`): hareketler
+ * takılmadan, tam vuruşunda akar.
  */
 export function useVisualFeed(
   playing: boolean,
@@ -22,6 +28,8 @@ export function useVisualFeed(
     let cancelled = false;
     let inFlight = false;
     let latest: VisualFrame | null = null;
+    /** En son verinin hesaplandığı an (istek ile yanıtın ortası, ms). */
+    let latestAt = 0;
 
     const loop = (now: number) => {
       if (cancelled) return;
@@ -30,9 +38,13 @@ export function useVisualFeed(
       last = now;
       if (playing && !inFlight) {
         inFlight = true;
+        const sentAt = performance.now();
         getVisualFrame()
           .then((frame) => {
-            if (!cancelled && frame) latest = frame;
+            if (!cancelled && frame) {
+              latest = frame;
+              latestAt = (sentAt + performance.now()) / 2;
+            }
           })
           .catch(() => {
             /* Geçici hata: bir sonraki karede yeniden denenir. */
@@ -41,7 +53,9 @@ export function useVisualFeed(
             inFlight = false;
           });
       }
-      tick.current(playing ? latest : null, dt);
+      // Uzun bir takılmadan sonra (sekme arka plandaydı) en fazla 250 ms ileri alınır.
+      const age = Math.max(0, Math.min(0.25, (now - latestAt) / 1000));
+      tick.current(playing && latest ? extrapolateFrame(latest, age) : null, dt);
     };
 
     raf = window.requestAnimationFrame(loop);

@@ -1,5 +1,8 @@
+import type { VisualFrame } from "./backend";
+
 /**
- * Ses–görüntü senkronu: ses gecikmesi ölçümünün hesabı ve vuruş göstergesi.
+ * Ses–görüntü senkronu: ses gecikmesi ölçümünün hesabı, görsel verinin ekrana
+ * ulaşana kadar geçen süre kadar ileri alınması ve vuruş göstergesi.
  *
  * Ölçüm: program tıklama kaydı çalar, kullanıcı her tıklamayı duyduğu anda
  * Boşluk'a basar. Her basışın en yakın tıklamaya göre ne kadar geç (ya da erken)
@@ -65,6 +68,70 @@ export function estimateAudioDelay(
 export function beatSwing(index: number, phase: number): number {
   const p = Math.max(0, Math.min(1, Number.isFinite(phase) ? phase : 0));
   return index % 2 === 0 ? p : 1 - p;
+}
+
+/**
+ * Vuruş konumunu `ageSeconds` kadar ileri alır (veri ekrana geç ulaştıysa).
+ * Tempo bilinmiyorsa ya da süre geçersizse olduğu gibi döner.
+ */
+export function advanceBeat(
+  index: number,
+  phase: number,
+  bpm: number,
+  ageSeconds: number,
+): { index: number; phase: number } {
+  if (!(bpm > 0) || !(ageSeconds > 0) || !Number.isFinite(phase)) return { index, phase };
+  const position = index + phase + (ageSeconds * bpm) / 60;
+  const whole = Math.floor(position);
+  return { index: whole, phase: position - whole };
+}
+
+/**
+ * Görsel veriyi `ageSeconds` kadar ileri alır: verinin hesaplanmasından ekrana
+ * çizilmesine kadar geçen süre telafi edilir. Vuruşa bağlı değerler (konum, vuruş,
+ * ölçüdeki yer, Yönetmen'in vuruş ve ölçü fazı) ilerletilir; seviyeler ve yumuşak
+ * değerler (bantlar, enerji, nabız) bir kareden kısa bir süre için olduğu gibi kalır.
+ */
+export function extrapolateFrame(frame: VisualFrame, ageSeconds: number): VisualFrame {
+  if (!(ageSeconds > 0)) return frame;
+  const beat = frame.beat;
+  const beatsElapsed = beat && beat.bpm > 0 ? (ageSeconds * beat.bpm) / 60 : 0;
+  let nextBeat = beat;
+  if (beat && beatsElapsed > 0) {
+    const moved = advanceBeat(beat.index, beat.phase, beat.bpm, ageSeconds);
+    const meter = beat.meter ?? 0;
+    const barBeat =
+      beat.barBeat !== null && meter > 0
+        ? ((((beat.barBeat - 1 + moved.index - beat.index) % meter) + meter) % meter) + 1
+        : beat.barBeat;
+    nextBeat = { ...beat, index: moved.index, phase: moved.phase, barBeat };
+  }
+  const director = frame.director;
+  const meter = beat?.meter ?? 0;
+  const nextDirector =
+    director && beatsElapsed > 0
+      ? {
+          ...director,
+          rhythm: {
+            ...director.rhythm,
+            beatPhase: fract(director.rhythm.beatPhase + beatsElapsed),
+            barPhase:
+              meter > 0
+                ? fract(director.rhythm.barPhase + beatsElapsed / meter)
+                : director.rhythm.barPhase,
+          },
+        }
+      : director;
+  return {
+    ...frame,
+    positionSecs: frame.positionSecs + ageSeconds,
+    beat: nextBeat,
+    director: nextDirector,
+  };
+}
+
+function fract(x: number): number {
+  return x - Math.floor(x);
 }
 
 function median(values: readonly number[]): number {

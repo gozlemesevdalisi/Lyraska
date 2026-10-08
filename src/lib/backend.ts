@@ -113,6 +113,8 @@ export interface BeatFrame {
   phase: number;
   /** Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`. */
   barBeat: number | null;
+  /** Ölçüdeki vuruş sayısı (3 ya da 4); yapı analizi bitene kadar `null`. */
+  meter: number | null;
 }
 
 /** Rust tarafındaki `analysis::structure::SongMap`. */

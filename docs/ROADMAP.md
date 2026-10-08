@@ -39,7 +39,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       SQLite'ta; anahtar yol + boyut + değiştirilme zamanı + analiz sürümü (algoritma değişince kendiliğinden yeniden
       hesaplanır). Kütüphane arka planda, düşük öncelikle analiz edilir (önce çalan, sonra sıradaki, sonra geri
       kalan); kütüphane listesinde BPM sütunu
-- [x] Gecikme telafisi ve kalibrasyon (0.0.21): ekran gecikmesi (~25 ms) kendiliğinden telafi edilir; ses
+- [x] Gecikme telafisi ve kalibrasyon (0.0.21): verinin ekrana ulaşma süresi her karede ölçülüp telafi edilir; ses
       aygıtının ek gecikmesi (ör. Bluetooth) "Senkron" sekmesinde ayarlanır ya da tıklama kaydıyla ölçülür; vuruş
       göstergesiyle gözle denetlenir. Gerçek aygıtlarda ±20 ms hedefinin ölçümü proje sahibinin denemesiyle
 - [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü

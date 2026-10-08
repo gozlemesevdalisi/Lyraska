@@ -216,6 +216,8 @@ pub struct VisualData {
 pub struct StructureNow {
     /// Vuruşun ölçüdeki yeri (1 = ölçü başı).
     pub bar_beat: Option<usize>,
+    /// Ölçüdeki vuruş sayısı (3 ya da 4).
+    pub meter: usize,
     pub energy: Option<f32>,
     pub section: Option<usize>,
 }
@@ -673,6 +675,7 @@ impl Player {
             .map(|c| c.frame_at(seconds, self.visual_safe));
         let structure = spectrogram.song_map().map(|map| StructureNow {
             bar_beat: beat.map(|(_, position)| map.bar_beat(position.index)),
+            meter: map.meter,
             energy: map.energy_at(seconds),
             section: map.section_at(seconds),
         });

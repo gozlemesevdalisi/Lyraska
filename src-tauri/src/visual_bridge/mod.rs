@@ -7,8 +7,10 @@
 //! **Gecikme telafisi** (hedef: ±20 ms senkron). Oynatıcı "şu an duyulan" anı ses
 //! aygıtının tamponunu ve taşma korumasını hesaba katarak bilir. İki gecikme kalır:
 //!
-//! - **Ekran:** görsel veri istendikten sonra ekranda ortalama ~1,5 kare (60 Hz'de
-//!   ~25 ms) sonra görünür. Görseller bu kadar ileriden okunur ([`DISPLAY_LEAD_SECONDS`]).
+//! - **Ekran:** arayüz, verinin hesaplanmasından çizilmesine kadar geçen süreyi her
+//!   karede ölçer ve vuruşa bağlı değerleri (vuruş, ölçü) o kadar ileri alır. Çizilen
+//!   kare ekranda ~1 kare (60 Hz'de ~17 ms) sonra görünür; görseller bu kadar
+//!   ileriden okunur ([`DISPLAY_LEAD_SECONDS`]).
 //! - **Ses aygıtı:** bazı aygıtlar (özellikle Bluetooth kulaklıklar) sesi Windows'un
 //!   bildirdiğinden 100–300 ms geç çalar; yazılım bunu bilemez. Kullanıcı ayarlar
 //!   ya da [`calibration`] tıklama kaydıyla ölçer; görseller o kadar geriden okunur.
@@ -19,8 +21,9 @@ use serde::Serialize;
 
 use crate::audio::player::VisualData;
 
-/// Görsel verinin istenmesiyle ekranda görünmesi arasındaki ortalama süre (saniye).
-pub const DISPLAY_LEAD_SECONDS: f64 = 0.025;
+/// Çizilen karenin ekranda görünmesine kadar geçen süre (saniye; 60 Hz'de bir kare).
+/// Verinin hesaplanmasıyla çizilmesi arasındaki süreyi arayüz kendisi ölçüp telafi eder.
+pub const DISPLAY_LEAD_SECONDS: f64 = 1.0 / 60.0;
 /// Ses gecikmesi ayarının sınırları (milisaniye). Eksi değer: ses beklenenden önce duyuluyor.
 pub const MIN_AUDIO_DELAY_MS: i32 = -100;
 pub const MAX_AUDIO_DELAY_MS: i32 = 400;
@@ -74,6 +77,8 @@ pub struct BeatFrame {
     pub phase: f64,
     /// Vuruşun ölçüdeki yeri (1 = ölçü başı); yapı analizi bitene kadar `null`.
     pub bar_beat: Option<usize>,
+    /// Ölçüdeki vuruş sayısı (3 ya da 4); yapı analizi bitene kadar `null`.
+    pub meter: Option<usize>,
 }
 
 impl From<VisualData> for VisualFrame {
@@ -89,6 +94,7 @@ impl From<VisualData> for VisualFrame {
                 index: position.index,
                 phase: position.phase,
                 bar_beat: data.structure.and_then(|s| s.bar_beat),
+                meter: data.structure.map(|s| s.meter),
             }),
             energy: data.structure.and_then(|s| s.energy),
             section: data.structure.and_then(|s| s.section),
@@ -156,6 +162,7 @@ mod tests {
             )),
             structure: Some(crate::audio::player::StructureNow {
                 bar_beat: Some(4),
+                meter: 4,
                 energy: Some(0.75),
                 section: Some(2),
             }),
@@ -170,6 +177,7 @@ mod tests {
         assert_eq!(json["beat"]["index"], 7);
         assert_eq!(json["beat"]["phase"], 0.25);
         assert_eq!(json["beat"]["barBeat"], 4);
+        assert_eq!(json["beat"]["meter"], 4);
         assert_eq!(json["energy"], 0.75);
         assert_eq!(json["section"], 2);
         assert!(json["director"].is_null());

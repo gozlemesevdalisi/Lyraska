@@ -101,6 +101,27 @@ describe("senkron ayarı", () => {
     expect(result.current.delayMs).toBe(40);
   });
 
+  it("ölçüm sırasında yazı alanındaki Boşluk basış sayılmaz", async () => {
+    const { result } = renderHook(() =>
+      useSync(
+        async () => {},
+        () => 2,
+        null,
+      ),
+    );
+    await waitFor(() => expect(result.current.delayMs).toBe(40));
+    await act(() => result.current.startCalibration());
+    const input = document.createElement("input");
+    document.body.append(input);
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true }));
+    });
+    act(() => space());
+    const calibration = result.current.calibration;
+    expect(calibration.phase === "listening" && calibration.taps).toEqual([2]);
+    input.remove();
+  });
+
   it("ölçüm yokken Boşluk tuşuna karışmaz", async () => {
     const { result } = renderHook(() =>
       useSync(

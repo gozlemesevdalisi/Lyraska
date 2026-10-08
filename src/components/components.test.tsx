@@ -606,7 +606,7 @@ describe("sahneler", () => {
     });
     const input = highwayInput({
       ...base,
-      beat: { bpm: 128, index: 3, phase: 0.25, barBeat: 4 },
+      beat: { bpm: 128, index: 3, phase: 0.25, barBeat: 4, meter: 4 },
       director: {
         atmosphere: { section: 1, theme: 2, mood: 0.7, warmth: 0.5 },
         rhythm: {

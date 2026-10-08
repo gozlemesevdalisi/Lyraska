@@ -132,6 +132,9 @@ export function useSync(
     if (!listening) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Space") return;
+      // Yazı alanında Boşluk yazıdır, basış sayılmaz.
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
       event.preventDefault();
       event.stopPropagation();
       const current = calibrationRef.current;
