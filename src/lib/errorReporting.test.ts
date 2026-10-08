@@ -17,6 +17,9 @@ describe("arayüz hata günlüğü", () => {
   });
 
   it("yakalanmamış hatalar ve sonuçlanmayan sözler günlüğe gider", async () => {
+    // Testin fırlattığı sahte hatalar test çalıştırıcısına "yakalanmamış" görünmesin.
+    const swallow = (event: Event) => event.preventDefault();
+    window.addEventListener("error", swallow);
     const uninstall = installErrorReporting(window);
     window.dispatchEvent(new ErrorEvent("error", { error: new Error("patladı") }));
     const rejection = new Event("unhandledrejection") as PromiseRejectionEvent;
@@ -30,5 +33,6 @@ describe("arayüz hata günlüğü", () => {
     window.dispatchEvent(new ErrorEvent("error", { error: new Error("sonra") }));
     await Promise.resolve();
     expect(logged).toHaveBeenCalledTimes(2);
+    window.removeEventListener("error", swallow);
   });
 });
