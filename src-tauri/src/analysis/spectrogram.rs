@@ -13,6 +13,7 @@ use rustfft::{Fft, FftPlanner};
 
 use super::beats::{self, BeatGrid, OnsetDetector};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
+use super::structure::{self, SongMap};
 use crate::audio::decode::Decoder;
 use crate::audio::Sample;
 
@@ -44,6 +45,8 @@ pub struct Spectrogram {
     vu_reference: RwLock<Option<f32>>,
     /// Analiz bitince bulunan vuruş ızgarası (ritim yoksa `None`).
     beats: RwLock<Option<Arc<BeatGrid>>>,
+    /// Analiz bitince çıkarılan şarkı yapısı (ölçü, bölüm, drop, enerji).
+    song_map: RwLock<Option<Arc<SongMap>>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -58,6 +61,7 @@ impl Spectrogram {
             onset: RwLock::new(Vec::new()),
             vu_reference: RwLock::new(None),
             beats: RwLock::new(None),
+            song_map: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -113,6 +117,11 @@ impl Spectrogram {
         self.vu_reference.read().ok().and_then(|r| *r)
     }
 
+    /// Şarkının yapısı; analiz bitene kadar ya da ritim yoksa `None`.
+    pub fn song_map(&self) -> Option<Arc<SongMap>> {
+        self.song_map.read().ok().and_then(|m| m.clone())
+    }
+
     /// Şarkının vuruş ızgarası; analiz bitene kadar ya da ritim yoksa `None`.
     pub fn beat_grid(&self) -> Option<Arc<BeatGrid>> {
         self.beats.read().ok().and_then(|b| b.clone())
@@ -146,8 +155,22 @@ impl Spectrogram {
             .read()
             .ok()
             .and_then(|o| beats::track(&o, FRAMES_PER_SECOND));
+        let map = grid.as_ref().and_then(|grid| {
+            let levels = self.levels.read().ok()?;
+            let meters = self.meters.read().ok()?;
+            // Kare başına ses yüksekliği: iki kanalın etkin seviyesinin ortalaması.
+            let loudness: Vec<f32> = meters
+                .chunks_exact(VALUES_PER_FRAME)
+                .filter_map(levels::decode_frame)
+                .map(|m| 0.5 * (m.rms_db[0] + m.rms_db[1]))
+                .collect();
+            structure::map_song(&levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
+        });
         if let Ok(mut stored) = self.beats.write() {
             *stored = grid.map(Arc::new);
+        }
+        if let Ok(mut stored) = self.song_map.write() {
+            *stored = map.map(Arc::new);
         }
         self.done.store(true, Ordering::Release);
     }

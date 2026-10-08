@@ -1580,6 +1580,34 @@ body {
   color: var(--vfd);
 }
 
+.timeline {
+  margin: 0;
+}
+
+.timeline svg {
+  display: block;
+  width: 100%;
+  height: 44px;
+}
+
+.timeline__section {
+  fill: var(--vfd);
+}
+
+.timeline__drop {
+  fill: var(--accent);
+}
+
+.timeline__mark {
+  fill: var(--vfd);
+}
+
+.timeline__legend {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .marker__lamp.is-flash {
     animation: none;

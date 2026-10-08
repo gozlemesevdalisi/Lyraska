@@ -30,6 +30,7 @@ const backend = vi.hoisted(() => ({
   openLog: vi.fn(),
   saveMarks: vi.fn(),
   annotation: null as import("../lib/backend").Annotation | null,
+  songMap: null as import("../lib/backend").SongMap | null,
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -90,6 +91,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
     },
     openLog: async () => backend.openLog(),
     getAnnotation: async () => backend.annotation,
+    getSongMap: async () => backend.songMap,
     saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
       backend.saveMarks(path, beats, drops);
       return "C:\\Veri\\isaretler\\Lyra - Gece Otoyolu.1234abcd.json";
@@ -106,6 +108,9 @@ vi.mock("../lib/backend", async (importOriginal) => {
         markedBpm: 127.9,
         detectedCount: 400,
         markedCount: 380,
+        detectedDrops: [61.5],
+        dropHits: 1,
+        markedDrops: 1,
       },
     }),
     setNextTrack: async (path: string | null) => {
@@ -558,6 +563,8 @@ describe("sahneler", () => {
       peakDb: [-3, -60] as [number, number],
       vuReferenceDb: -14,
       beat: null,
+      energy: null,
+      section: null,
     };
     let meters: Parameters<typeof stepMeters>[0] = {
       needles: [
@@ -720,6 +727,7 @@ describe("işaretleme", () => {
     backend.desktop = false;
     backend.status = null;
     backend.annotation = null;
+    backend.songMap = null;
     backend.saveMarks.mockReset();
     backend.toggle.mockReset();
   });
@@ -770,6 +778,17 @@ describe("işaretleme", () => {
       drops: [61],
       evaluation: null,
     };
+    backend.songMap = {
+      meter: 4,
+      downbeatPhase: 0,
+      downbeats: [],
+      sections: [
+        { start: 0, end: 60, energy: 0.3 },
+        { start: 60, end: 225, energy: 0.9 },
+      ],
+      drops: [61.5],
+      energy: [],
+    };
     render(<App />);
     // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
@@ -789,6 +808,12 @@ describe("işaretleme", () => {
     expect(screen.getByText("42 ms")).toBeInTheDocument();
     expect(screen.getByText("%95,1")).toBeInTheDocument();
     expect(screen.getByText("128 / 127,9 BPM")).toBeInTheDocument();
+    expect(screen.getByText("1 / 1")).toBeInTheDocument(); // drop isabeti
+    expect(
+      screen.getByRole("img", {
+        name: "Şarkı haritası: 2 bölüm, programın bulduğu 1 drop, sizin 1 drop işaretiniz",
+      }),
+    ).toBeInTheDocument();
 
     // Hepsi silinince kaydedilir; 8 beat'ten az olduğu için ölçülemez.
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Hepsini sil" })));

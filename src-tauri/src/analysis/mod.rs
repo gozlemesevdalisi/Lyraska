@@ -4,6 +4,7 @@
 //! - [`levels`]: VU ibreleri için sol/sağ seviyeler ve şarkıya göre 0 VU referansı.
 //! - [`beats`]: vuruşlar ve tempo (BPM), spektrogramla aynı geçişte.
 //! - [`annotation`]: kullanıcının işaretlediği beat ve drop anları (ses içermez).
+//! - [`structure`]: ölçü başları, bölümler, droplar ve enerji eğrisi.
 //! - [`evaluate`]: analizin doğruluğunu insan işaretlerine göre ölçme (F-ölçüsü).
 //!
 //! Faz 2'de sırada: ölçü (ilk vuruş) takibi, bölüm sınırları, drop tespiti ve
@@ -15,6 +16,7 @@ pub mod beats;
 pub mod evaluate;
 pub mod levels;
 pub mod spectrogram;
+pub mod structure;
 
 /// Analiz modülünün durumu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,12 +2,70 @@ import type { MarkerControls } from "../hooks/useMarker";
 import { openAnnotationFolder } from "../lib/backend";
 import { formatTime } from "../lib/format";
 import { tapBpm } from "../lib/marks";
+import { timelineLayout } from "../lib/timeline";
 
 export interface MarkerPanelProps {
   marker: MarkerControls;
   /** Çalan şarkının adı; şarkı yoksa `null`. */
   trackTitle: string | null;
   playing: boolean;
+  /** Şarkının süresi (şarkı haritası şeridi için). */
+  durationSecs: number | null;
+}
+
+/** Şarkı haritası şeridi: bölümler (enerjiye göre koyuluk), programın ve sizin droplarınız. */
+function SongTimeline({ marker, durationSecs }: { marker: MarkerControls; durationSecs: number }) {
+  const map = marker.songMap;
+  const layout = timelineLayout({
+    durationSecs,
+    sections: map?.sections ?? [],
+    programDrops: map?.drops ?? [],
+    markedDrops: marker.marks.drops,
+  });
+  if (!layout) return null;
+  const W = 1000;
+  return (
+    <figure className="timeline">
+      <svg
+        viewBox={`0 0 ${W} 44`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Şarkı haritası: ${map ? `${map.sections.length} bölüm, programın bulduğu ${map.drops.length} drop` : "analiz sürüyor"}, sizin ${marker.marks.drops.length} drop işaretiniz`}
+      >
+        {layout.sections.map((s, i) => (
+          <rect
+            key={i}
+            className="timeline__section"
+            x={s.x * W + 1}
+            y={12}
+            width={Math.max(0, s.width * W - 2)}
+            height={20}
+            rx={3}
+            style={{ opacity: 0.15 + 0.6 * s.energy }}
+          />
+        ))}
+        {layout.programDrops.map((x, i) => (
+          <polygon
+            key={`p${i}`}
+            className="timeline__drop"
+            points={`${x * W - 6},0 ${x * W + 6},0 ${x * W},10`}
+          />
+        ))}
+        {layout.markedDrops.map((x, i) => (
+          <polygon
+            key={`m${i}`}
+            className="timeline__mark"
+            points={`${x * W - 6},44 ${x * W + 6},44 ${x * W},34`}
+          />
+        ))}
+      </svg>
+      <figcaption className="timeline__legend">
+        {map
+          ? `Şarkı haritası: ${map.sections.length} bölüm · ${map.meter}/4 ölçü · ▼ programın dropları · ▲ sizin droplarınız`
+          : "Şarkı haritası: analiz sürüyor… · ▲ sizin droplarınız"}
+      </figcaption>
+    </figure>
+  );
 }
 
 const DECIMAL = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 });
@@ -30,7 +88,7 @@ function bpmText(bpm: number | null): string {
  * Sonuç şarkı başına bir dosyaya kendiliğinden kaydedilir (ses içermez) ve
  * programın analiziyle karşılaştırılabilir.
  */
-export function MarkerPanel({ marker, trackTitle, playing }: MarkerPanelProps) {
+export function MarkerPanel({ marker, trackTitle, playing, durationSecs }: MarkerPanelProps) {
   const { marks, recording, evaluation } = marker;
   const bpm = tapBpm(marks.beats);
   const lastBeats = marks.beats.slice(-6);
@@ -102,6 +160,8 @@ export function MarkerPanel({ marker, trackTitle, playing }: MarkerPanelProps) {
           )}
         </div>
 
+        {durationSecs !== null && <SongTimeline marker={marker} durationSecs={durationSecs} />}
+
         <div className="marker__actions">
           <button
             type="button"
@@ -160,6 +220,14 @@ export function MarkerPanel({ marker, trackTitle, playing }: MarkerPanelProps) {
               <dt>Gecikme düzeltilince</dt>
               <dd>{percent(evaluation.fMeasureAligned)}</dd>
             </div>
+            {evaluation.markedDrops > 0 && (
+              <div>
+                <dt>Drop isabeti</dt>
+                <dd>
+                  {evaluation.dropHits} / {evaluation.markedDrops}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Tempo (program / siz)</dt>
               <dd>
