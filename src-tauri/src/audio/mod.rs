@@ -21,6 +21,7 @@ pub mod decode;
 pub mod eq;
 pub mod gapless;
 pub mod limiter;
+pub mod loudness;
 pub mod output;
 pub mod peq;
 pub mod player;

@@ -15,6 +15,7 @@ use super::beats::{self, BeatGrid, OnsetDetector};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use super::structure::{self, SongMap};
 use crate::audio::decode::Decoder;
+use crate::audio::loudness::{Loudness, LoudnessMeter};
 use crate::audio::Sample;
 use crate::director::Choreography;
 
@@ -50,6 +51,8 @@ pub struct Spectrogram {
     song_map: RwLock<Option<Arc<SongMap>>>,
     /// Analiz bitince kurulan koreografi (Görsel Yönetmen).
     choreography: RwLock<Option<Arc<Choreography>>>,
+    /// Analiz bitince ölçülen ses yüksekliği ve gerçek tepe (sessiz şarkıda `None`).
+    loudness: RwLock<Option<Loudness>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -66,6 +69,7 @@ impl Spectrogram {
             beats: RwLock::new(None),
             song_map: RwLock::new(None),
             choreography: RwLock::new(None),
+            loudness: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -91,7 +95,7 @@ impl Spectrogram {
     pub fn from_saved(saved: SavedAnalysis) -> Arc<Self> {
         let spectrogram = Self::new();
         spectrogram.push(&saved.levels, &saved.meters, &saved.onset);
-        spectrogram.complete(saved.beats, saved.song_map);
+        spectrogram.complete(saved.beats, saved.song_map, saved.loudness);
         spectrogram
     }
 
@@ -106,6 +110,7 @@ impl Spectrogram {
             onset: self.onset.read().ok()?.clone(),
             beats: self.beat_grid().map(|b| (*b).clone()),
             song_map: self.song_map().map(|m| (*m).clone()),
+            loudness: self.loudness(),
         })
     }
 
@@ -159,6 +164,11 @@ impl Spectrogram {
         self.song_map.read().ok().and_then(|m| m.clone())
     }
 
+    /// Şarkının ses yüksekliği ve gerçek tepesi; analiz bitene kadar ya da sessizse `None`.
+    pub fn loudness(&self) -> Option<Loudness> {
+        self.loudness.read().ok().and_then(|l| *l)
+    }
+
     /// Şarkının vuruş ızgarası; analiz bitene kadar ya da ritim yoksa `None`.
     pub fn beat_grid(&self) -> Option<Arc<BeatGrid>> {
         self.beats.read().ok().and_then(|b| b.clone())
@@ -180,7 +190,7 @@ impl Spectrogram {
 
     /// Analiz bitince: vuruşlar (başlangıç gücünün `onset_latency` saniyelik gecikmesi
     /// düşülerek), şarkı yapısı ve koreografi.
-    fn finish(&self, onset_latency: f64) {
+    fn finish(&self, onset_latency: f64, loudness: Option<Loudness>) {
         let grid = self
             .onset
             .read()
@@ -197,11 +207,14 @@ impl Spectrogram {
                 .collect();
             structure::map_song(&levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
         });
-        self.complete(grid, map);
+        self.complete(grid, map, loudness);
     }
 
     /// Analizi tamamlar: VU referansı ve koreografi hesaplanır, sonuçlar yayımlanır.
-    fn complete(&self, grid: Option<BeatGrid>, map: Option<SongMap>) {
+    fn complete(&self, grid: Option<BeatGrid>, map: Option<SongMap>, loudness: Option<Loudness>) {
+        if let Ok(mut stored) = self.loudness.write() {
+            *stored = loudness;
+        }
         let reference = self
             .meters
             .read()
@@ -245,6 +258,8 @@ pub struct SavedAnalysis {
     pub onset: Vec<f32>,
     pub beats: Option<BeatGrid>,
     pub song_map: Option<SongMap>,
+    /// Ses yüksekliği ve gerçek tepe (sessiz şarkıda `None`).
+    pub loudness: Option<Loudness>,
 }
 
 impl SavedAnalysis {
@@ -287,6 +302,8 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
     let mut meters = LevelAccumulator::default();
     let mut meter_batch: Vec<u8> = Vec::with_capacity(VALUES_PER_FRAME * 64);
     let mut onset_batch: Vec<f32> = Vec::with_capacity(64);
+    // Ses yüksekliği şarkının kendi hızında, bütün kanallarıyla ölçülür (EBU R128).
+    let mut loudness = LoudnessMeter::new(info.sample_rate, channels);
 
     loop {
         if target.cancelled.load(Ordering::Acquire) {
@@ -299,6 +316,7 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         };
         for frame in chunk.chunks_exact(channels) {
             meters.add(frame);
+            loudness.add(frame);
             let mono = frame.iter().sum::<Sample>() / channels as Sample;
             window[head] = mono;
             head = (head + 1) % FFT_SIZE;
@@ -328,7 +346,7 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         }
     }
     target.push(&batch, &meter_batch, &onset_batch);
-    target.finish(beats::onset_latency(info.sample_rate, FFT_SIZE));
+    target.finish(beats::onset_latency(info.sample_rate, FFT_SIZE), loudness.finish());
 }
 
 /// `k`. karenin bittiği örnek (hariç): (k + 1) / 60 saniyeye en yakın örnek.

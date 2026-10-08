@@ -22,12 +22,14 @@ use super::beats::BeatGrid;
 use super::levels::VALUES_PER_FRAME;
 use super::spectrogram::{SavedAnalysis, BANDS};
 use super::structure::SongMap;
+use crate::audio::loudness::Loudness;
 
 /// Analiz algoritmalarının sürümü. Spektrum, beat, ölçü, bölüm, drop ya da enerji
 /// hesabı değiştiğinde **artırılır**: eski kayıtlar kendiliğinden geçersiz olur.
 /// 2: kareler her örnekleme hızında tam 1/60 saniyede (22,05 / 32 kHz'te kayıyordu);
 /// vuruş gecikmesi örnekleme hızına göre düşülüyor.
-pub const ANALYSIS_VERSION: i64 = 2;
+/// 3: ses yüksekliği (EBU R128) ve gerçek tepe ölçülüyor.
+pub const ANALYSIS_VERSION: i64 = 3;
 
 /// Sıkıştırma düzeyi (0–10): 6 hız ve boyut arasında iyi bir denge.
 const COMPRESSION_LEVEL: u8 = 6;
@@ -112,7 +114,8 @@ impl AnalysisCache {
         let conn = self.lock()?;
         let row = conn
             .query_row(
-                "SELECT frames, levels, meters, onset, beats, song_map FROM analyses
+                "SELECT frames, levels, meters, onset, beats, song_map, loudness_lufs, true_peak_dbtp
+                 FROM analyses
                  WHERE path = ?1 AND file_size = ?2 AND modified = ?3 AND version = ?4",
                 params![
                     path.to_string_lossy(),
@@ -128,13 +131,15 @@ impl AnalysisCache {
                         r.get::<_, Vec<u8>>(3)?,
                         r.get::<_, Option<String>>(4)?,
                         r.get::<_, Option<String>>(5)?,
+                        r.get::<_, Option<f64>>(6)?,
+                        r.get::<_, Option<f64>>(7)?,
                     ))
                 },
             )
             .optional()?;
         drop(conn);
         Ok(
-            row.and_then(|(frames, levels, meters, onset, beats, song_map)| {
+            row.and_then(|(frames, levels, meters, onset, beats, song_map, lufs, peak)| {
                 let saved = SavedAnalysis {
                     levels: undelta(&inflate(&levels)?, BANDS),
                     meters: undelta(&inflate(&meters)?, VALUES_PER_FRAME),
@@ -144,6 +149,10 @@ impl AnalysisCache {
                         .collect(),
                     beats: beats.and_then(|j| serde_json::from_str::<BeatGrid>(&j).ok()),
                     song_map: song_map.and_then(|j| serde_json::from_str::<SongMap>(&j).ok()),
+                    loudness: lufs.zip(peak).map(|(integrated_lufs, true_peak_dbtp)| Loudness {
+                        integrated_lufs,
+                        true_peak_dbtp,
+                    }),
                 };
                 (saved.is_consistent() && saved.frames() as i64 == frames).then_some(saved)
             }),
@@ -178,11 +187,14 @@ impl AnalysisCache {
             deflate(&onset),
             beats,
             song_map,
+            saved.loudness.map(|l| l.integrated_lufs),
+            saved.loudness.map(|l| l.true_peak_dbtp),
         ];
         self.lock()?.execute(
             "INSERT OR REPLACE INTO analyses
-                 (path, file_size, modified, version, frames, bpm, levels, meters, onset, beats, song_map)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 (path, file_size, modified, version, frames, bpm, levels, meters, onset, beats,
+                  song_map, loudness_lufs, true_peak_dbtp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             row,
         )?;
         Ok(())
@@ -282,6 +294,10 @@ mod tests {
                 drops: vec![],
                 energy: vec![0.1, 0.9, 0.4],
             }),
+            loudness: Some(Loudness {
+                integrated_lufs: -9.25,
+                true_peak_dbtp: 0.4,
+            }),
         }
     }
 
@@ -344,6 +360,7 @@ mod tests {
         let saved = SavedAnalysis {
             beats: None,
             song_map: None,
+            loudness: None,
             ..sample(30)
         };
         cache.store(path, STAMP, &saved).unwrap();

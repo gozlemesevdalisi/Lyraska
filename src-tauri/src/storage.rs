@@ -61,8 +61,14 @@ CREATE TRIGGER IF NOT EXISTS analyses_follow_tracks AFTER DELETE ON tracks
 BEGIN DELETE FROM analyses WHERE path = old.path; END;
 ";
 
+/// 2: analize ses yüksekliği (EBU R128, LUFS) ve gerçek tepe (dBTP).
+const V2: &str = "
+ALTER TABLE analyses ADD COLUMN loudness_lufs REAL;
+ALTER TABLE analyses ADD COLUMN true_peak_dbtp REAL;
+";
+
 /// Sıralı göç adımları (bkz. modül belgesi). Yalnızca sona eklenir.
-const MIGRATIONS: &[&str] = &[V1];
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 /// Bu sürümün bildiği en yeni şema.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -133,7 +139,7 @@ mod tests {
 
     #[test]
     fn surum_yazilmamis_eski_dosya_verisini_korur() {
-        // İlk sürümler şemayı kurup `user_version`'ı hep 0 bırakıyordu.
+        // İlk sürümler şemayı (1. adım) kurup `user_version`'ı hep 0 bırakıyordu.
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(V1).unwrap();
         conn.execute("INSERT INTO folders (path) VALUES ('C:/Müzik')", [])
