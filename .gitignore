@@ -15,3 +15,31 @@ src-tauri/gen/schemas/
 .DS_Store
 Thumbs.db
 *.log
+
+# Ses dosyaları telif nedeniyle depoya asla girmez (işaretleme için kullanılan
+# şarkılar dahil). Yalnızca projenin ürettiği sentetik test sesleri izinli.
+# CI'da `npm run check:audio` da denetler.
+*.mp3
+*.flac
+*.wav
+*.wave
+*.aif
+*.aiff
+*.aifc
+*.ogg
+*.oga
+*.opus
+*.m4a
+*.m4b
+*.m4p
+*.mp4
+*.aac
+*.caf
+*.mka
+*.webm
+*.wma
+*.ape
+*.wv
+*.dsf
+*.dff
+!src-tauri/tests/data/*

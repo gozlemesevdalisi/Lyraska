@@ -126,7 +126,7 @@ fn install_panic_hook() {
 }
 
 /// "2026-10-08 06:45:12 UTC" (saat dilimi kütüphanesi kullanmadan).
-fn timestamp() -> String {
+pub fn timestamp() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())

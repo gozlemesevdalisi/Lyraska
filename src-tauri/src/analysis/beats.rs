@@ -347,8 +347,9 @@ fn parabola(left: f64, center: f64, right: f64) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::analysis::evaluate::f_measure;
     use crate::analysis::spectrogram::{analyze, Spectrogram};
     use crate::audio::decode::Decoder;
     use crate::audio::test_util::{temp_path, write_wav};
@@ -587,31 +588,5 @@ mod tests {
         let mut rng = Lcg(7);
         let samples: Vec<f64> = (0..rate as usize * 20).map(|_| 0.3 * rng.next()).collect();
         assert_eq!(analyze_samples(&samples, rate), None);
-    }
-
-    /// Beat değerlendirmesindeki standart F-ölçüsü: her gerçek vuruşa en fazla bir
-    /// tahmin, `tolerance` saniye içinde.
-    pub(crate) fn f_measure(estimated: &[f64], truth: &[f64], tolerance: f64) -> f64 {
-        let mut used = vec![false; estimated.len()];
-        let mut hits = 0usize;
-        for &t in truth {
-            if let Some(i) = (0..estimated.len())
-                .filter(|&i| !used[i] && (estimated[i] - t).abs() <= tolerance)
-                .min_by(|&a, &b| {
-                    (estimated[a] - t)
-                        .abs()
-                        .total_cmp(&(estimated[b] - t).abs())
-                })
-            {
-                used[i] = true;
-                hits += 1;
-            }
-        }
-        if hits == 0 {
-            return 0.0;
-        }
-        let precision = hits as f64 / estimated.len() as f64;
-        let recall = hits as f64 / truth.len() as f64;
-        2.0 * precision * recall / (precision + recall)
     }
 }

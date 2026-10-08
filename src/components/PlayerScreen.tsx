@@ -3,6 +3,7 @@ import { DotMatrix } from "./DotMatrix";
 import { Marquee } from "./Marquee";
 import { EqualizerPanel } from "./EqualizerPanel";
 import { LibraryPanel } from "./LibraryPanel";
+import { MarkerPanel } from "./MarkerPanel";
 import { SeekBar } from "./SeekBar";
 import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
@@ -37,11 +38,12 @@ import {
 } from "../lib/queue";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
+import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
 import { usePlayer } from "../hooks/usePlayer";
 
 const TITLE = "LYRASKA";
-type Deck = "library" | "eq";
+type Deck = "library" | "eq" | "marker";
 const SPECTRUM_BANDS = 12;
 /** Spektrumun sütun sayısı: her bant 2 sütun + aradaki 1 boşluk. */
 const SPECTRUM_COLUMNS = SPECTRUM_BANDS * 3 - 1;
@@ -200,6 +202,7 @@ export function PlayerScreen() {
   const headlineColumns = useMemo(() => textToColumns(headlineText), [headlineText]);
   const scrolling = marqueeText(status, player.error);
   const playing = status.state === "playing";
+  const marker = useMarker(statusPath, playing, player.positionNow);
   const hasTrack = status.track !== null;
   const signalPath = signalPathText(status);
   const headlineLabel = hasTrack ? `Konum ${formatTime(shown.positionSecs)}` : "Lyraska";
@@ -361,6 +364,7 @@ export function PlayerScreen() {
               [
                 ["library", "Kütüphane"],
                 ["eq", "Ekolayzer"],
+                ["marker", "İşaretle"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -371,7 +375,11 @@ export function PlayerScreen() {
                 aria-controls={`deck-panel-${id}`}
                 aria-selected={deck === id}
                 className={`deck__tab${deck === id ? " is-selected" : ""}`}
-                onClick={() => setDeck(id)}
+                onClick={() => {
+                  setDeck(id);
+                  // Sekmeden çıkınca işaretleme biter: Boşluk yine çal/duraklat olur.
+                  if (id !== "marker") marker.setRecording(false);
+                }}
               >
                 {label}
                 {id === "eq" && (
@@ -414,6 +422,19 @@ export function PlayerScreen() {
           hidden={deck !== "eq"}
         >
           <EqualizerPanel equalizer={equalizer} headphone={headphone} />
+        </div>
+        <div
+          className="deck__panel"
+          role="tabpanel"
+          id="deck-panel-marker"
+          aria-labelledby="deck-tab-marker"
+          hidden={deck !== "marker"}
+        >
+          <MarkerPanel
+            marker={marker}
+            trackTitle={status.track ? trackTitle(status.track) : null}
+            playing={playing}
+          />
         </div>
       </div>
 

@@ -50,7 +50,8 @@ Yol haritası ve kalite hedefleri: [docs/ROADMAP.md](docs/ROADMAP.md).
 lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri (oynatıcı ekranı, nokta matris vb.)
-│   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useVisualFeed (görsel verisi)
+│   ├── hooks/                # usePlayer, useLibrary, useEqualizer, useHeadphone, useMarker (işaretleme),
+│   │                         # useVisualFeed (görsel verisi)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, queue), Rust köprüsü (backend.ts),
 │   │                         # arayüz hatalarını günlüğe yazma (errorReporting.ts),
 │   │                         # WebGL2 çizimi (skyRenderer.ts)
@@ -79,15 +80,18 @@ lyraska/
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
 │   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
+│   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
+│   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   └── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
 │   │   └── visual_bridge/    # Çalma zamanı + analiz → görseller (VisualFrame); gecikme telafisi
 │   ├── examples/             # ses_denemesi.rs: gerçek ses aygıtıyla uçtan uca deneme
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
-├── scripts/                  # Yardımcı betikler (npm lisans denetimi)
+├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi)
 ├── docs/
 │   ├── ROADMAP.md            # Yol haritası
+│   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
 │   └── devlog/               # Oturum devir notları (Türkçe)
 └── .github/                  # CI, test sürümü yayını, hata kaydı formu
 ```
@@ -120,6 +124,7 @@ Hepsi depo kökünde çalıştırılır.
 | Rust testleri                  | `cd src-tauri && cargo test`                                                         |
 | Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
 | Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
+| Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)     |
 | Windows'a özel kodu denetle    | CI'daki Windows işi (SQLite C kodu yüzünden Linux'tan çapraz denetim yapılamıyor)    |
 | Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                   |
 | Kurulum dosyası (Windows)      | `npm run tauri build`                                                                |
@@ -178,6 +183,8 @@ Görsel güvenlik (zorunlu):
 - Dışarıdan alınan veri ve varlıkların (AutoEq profilleri, MilkDrop presetleri, örnek şarkılar, yazı tipleri)
   lisansı eklemeden önce doğrulanır ve kaynağıyla birlikte `docs/` altında not edilir.
 - Marka adları ve varlıkları (özellikle Pioneer) kullanılmaz; nostalji tasarımları özgün çizilir.
+- **Ses dosyaları depoya asla girmez** (işaretleme için kullanılan şarkılar dahil). Tek istisna projenin
+  ffmpeg ile ürettiği sentetik test sesleri (`src-tauri/tests/data/`). `.gitignore` ve CI (`check:audio`) denetler.
 
 ## Git ve yayın akışı
 

@@ -22,6 +22,8 @@ export interface PlayerControls {
   status: PlaybackStatus;
   /** Ekranda gösterilecek konum: her karede akıcı ilerler, sarmada anında değişir. */
   position: number;
+  /** Tam şu anki konum (saat ölçümü; React çizimini beklemez). İşaretleme için. */
+  positionNow: () => number;
   /** Ses çalınabilir mi? (Tarayıcı önizlemesinde hayır.) */
   available: boolean;
   /** Son komut hatası; bir sonraki başarılı komutta temizlenir. */
@@ -235,5 +237,16 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     return () => window.removeEventListener("keydown", onKey);
   }, [available, toggle, openFile, seek, positionNow]);
 
-  return { status, position, available, error, openFile, openPath, toggle, stop, seek };
+  return {
+    status,
+    position,
+    positionNow,
+    available,
+    error,
+    openFile,
+    openPath,
+    toggle,
+    stop,
+    seek,
+  };
 }

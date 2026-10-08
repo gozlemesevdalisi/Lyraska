@@ -1,7 +1,7 @@
 {
   "name": "lyraska",
   "private": true,
-  "version": "0.0.14",
+  "version": "0.0.15",
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check:licenses": "node scripts/check-licenses.mjs"
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "check:audio": "node scripts/check-no-audio.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

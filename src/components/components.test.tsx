@@ -28,6 +28,8 @@ const backend = vi.hoisted(() => ({
   importProfile: vi.fn(),
   setNext: vi.fn(),
   openLog: vi.fn(),
+  saveMarks: vi.fn(),
+  annotation: null as import("../lib/backend").Annotation | null,
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -87,6 +89,25 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return actual.setEqualizer(settings);
     },
     openLog: async () => backend.openLog(),
+    getAnnotation: async () => backend.annotation,
+    saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
+      backend.saveMarks(path, beats, drops);
+      return "C:\\Veri\\isaretler\\Lyra - Gece Otoyolu.1234abcd.json";
+    },
+    evaluateAnnotation: async () => ({
+      savedAt: "",
+      beats: [],
+      drops: [],
+      evaluation: {
+        fMeasure: 0.873,
+        tapOffsetMs: 42,
+        fMeasureAligned: 0.951,
+        detectedBpm: 128,
+        markedBpm: 127.9,
+        detectedCount: 400,
+        markedCount: 380,
+      },
+    }),
     setNextTrack: async (path: string | null) => {
       backend.setNext(path);
     },
@@ -691,5 +712,93 @@ describe("hata günlüğü", () => {
   it("tarayıcı önizlemesinde gösterilmez", () => {
     render(<App />);
     expect(screen.queryByRole("button", { name: "Hata günlüğü" })).not.toBeInTheDocument();
+  });
+});
+
+describe("işaretleme", () => {
+  afterEach(() => {
+    backend.desktop = false;
+    backend.status = null;
+    backend.annotation = null;
+    backend.saveMarks.mockReset();
+    backend.toggle.mockReset();
+  });
+
+  it("Boşluk beat, D drop işaretler; Geri siler; kendiliğinden kaydeder; Esc bitirir", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    backend.toggle.mockReset();
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "İşaretle" })));
+    const start = await screen.findByRole("button", { name: /İşaretlemeye başla/ });
+    await waitFor(() => expect(start).toBeEnabled());
+    await act(async () => fireEvent.click(start));
+
+    await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
+    await act(async () => fireEvent.keyDown(document.body, { code: "KeyD", key: "d" }));
+    expect(backend.toggle).not.toHaveBeenCalled(); // Boşluk çal/duraklat yapmadı
+    const counts = () => screen.getByText(/beat$/, { selector: ".marker__stat" }).textContent;
+    expect(counts()).toMatch(/^1 beat/);
+    expect(screen.getByText(/drop/, { selector: ".marker__stat" }).textContent).toMatch(/^1 drop/);
+
+    await act(async () =>
+      fireEvent.keyDown(document.body, { code: "Backspace", key: "Backspace" }),
+    );
+    expect(screen.getByText(/drop/, { selector: ".marker__stat" }).textContent).toMatch(/^0 drop/);
+
+    await waitFor(() => expect(backend.saveMarks).toHaveBeenCalled(), { timeout: 2000 });
+    const [path, beats, drops] = backend.saveMarks.mock.calls.at(-1)!;
+    expect(path).toBe(playing.track!.path);
+    expect(beats).toHaveLength(1);
+    expect(drops).toEqual([]);
+    await waitFor(() => expect(screen.getByText("Kaydedildi")).toBeInTheDocument());
+
+    await act(async () => fireEvent.keyDown(document.body, { code: "Escape", key: "Escape" }));
+    expect(screen.getByRole("button", { name: /İşaretlemeye başla/ })).toBeInTheDocument();
+    await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
+    expect(backend.toggle).toHaveBeenCalledTimes(1); // artık yine çal/duraklat
+  });
+
+  it("kayıtlı işaretleri yükler ve doğruluğu gösterir", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    backend.annotation = {
+      savedAt: "",
+      beats: Array.from({ length: 12 }, (_, i) => 1 + i * 0.5),
+      drops: [61],
+      evaluation: null,
+    };
+    render(<App />);
+    // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    backend.toggle.mockReset();
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "İşaretle" })));
+    await waitFor(() =>
+      expect(screen.getByText(/beat/, { selector: ".marker__stat" }).textContent).toMatch(
+        /^12 beat · ~120 BPM/,
+      ),
+    );
+    expect(screen.getByText(/01:01/)).toBeInTheDocument();
+    // Diskteki, değişmemiş işaretler doğrudan ölçülebilir.
+    const measure = screen.getByRole("button", { name: "Doğruluğu ölç" });
+    await waitFor(() => expect(measure).toBeEnabled());
+    await act(async () => fireEvent.click(measure));
+    expect(screen.getByText("%87,3")).toBeInTheDocument();
+    expect(screen.getByText("42 ms")).toBeInTheDocument();
+    expect(screen.getByText("%95,1")).toBeInTheDocument();
+    expect(screen.getByText("128 / 127,9 BPM")).toBeInTheDocument();
+
+    // Hepsi silinince kaydedilir; 8 beat'ten az olduğu için ölçülemez.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Hepsini sil" })));
+    expect(screen.queryByText("%87,3")).not.toBeInTheDocument();
+    await waitFor(
+      () => expect(backend.saveMarks).toHaveBeenLastCalledWith(expect.any(String), [], []),
+      {
+        timeout: 2000,
+      },
+    );
+    expect(screen.getByRole("button", { name: "Doğruluğu ölç" })).toBeDisabled();
   });
 });

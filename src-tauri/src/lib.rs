@@ -52,6 +52,12 @@ pub fn run() {
             };
             commands::restore_settings(&app.state::<commands::PlayerState>(), &store);
             app.manage(store);
+
+            // İnsan işaretleri (beat/drop): uygulama veri klasöründe, ses içermez.
+            app.manage(match app.path().app_data_dir() {
+                Ok(dir) => analysis::annotation::AnnotationStore::new(dir.join("isaretler")),
+                Err(_) => analysis::annotation::AnnotationStore::unavailable(),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -72,6 +78,10 @@ pub fn run() {
             commands::set_next_track,
             commands::log_frontend_error,
             commands::open_log,
+            commands::annotation_get,
+            commands::annotation_save,
+            commands::annotation_evaluate,
+            commands::annotation_open_folder,
             commands::headphone_get,
             commands::headphone_import,
             commands::headphone_set_enabled,
