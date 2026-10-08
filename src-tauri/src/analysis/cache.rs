@@ -25,7 +25,9 @@ use super::structure::SongMap;
 
 /// Analiz algoritmalarının sürümü. Spektrum, beat, ölçü, bölüm, drop ya da enerji
 /// hesabı değiştiğinde **artırılır**: eski kayıtlar kendiliğinden geçersiz olur.
-pub const ANALYSIS_VERSION: i64 = 1;
+/// 2: kareler her örnekleme hızında tam 1/60 saniyede (22,05 / 32 kHz'te kayıyordu);
+/// vuruş gecikmesi örnekleme hızına göre düşülüyor.
+pub const ANALYSIS_VERSION: i64 = 2;
 
 /// Önbellek tablosu. Kütüphane veritabanı da aynı tabloyu kurar (BPM sütunu için).
 pub const SCHEMA: &str = "

@@ -35,11 +35,22 @@ const MIN_SECONDS: f64 = 4.0;
 /// Öz-ilinti tepe değeri bunun altındaysa şarkıda belirgin bir ritim yok sayılır.
 const MIN_RHYTHM_STRENGTH: f64 = 0.08;
 
-/// Başlangıç gücünün tepe noktasının vuruşun duyulduğu andan gecikmesi (saniye).
-/// Kare `k`'nin zamanı `k / 60` sayıldığında (spektrogramla aynı kural) sentetik
-/// davul kayıtlarında ölçülen ortalama gecikme +0,4…+2,4 ms: düzeltme gerekmiyor.
-/// Senkron testi bunu doğrular; FFT ya da kare düzeni değişirse burası güncellenir.
-const ONSET_LATENCY_SECONDS: f64 = 0.0;
+/// Başlangıç gücünün tepe noktasının vuruşun duyulduğu andan gecikmesi, FFT
+/// penceresinin süresine göre: `ONSET_LATENCY_PER_WINDOW · pencere + ONSET_LATENCY_OFFSET`.
+/// Pencere örnek sayısıyla sabit olduğundan düşük örnekleme hızında zamanda uzundur ve
+/// vuruş ona daha geç "oturur". Kare `k`'nin zamanı `k / 60` sayıldığında (spektrogramla
+/// aynı kural) sentetik davul kayıtlarında ölçülen ortalama gecikme (4 tempo): 8 kHz
+/// +36,5 ms, 16 kHz +17,6, 22,05 kHz +11,6, 32 kHz +6,7, 44,1 kHz +1,8, 48 kHz 0,0,
+/// 96 kHz −5,6 ms. Doğrunun sapması ±3 ms. Senkron testleri doğrular; FFT ya da kare
+/// düzeni değişirse burası yeniden ölçülür.
+const ONSET_LATENCY_PER_WINDOW: f64 = 0.1737;
+const ONSET_LATENCY_OFFSET_SECONDS: f64 = -0.006_36;
+
+/// Verilen örnekleme hızında ve FFT boyunda başlangıç gücünün gecikmesi (saniye).
+pub fn onset_latency(sample_rate: u32, fft_size: usize) -> f64 {
+    let window_seconds = fft_size as f64 / f64::from(sample_rate.max(1));
+    ONSET_LATENCY_PER_WINDOW * window_seconds + ONSET_LATENCY_OFFSET_SECONDS
+}
 
 /// Şarkının vuruş ızgarası.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,9 +158,10 @@ impl OnsetDetector {
     }
 }
 
-/// Başlangıç gücü dizisinden (`fps` kare/saniye) vuruş ızgarasını çıkarır.
+/// Başlangıç gücü dizisinden (`fps` kare/saniye) vuruş ızgarasını çıkarır; vuruş
+/// anlarından `latency` saniye ([`onset_latency`]) düşülür.
 /// Şarkı çok kısaysa ya da belirgin bir ritim yoksa `None`.
-pub fn track(onset: &[f32], fps: f64) -> Option<BeatGrid> {
+pub fn track(onset: &[f32], fps: f64, latency: f64) -> Option<BeatGrid> {
     if (onset.len() as f64) < MIN_SECONDS * fps {
         return None;
     }
@@ -164,7 +176,7 @@ pub fn track(onset: &[f32], fps: f64) -> Option<BeatGrid> {
 
     let beats: Vec<f64> = frames
         .iter()
-        .map(|&b| (b as f64 + peak_offset(&local, b)) / fps - ONSET_LATENCY_SECONDS)
+        .map(|&b| (b as f64 + peak_offset(&local, b)) / fps - latency)
         .map(|t| t.max(0.0))
         .collect();
     let bpm = (600.0 / mean_interval(&beats)).round() / 10.0;
@@ -379,7 +391,7 @@ pub(crate) mod tests {
     fn duzgun_durtulerde_tempo_ve_vuruslar() {
         for bpm in [72.0, 96.0, 120.0, 128.0, 140.0, 174.0] {
             let (onset, truth) = impulses(bpm, 0.5, 30.0);
-            let grid = track(&onset, FPS).unwrap();
+            let grid = track(&onset, FPS, 0.0).unwrap();
             assert!((grid.bpm - bpm).abs() < bpm * 0.02, "{bpm}: {}", grid.bpm);
             let f = f_measure(&grid.beats, &truth, 0.07);
             assert!(f > 0.95, "{bpm} BPM: F = {f}");
@@ -406,8 +418,8 @@ pub(crate) mod tests {
 
     #[test]
     fn sessizlik_ve_kisa_parca_ritimsiz() {
-        assert_eq!(track(&vec![0.0; 600], FPS), None);
-        assert_eq!(track(&[1.0; 60], FPS), None);
+        assert_eq!(track(&vec![0.0; 600], FPS, 0.0), None);
+        assert_eq!(track(&[1.0; 60], FPS, 0.0), None);
     }
 
     #[test]
@@ -551,17 +563,7 @@ pub(crate) mod tests {
             let f = f_measure(&grid.beats, &truth, 0.07);
             assert!(f > 0.95, "{bpm} BPM: F = {f}");
             // Senkron: eşleşen vuruşların ortalama ve en büyük hatası.
-            let errors: Vec<f64> = grid
-                .beats
-                .iter()
-                .filter_map(|&b| {
-                    truth
-                        .iter()
-                        .map(|&t| b - t)
-                        .min_by(|a, c| a.abs().total_cmp(&c.abs()))
-                })
-                .filter(|e| e.abs() < 0.07)
-                .collect();
+            let errors = sync_errors(&grid.beats, &truth);
             let mean = errors.iter().sum::<f64>() / errors.len() as f64;
             let worst = errors.iter().fold(0.0f64, |m, e| m.max(e.abs()));
             eprintln!(
@@ -580,6 +582,49 @@ pub(crate) mod tests {
                 "{bpm} BPM en büyük hata {:.1} ms",
                 worst * 1000.0
             );
+        }
+    }
+
+    /// Her bulunan vuruşun en yakın gerçek vuruşa farkı (saniye; 70 ms içindekiler).
+    fn sync_errors(beats: &[f64], truth: &[f64]) -> Vec<f64> {
+        beats
+            .iter()
+            .filter_map(|&b| {
+                truth
+                    .iter()
+                    .map(|&t| b - t)
+                    .min_by(|a, c| a.abs().total_cmp(&c.abs()))
+            })
+            .filter(|e| e.abs() < 0.07)
+            .collect()
+    }
+
+    #[test]
+    fn her_orneklemede_vuruslar_sesle_senkron() {
+        // FFT penceresi düşük hızda zamanda uzun: vuruş ona daha geç oturur. Bu gecikme
+        // düşülmeseydi 22,05 kHz'te +12 ms, 8 kHz'te +37 ms geç kalırdı.
+        for rate in [8_000, 22_050, 32_000, 48_000, 96_000] {
+            let mut errors = Vec::new();
+            for (bpm, start, seed) in [(90.0, 1.37, 1), (128.0, 2.0, 3)] {
+                let (samples, truth) = drum_track(bpm, start, 32.0, rate, seed);
+                let grid = analyze_samples(&samples, rate).expect("ritim bulunmalı");
+                errors.extend(sync_errors(&grid.beats, &truth));
+            }
+            let mean = errors.iter().sum::<f64>() / errors.len() as f64;
+            let worst = errors.iter().fold(0.0f64, |m, e| m.max(e.abs()));
+            eprintln!(
+                "{rate} Hz: ortalama hata {:.1} ms, en büyük {:.1} ms",
+                mean * 1000.0,
+                worst * 1000.0
+            );
+            assert!(
+                mean.abs() < 0.005,
+                "{rate} Hz ortalama {:.1} ms",
+                mean * 1000.0
+            );
+            // Tek tek vuruşların titreşimi bu düzeltmenin konusu değil: 96 kHz'te kısa
+            // pencere yüzünden tek bir vuruş ~25 ms sapabiliyor (44,1 kHz testi ≤ 20 ms ister).
+            assert!(worst < 0.03, "{rate} Hz en büyük {:.1} ms", worst * 1000.0);
         }
     }
 

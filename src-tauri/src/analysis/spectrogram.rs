@@ -178,12 +178,14 @@ impl Spectrogram {
         }
     }
 
-    fn finish(&self) {
+    /// Analiz bitince: vuruşlar (başlangıç gücünün `onset_latency` saniyelik gecikmesi
+    /// düşülerek), şarkı yapısı ve koreografi.
+    fn finish(&self, onset_latency: f64) {
         let grid = self
             .onset
             .read()
             .ok()
-            .and_then(|o| beats::track(&o, FRAMES_PER_SECOND));
+            .and_then(|o| beats::track(&o, FRAMES_PER_SECOND, onset_latency));
         let map = grid.as_ref().and_then(|grid| {
             let levels = self.levels.read().ok()?;
             let meters = self.meters.read().ok()?;
@@ -270,15 +272,17 @@ pub fn analyze(decoder: Decoder, target: &Spectrogram) {
 pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn FnMut()) {
     let info = decoder.info().clone();
     let channels = info.channels.max(1);
-    let hop = (f64::from(info.sample_rate) / FRAMES_PER_SECOND).round() as usize;
     let mut analyzer = BandAnalyzer::new(info.sample_rate);
 
     // Dairesel pencere: son FFT_SIZE mono örnek (`head` en eski örneğin yeri).
-    // Her `hop` örnekte bir kare üretilir.
+    // Her 1/60 saniyede bir kare üretilir ([`frame_end`]).
     let mut window = vec![0.0; FFT_SIZE];
     let mut head = 0usize;
     let mut filled = 0usize;
-    let mut since_last = 0usize;
+    // İşlenen örnek sayısı ve sıradaki karenin bittiği örnek.
+    let mut position = 0u64;
+    let mut frame_index = 0u64;
+    let mut next_end = frame_end(0, info.sample_rate);
     let mut batch: Vec<u8> = Vec::with_capacity(BANDS * 64);
     let mut meters = LevelAccumulator::default();
     let mut meter_batch: Vec<u8> = Vec::with_capacity(VALUES_PER_FRAME * 64);
@@ -299,12 +303,13 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
             window[head] = mono;
             head = (head + 1) % FFT_SIZE;
             filled = (filled + 1).min(FFT_SIZE);
-            since_last += 1;
-            if since_last == hop {
-                since_last = 0;
-                // k. karenin penceresi (k+1)·hop örnekte biter, ortası k/60 saniyenin
-                // yaklaşık 6 ms gerisindedir: görüntü sesle hizalı kalır. Pencerenin
-                // yarısı dolana kadar kare sessiz sayılır.
+            position += 1;
+            if position == next_end {
+                frame_index += 1;
+                next_end = frame_end(frame_index, info.sample_rate);
+                // k. karenin penceresi (k+1)/60 saniyede biter; 44,1 kHz'te ortası k/60
+                // saniyenin yaklaşık 6 ms gerisindedir: görüntü sesle hizalı kalır.
+                // Pencerenin yarısı dolana kadar kare sessiz sayılır.
                 let (levels, onset) = if filled < FFT_SIZE / 2 {
                     ([0u8; BANDS], analyzer.onset.silent())
                 } else {
@@ -323,7 +328,15 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         }
     }
     target.push(&batch, &meter_batch, &onset_batch);
-    target.finish();
+    target.finish(beats::onset_latency(info.sample_rate, FFT_SIZE));
+}
+
+/// `k`. karenin bittiği örnek (hariç): (k + 1) / 60 saniyeye en yakın örnek.
+/// Kare aralığı tam sayı olmayan hızlarda da (ör. 22 050 / 60 = 367,5 örnek) kareler
+/// zamanda kaymaz; aralıklar 367 ile 368 arasında değişir.
+fn frame_end(k: u64, sample_rate: u32) -> u64 {
+    let fps = FRAMES_PER_SECOND as u64;
+    ((k + 1) * u64::from(sample_rate) * 2 + fps) / (2 * fps)
 }
 
 /// Bir pencereyi frekans bantlarına ayıran FFT çözümleyici.
@@ -459,6 +472,21 @@ mod tests {
             .windows(2)
             .position(|e| freq >= e[0] && freq < e[1])
             .unwrap()
+    }
+
+    #[test]
+    fn her_ornekleme_hizinda_saniyede_tam_60_kare() {
+        // 22 050 / 60 = 367,5 gibi tam bölünmeyen hızlarda kare aralığı yuvarlanınca
+        // kareler zamanda kayıyordu (4. dakikada ~0,3 sn): görüntü ve vuruşlar sesten
+        // önce ya da sonra gelirdi.
+        for rate in [8_000, 22_050, 32_000, 44_100] {
+            let path = temp_path(&format!("kare-{rate}.wav"));
+            let frames = rate as usize * 60;
+            write_wav(&path, rate, 1, frames, |i, _| 0.1 * sine(440.0, rate, i));
+            let spectrogram = analyze_file(&path);
+            assert_eq!(spectrogram.ready_frames(), 3_600, "{rate} Hz");
+            std::fs::remove_file(path).ok();
+        }
     }
 
     #[test]
