@@ -59,18 +59,39 @@ pub fn error(message: &str) {
 }
 
 fn open(path: &Path) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    rotate_if_large(path);
-    let file = OpenOptions::new().create(true).append(true).open(path)?;
-    if let Ok(mut log) = LOG.lock() {
-        *log = Some(Log {
-            path: path.to_path_buf(),
-            file,
-        });
+    let log = Log::open(path)?;
+    if let Ok(mut current) = LOG.lock() {
+        *current = Some(log);
     }
     Ok(())
+}
+
+impl Log {
+    /// Dosyayı açar (yoksa oluşturur); sınırı aşmışsa önce yedekler.
+    fn open(path: &Path) -> std::io::Result<Self> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        rotate_if_large(path);
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            file,
+        })
+    }
+
+    /// Satırı yazar. Uzun süre açık kalan programda da dosya sınırı aşılmasın diye
+    /// gerekirse önce yedekler; yedekleme olmazsa (ör. eski yedek kilitli) aynı
+    /// dosyaya yazmayı sürdürür: günlük yüzünden program asla çökmez.
+    fn write_line(&mut self, line: &str) {
+        if self.file.metadata().is_ok_and(|m| m.len() > MAX_LOG_BYTES) {
+            if let Ok(fresh) = Self::open(&self.path) {
+                *self = fresh;
+            }
+        }
+        let _ = self.file.write_all(line.as_bytes());
+        let _ = self.file.flush();
+    }
 }
 
 fn rotate_if_large(path: &Path) {
@@ -87,16 +108,11 @@ fn write(level: &str, message: &str) {
     let Some(log) = guard.as_mut() else {
         return;
     };
-    // Uzun süre açık kalan programda da dosya sınırı aşılmasın.
-    if log.file.metadata().is_ok_and(|m| m.len() > MAX_LOG_BYTES) {
-        let path = log.path.clone();
-        drop(guard);
-        let _ = open(&path);
-        return write(level, message);
-    }
-    let line = format!("{} [{level}] {}\n", timestamp(), message.trim_end());
-    let _ = log.file.write_all(line.as_bytes());
-    let _ = log.file.flush();
+    log.write_line(&format!(
+        "{} [{level}] {}\n",
+        timestamp(),
+        message.trim_end()
+    ));
 }
 
 fn install_panic_hook() {
@@ -193,5 +209,14 @@ mod tests {
         );
         assert!(text.contains("diagnostics.rs"), "çökmenin yeri yazılır");
         let _ = std::panic::take_hook();
+
+        // Yedekleme olmuyorsa (ör. eski yedek kilitli) program çökmemeli, yazmayı
+        // sürdürmeli. Burada yedeğin yerinde boş olmayan bir klasör var.
+        std::fs::remove_file(dir.join(OLD_LOG_NAME)).unwrap();
+        std::fs::create_dir_all(dir.join(OLD_LOG_NAME).join("kilitli")).unwrap();
+        info(&"x".repeat(MAX_LOG_BYTES as usize));
+        info("yedeklenemese de yazılır");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.ends_with("yedeklenemese de yazılır\n"));
     }
 }
