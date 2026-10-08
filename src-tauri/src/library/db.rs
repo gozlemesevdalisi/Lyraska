@@ -99,6 +99,12 @@ impl Library {
         conn.execute_batch(SCHEMA)?;
         // Analiz önbelleğinin tablosu: listedeki BPM sütunu buradan okunur.
         conn.execute_batch(cache::SCHEMA)?;
+        // Kütüphaneden çıkan şarkının (silinen dosya, çıkarılan klasör) analizi de silinir;
+        // önbellek sonsuza dek büyümez.
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS analyses_follow_tracks AFTER DELETE ON tracks
+             BEGIN DELETE FROM analyses WHERE path = old.path; END;",
+        )?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn })
     }
@@ -441,6 +447,42 @@ mod tests {
         // LIKE özel karakterleri kaçırılır: "_" her karakterle eşleşmemeli.
         assert_eq!(lib.search("z_d", 100).unwrap().len(), 1);
         assert!(lib.search("%", 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn kutuphaneden_cikan_sarkinin_analizi_de_silinir() {
+        let mut lib = sample();
+        let store = |lib: &Library, path: &str| {
+            lib.conn
+                .execute(
+                    "INSERT OR REPLACE INTO analyses
+                         (path, file_size, modified, version, frames, levels, meters, onset)
+                     VALUES (?1, 1, 1, 1, 0, x'', x'', x'')",
+                    [path],
+                )
+                .unwrap();
+        };
+        let count = |lib: &Library| -> i64 {
+            lib.conn
+                .query_row("SELECT COUNT(*) FROM analyses", [], |r| r.get(0))
+                .unwrap()
+        };
+        for path in [
+            "/muzik/a.flac",
+            "/muzik/b.flac",
+            "/baska/disaridan-acilan.mp3",
+        ] {
+            store(&lib, path);
+        }
+        // Taramada silinen dosya: analizi de gider.
+        let folder = lib.folders().unwrap()[0].id;
+        lib.apply_changes(folder, &[], &["/muzik/a.flac".to_owned()])
+            .unwrap();
+        assert_eq!(count(&lib), 2);
+        // Klasör kütüphaneden çıkarılınca içindeki şarkıların analizleri de gider;
+        // kütüphane dışından açılmış şarkınınki kalır.
+        lib.remove_folder(folder).unwrap();
+        assert_eq!(count(&lib), 1);
     }
 
     #[test]

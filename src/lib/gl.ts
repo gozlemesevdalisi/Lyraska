@@ -1,4 +1,6 @@
-/** Sahnelerin ortak WebGL2 yardımcıları: tam ekran üçgen ve gölgelendirici derleme. */
+/** Sahnelerin ortak WebGL2 yardımcıları: tam ekran üçgen, gölgelendirici derleme, hata bildirimi. */
+
+import { logFrontendError } from "./backend";
 
 /** Tam ekranı kaplayan tek üçgen (köşe verisi gerekmez). */
 export const FULLSCREEN_VERTEX_SHADER = `#version 300 es
@@ -16,25 +18,27 @@ export function getWebGl2(canvas: HTMLCanvasElement): WebGL2RenderingContext | n
   }
 }
 
-/** Tam ekran gölgelendirici programı; derlenemezse nedeni günlüğe yazılır ve `null` döner. */
+/**
+ * Tam ekran gölgelendirici programı. Derlenemez ya da bağlanamazsa nedeni (ekran
+ * kartı sürücüsünün mesajı) içeren bir hata fırlatır.
+ */
 export function linkFullscreenProgram(
   gl: WebGL2RenderingContext,
   fragmentSource: string,
-  sceneName: string,
-): WebGLProgram | null {
-  const vertex = compile(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX_SHADER, sceneName);
-  const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource, sceneName);
+): WebGLProgram {
+  const vertex = compile(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX_SHADER, "köşe");
+  const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentSource, "parça");
   const program = gl.createProgram();
-  if (!vertex || !fragment || !program) return null;
+  if (!program) throw new Error("gölgelendirici programı oluşturulamadı");
   gl.attachShader(program, vertex);
   gl.attachShader(program, fragment);
   gl.linkProgram(program);
   gl.deleteShader(vertex);
   gl.deleteShader(fragment);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error(`${sceneName} gölgelendiricisi bağlanamadı:`, gl.getProgramInfoLog(program));
+    const log = gl.getProgramInfoLog(program) ?? "";
     gl.deleteProgram(program);
-    return null;
+    throw new Error(`gölgelendirici bağlanamadı: ${log.trim() || "neden bildirilmedi"}`);
   }
   return program;
 }
@@ -43,19 +47,87 @@ function compile(
   gl: WebGL2RenderingContext,
   type: number,
   source: string,
-  sceneName: string,
-): WebGLShader | null {
+  kind: string,
+): WebGLShader {
   const shader = gl.createShader(type);
-  if (!shader) return null;
+  if (!shader) throw new Error(`${kind} gölgelendiricisi oluşturulamadı`);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error(`${sceneName} gölgelendiricisi derlenemedi:`, gl.getShaderInfoLog(shader));
+    const log = gl.getShaderInfoLog(shader) ?? "";
     gl.deleteShader(shader);
-    return null;
+    throw new Error(`${kind} gölgelendiricisi derlenemedi: ${log.trim() || "neden bildirilmedi"}`);
   }
   return shader;
 }
+
+/** Ekran kartının adı (sürücünün bildirdiği; hata günlüğü ve denetim için). */
+export function gpuName(gl: WebGL2RenderingContext): string {
+  try {
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = (
+      info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
+    ) as unknown;
+    return typeof name === "string" ? name : "bilinmiyor";
+  } catch {
+    return "bilinmiyor";
+  }
+}
+
+/**
+ * Sahne ekran kartında çizilemedi: nedeni tuvale işlenir (denetim için) ve hata
+ * günlüğüne yazılır; kullanıcı "Hata günlüğü" ile bize iletebilir.
+ */
+export function reportSceneProblem(
+  canvas: HTMLCanvasElement,
+  sceneName: string,
+  problem: string,
+): void {
+  canvas.dataset.webglError = problem;
+  const message = `${sceneName} sahnesi ekran kartında çizilemedi: ${problem}`;
+  console.error(message);
+  logFrontendError(message).catch(() => {
+    /* Günlüğe yazılamazsa yapılacak bir şey yok. */
+  });
+}
+
+/**
+ * Çiziciyi kurar; kurulum hata fırlatırsa nedeni bildirir ve `null` döner.
+ * Başarıda ekran kartının adı tuvale işlenir (denetim için).
+ */
+export function openScene<T>(
+  canvas: HTMLCanvasElement,
+  sceneName: string,
+  setup: (gl: WebGL2RenderingContext) => T,
+): { gl: WebGL2RenderingContext; resources: T } | null {
+  const gl = getWebGl2(canvas);
+  if (!gl) {
+    reportSceneProblem(canvas, sceneName, NO_WEBGL2);
+    return null;
+  }
+  canvas.dataset.gpu = gpuName(gl);
+  const resources = retrySetup(canvas, sceneName, () => setup(gl));
+  return resources === null ? null : { gl, resources };
+}
+
+/** Kurulumu dener (ör. bağlam geri geldiğinde); hata olursa bildirir ve `null` döner. */
+export function retrySetup<T>(
+  canvas: HTMLCanvasElement,
+  sceneName: string,
+  setup: () => T,
+): T | null {
+  try {
+    const resources = setup();
+    delete canvas.dataset.webglError;
+    return resources;
+  } catch (error) {
+    reportSceneProblem(canvas, sceneName, error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+/** WebGL2 hiç açılamadığında günlüğe yazılan neden. */
+export const NO_WEBGL2 = "WebGL2 açılamadı (ekran kartı sürücüsü desteklemiyor ya da engelliyor)";
 
 /** Tuvali ekran boyuna getirir (en fazla 2× piksel yoğunluğu); piksel oranını döndürür. */
 export function fitCanvas(canvas: HTMLCanvasElement): {

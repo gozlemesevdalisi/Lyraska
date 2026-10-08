@@ -84,6 +84,33 @@ jobs:
           manifest-path: src-tauri/Cargo.toml
           command: check licenses bans sources
 
+  sahneler:
+    name: Sahneler (Windows, Edge)
+    # Gece göğü ve gece otoyolu gerçek Windows'ta, programın kullandığı Edge motoruyla
+    # açılır: gölgelendiriciler Windows'ta (ANGLE → Direct3D 11) derlenir mi, görüntü
+    # çiziliyor mu, Lyra yıldızları görünüyor mu? Ayrıntı: scripts/check-scenes.mjs
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Arayüzü derle
+        run: npm run build
+      - name: Sahne denetimi (Edge, Direct3D 11)
+        run: npm run check:scenes
+        env:
+          SCENE_BROWSER_CHANNEL: msedge
+          SCENE_BROWSER_ARGS: --use-angle=d3d11 --ignore-gpu-blocklist
+      - name: Yedek çizim denetimi (Edge, WebGL kapalı)
+        run: npm run check:scenes
+        env:
+          SCENE_BROWSER_CHANNEL: msedge
+          SCENE_BROWSER_ARGS: --disable-webgl --disable-webgl2
+          SCENE_EXPECT: fallback
+
   windows:
     name: Windows kurulum dosyası
     # main için kurulum dosyası "Test sürümü" iş akışında derlenir.

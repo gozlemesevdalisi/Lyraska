@@ -7,6 +7,8 @@ import { textToColumns } from "../lib/dotFont";
 // Rust çekirdeğini taklit eden sahte arka uç.
 const backend = vi.hoisted(() => ({
   desktop: false,
+  /** Çekirdeğin program bilgisini (desteklenen uzantılar) geciktirmesi için. */
+  appInfoGate: null as Promise<void> | null,
   status: null as PlaybackStatus | null,
   toggle: vi.fn(),
   stop: vi.fn(),
@@ -41,7 +43,10 @@ vi.mock("../lib/backend", async (importOriginal) => {
   return {
     ...actual,
     isDesktop: () => backend.desktop,
-    getAppInfo: async () => ({ ...actual.BROWSER_FALLBACK, supportedExtensions: ["mp3", "flac"] }),
+    getAppInfo: async () => {
+      if (backend.appInfoGate) await backend.appInfoGate;
+      return { ...actual.BROWSER_FALLBACK, supportedExtensions: ["mp3", "flac"] };
+    },
     getPlaybackStatus: async () => current(),
     togglePlayback: async () => {
       backend.toggle();
@@ -372,6 +377,25 @@ describe("kütüphane", () => {
     expect(await screen.findByText(/Bu zaten kütüphanede/)).toBeInTheDocument();
   });
 
+  it("program bilgisi gelmeden bırakılan şarkılar bekletilir, sonra çalınır", async () => {
+    backend.desktop = true;
+    let release = () => {};
+    backend.appInfoGate = new Promise<void>((resolve) => (release = resolve));
+    render(<App />);
+    await waitFor(() => expect(backend.drop).not.toBeNull());
+    // Çekirdek hangi türleri çalabildiğini henüz bildirmedi: şarkı klasör sanılmamalı.
+    await act(async () => {
+      backend.drop!(["C:\\İndirilenler\\a.mp3"]);
+      await Promise.resolve();
+    });
+    expect(backend.addFolder).not.toHaveBeenCalled();
+    expect(backend.open).not.toHaveBeenCalled();
+    await act(async () => release());
+    await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
+    expect(backend.addFolder).not.toHaveBeenCalled();
+    backend.appInfoGate = null;
+  });
+
   it("pencereye bırakılan klasörü kütüphaneye ekler, şarkıları sırayla çalar", async () => {
     backend.desktop = true;
     render(<App />);
@@ -565,6 +589,8 @@ describe("sahneler", () => {
     await act(async () => fireEvent.click(knob));
     const sky = screen.getByRole("img", { name: /Gece göğü/ });
     expect(sky).toHaveAttribute("data-webgl", "off");
+    // Neden tuvale işlenir ve hata günlüğüne yazılır (kullanıcı bize iletebilir).
+    expect(sky.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(getContext).toHaveBeenCalledWith("webgl2", expect.anything());
     expect(screen.getByRole("button", { name: /Sahne: Gece göğü/ })).toBeInTheDocument();
     expect(window.localStorage.getItem("lyraska.scene")).toBe("sky");
@@ -581,6 +607,7 @@ describe("sahneler", () => {
     await act(async () => fireEvent.click(knob));
     const road = screen.getByRole("img", { name: /Gece otoyolu/ });
     expect(road).toHaveAttribute("data-webgl", "off");
+    expect(road.dataset.webglError).toMatch(/WebGL2 açılamadı/);
     expect(window.localStorage.getItem("lyraska.scene")).toBe("highway");
     await act(async () => fireEvent.click(knob));
     expect(

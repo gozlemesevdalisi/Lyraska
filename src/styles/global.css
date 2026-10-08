@@ -621,6 +621,10 @@ body {
   );
 }
 
+.sky-scene__canvas[hidden] {
+  display: none;
+}
+
 .sky-scene__center {
   position: absolute;
   left: 3%;

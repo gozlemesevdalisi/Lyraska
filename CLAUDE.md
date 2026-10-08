@@ -54,7 +54,8 @@ lyraska/
 │   │                         # useSync (ses–görüntü senkronu), useVisualFeed (görsel verisi)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync), Rust köprüsü
 │   │                         # (backend.ts), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
-│   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts)
+│   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
+│   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
 │   └── styles/               # CSS; renkler :root değişkenlerinde
 ├── src-tauri/                # Rust çekirdeği
 │   ├── src/
@@ -94,7 +95,7 @@ lyraska/
 │   ├── tests/                # Gerçek kodek testleri (formats.rs) ve sentetik test verisi (data/)
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
-├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi)
+├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi, sahne denetimi)
 ├── docs/
 │   ├── ROADMAP.md            # Yol haritası
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
@@ -135,6 +136,7 @@ Hepsi depo kökünde çalıştırılır.
 | Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
 | Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
 | Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)     |
+| Sahneler gerçek tarayıcıda     | `npm run check:scenes` (önce `npm run build`; CI'da Windows Edge)                    |
 | Windows'a özel kodu denetle    | CI'daki Windows işi (SQLite C kodu yüzünden Linux'tan çapraz denetim yapılamıyor)    |
 | Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                   |
 | Kurulum dosyası (Windows)      | `npm run tauri build`                                                                |
