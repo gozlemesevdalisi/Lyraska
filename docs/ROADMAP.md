@@ -75,6 +75,25 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [ ] Oda ışıkları entegrasyonu
 - [ ] Yapay zekâ destekli analiz
 
+## Faz 6 — Akıllı Geçiş (v1.0 sonrası)
+
+Şarkıları ve sırayı kullanıcı seçer; Lyraska yalnızca aralarındaki geçişi yapar.
+
+- [ ] İki desteli çalma: iki şarkı ayrı çözülür, çıkışta karıştırılır; tempo eşitleme ses iş parçacığında değil
+      çözme tarafında yapılır; boşluksuz çalma ayrı mod olarak bozulmadan kalır
+- [ ] Geçiş planlayıcı: giden şarkının son cümlesi ile gelenin ilk cümlesi (8/16/32 ölçü) hizalanır; geçiş
+      uzunluğu ölçü cinsinden
+- [ ] Ses yüksekliği eşitleme (EBU R128) ve ton uyumu uyarısı (engellemez)
+- [ ] Güvenlik kuralı: tempo farkı varsayılan olarak %8'den büyükse, tempo şarkı içinde değişiyorsa ya da beat
+      güveni düşükse hizalama yapılmaz, kısa düz geçiş kullanılır
+- [ ] Perdeyi bozmadan tempo eşitleme (aday: Signalsmith Stretch, MIT; Rubber Band GPL olduğu için ikinci
+      seçenek; lisans eklemeden önce doğrulanır)
+- [ ] Geçiş stilleri: crossfade, bas takası, yankılı çıkış
+- [ ] Kullanıcı kontrolü: şarkı çifti başına geçiş noktası, stil ve uzunluk ayarı; "geçişi dinle" önizlemesi
+- [ ] Görsel Yönetmen geçişi de koreografe eder
+- Kalite hedefi: üst üste binme boyunca iki şarkının vuruşları arasındaki fark en fazla 10 ms; şüphede düz
+  geçişe düşülür
+
 ## Fikir havuzu (karar bekliyor)
 
 Proje sahibinin sorularından doğan öneriler. Her biri eklenmeden önce lisansı (kod **ve** model
