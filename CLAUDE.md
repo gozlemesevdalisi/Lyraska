@@ -7,7 +7,8 @@ değişmesi gerekiyorsa önce proje sahibine sorulur.
 ## Proje sahibiyle çalışma
 
 - Proje sahibi yazılımcı değildir. Kodu Claude yazar; sahibi test eder ve karar verir.
-- Sahibiyle **her zaman Türkçe**, sade ve adım adım konuşulur. Teknik terim gerekiyorsa kısaca açıklanır.
+- Sahibiyle **her zaman Türkçe**, sade ve adım adım konuşulur; iş sırasındaki kısa ara bilgilendirmeler de
+  Türkçedir. Teknik terim gerekiyorsa kısaca açıklanır.
 - **Hiçbir teknik iş sahibine bırakılmaz.** Komut çalıştırmak, ayar yapmak, dosya düzenlemek Claude'un işidir.
   Sahibinden yalnızca GitHub arayüzünde bir butona basmak gibi Claude'un yapamadığı işler istenir;
   o zaman da hangi sayfada hangi butona basılacağı tam olarak yazılır.

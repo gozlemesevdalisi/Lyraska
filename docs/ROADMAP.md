@@ -30,7 +30,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Şarkılar arası boşluksuz geçiş (AAC kodlayıcı dolgusu dahil); yerel hata/çökme günlüğü ve "Hata günlüğü" düğmesi
 - [x] 3 sahne: nokta matris spektrum, VU ibreleri, "Gece göğü" (WebGL2 gölgelendirici: kuzey ışıkları ve Lyra takımyıldızı).
       0.0.22: sahneler CI'da Windows Edge ile denetlenir; WebGL2 açılamazsa neden hata günlüğüne yazılır ve gece
-      göğü 2D yedek çizimle (Lyra dahil) görünür
+      göğü 2D yedek çizimle (Lyra dahil) görünür. Proje sahibinin bilgisayarında doğrulama bekliyor
+      ([#24](https://github.com/gozlemesevdalisi/Lyraska/issues/24))
+- [ ] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
+      ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27))
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)
 
@@ -54,8 +57,11 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 
 ## Faz 3 — Profesyonel ses, v0.3 (21 Aralık 2026 – 17 Ocak 2027)
 
-- [x] Yüksek kaliteli yeniden örnekleme (aygıtın hızına, Windows'a bırakmadan), taşma koruması, sinyal yolu göstergesi (öne alındı: 0.0.12)
-- [ ] Parametrik EQ (motor hazır: kulaklık düzeltmesi bunu kullanıyor; kullanıcının elle ayarlayacağı arayüz yok)
+- [x] Yüksek kaliteli yeniden örnekleme (aygıtın hızına, Windows'a bırakmadan), taşma koruması, sinyal yolu göstergesi (öne alındı: 0.0.12).
+      "Müzikler garip geliyor" bildiriminin proje sahibince doğrulanması bekliyor
+      ([#25](https://github.com/gozlemesevdalisi/Lyraska/issues/25))
+- [ ] Parametrik EQ (motor hazır: kulaklık düzeltmesi bunu kullanıyor; kullanıcının elle ayarlayacağı arayüz yok).
+      Ekolayzerle ilgili kalan işler tek yerde: [#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)
 - [x] AutoEq kulaklık profilleri: ParametricEQ.txt içe aktarma (öne alındı: 0.0.13). Hazır profil listesi, ölçüm
       kaynaklarının lisansı doğrulanınca
 - [ ] EBU R128 loudness
@@ -97,6 +103,14 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [ ] Görsel Yönetmen geçişi de koreografe eder
 - Kalite hedefi: üst üste binme boyunca iki şarkının vuruşları arasındaki fark en fazla 10 ms; şüphede düz
   geçişe düşülür
+
+## Bekleyen kararlar (proje sahibinde)
+
+- **Ses iş parçacığına Windows ses önceliği (MMCSS, "Pro Audio")**: ağır yükte takılmaya karşı daha sağlam;
+  `unsafe` kod gerektirdiği için onay şart. Öneri: şimdilik yapılmasın, takılma görülürse ilk bu açılsın.
+- **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
+  arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
+- **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)
 
