@@ -74,7 +74,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       Ekolayzerle ilgili kalan işler tek yerde: [#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)
 - [x] AutoEq kulaklık profilleri: ParametricEQ.txt içe aktarma (öne alındı: 0.0.13). Hazır profil listesi, ölçüm
       kaynaklarının lisansı doğrulanınca
-- [x] EBU R128 loudness (0.0.27, öne alındı; proje sahibi, 8 Ekim 2026: "bas dedin mi gerçekten hissedilsin"):
+- [x] EBU R128 loudness (0.0.28, öne alındı; proje sahibi, 8 Ekim 2026: "bas dedin mi gerçekten hissedilsin"):
       şarkılar −14 LUFS'e getirilir (varsayılan açık, yükseltme gerçek tepeyi −1 dBTP'de tutar); ekolayzer sesi
       kısmadan yükseltebilir (eşitlemenin açtığı boşluk kullanılır); yeni hazır ayarlar "Bas", "Derin bas",
       "Küçük hoparlör". Bas raf filtresi gerekmedi: sürgüler zaten duyulan eğri, sorun ön kazançtaydı
