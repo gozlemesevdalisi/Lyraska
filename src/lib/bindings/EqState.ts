@@ -3,7 +3,7 @@
 /**
  * Arayüzün gösterdiği ekolayzer durumu: ayarlar ve gerçekten uygulanan eğri.
  */
-export type EqState = { enabled: boolean, gainsDb: Array<number>, bassDb: number, smallSpeaker: boolean, bassDepth: number, maxBassDb: number, bandsHz: Array<number>, maxGainDb: number, 
+export type EqState = { enabled: boolean, gainsDb: Array<number>, bassDb: number, smallSpeaker: boolean, bassDepth: number, bassPunch: number, maxBassDb: number, bandsHz: Array<number>, maxGainDb: number, 
 /**
  * Taşmayı önlemek için düşürülen kazanç (dB, ≤ 0): çalan şarkının boşluğunun
  * yetmediği kadar.

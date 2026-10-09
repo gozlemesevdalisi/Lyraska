@@ -50,7 +50,7 @@ const fakeCore = (level = null, theme = 1) => `
       case "library_search": return [];
       // EqState'in bütün alanları (src/lib/bindings/EqState.ts): eksik alan arayüzü çökertir.
       case "equalizer_get": return { enabled: true, gainsDb: Array(10).fill(0), bassDb: 0,
-        smallSpeaker: false, bassDepth: 0, maxBassDb: 18,
+        smallSpeaker: false, bassDepth: 0, bassPunch: 0, maxBassDb: 18,
         bandsHz: [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], maxGainDb: 12, preampDb: 0,
         curveHz: [20, 20000], curveDb: [0, 0] };
       case "headphone_get": return { enabled: false, profile: null, curveHz: [], curveDb: [] };

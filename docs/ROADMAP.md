@@ -84,7 +84,8 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       ekolayzerin üstünde büyük "Bas" düğmesi (100 Hz raf, 0–18 dB; 12 üstü kulüp düzeyi), "Derinlik" (bas
       notalarının bir oktav altı), küçük hoparlör bası (dizüstünde çalınamayan alt bas yerine harmonikleri) ve
       şarkının ölçülen bas tepelerine göre akıllı taşma koruması (bas yükselince ses gereksiz kısılmaz).
-      Hazır ayarlar: Bas, Derin bas, Kulüp, Küçük hoparlör
+      Hazır ayarlar: Bas, Derin bas, Kulüp, Küçük hoparlör. 0.0.31: "Vuruş" (proje sahibinin seçimi: davul
+      vuruşunun ilk anı 8 dB'ye kadar güçlenir, bas şişmez)
 - [ ] Crossfeed
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin

@@ -214,13 +214,15 @@ function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
 }
 
 /**
- * Bas: tek dokunuşla bas düğmesi (100 Hz raf) ve küçük hoparlör bası (alt bas yerine
- * harmonikleri). Ekolayzerin en üstünde, büyük: "bas dedin mi bas hissedilsin".
+ * Bas: tek dokunuşla bas düğmesi (100 Hz raf), derinlik (alt oktav), vuruş (davulun ilk anı)
+ * ve küçük hoparlör bası (alt bas yerine harmonikleri). Ekolayzerin en üstünde, büyük:
+ * "bas dedin mi bas hissedilsin".
  */
 function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
-  const { bassDb, smallSpeaker, bassDepth, enabled } = equalizer.settings;
+  const { bassDb, smallSpeaker, bassDepth, bassPunch, enabled } = equalizer.settings;
   const club = bassDb > BASS_CLUB_DB;
   const depthPercent = Math.round(bassDepth * 100);
+  const punchPercent = Math.round(bassPunch * 100);
   // Ok tuşları şarkıyı sarmasın.
   const keepArrows = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key.startsWith("Arrow")) event.stopPropagation();
@@ -301,6 +303,30 @@ function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
         {smallSpeaker
           ? "Derinlik küçük hoparlörde kapalı: dizüstü o kadar derini çalamaz."
           : "Bas notalarının bir oktav altını ekler: kayıtta olmasa da göğüste hissedilen gümbürtü."}
+      </p>
+      <div className="bass__row">
+        <label className="bass__label" htmlFor="eq-punch">
+          Vuruş
+        </label>
+        <input
+          id="eq-punch"
+          className="bass__slider bass__slider--depth"
+          type="range"
+          aria-valuetext={`%${punchPercent}`}
+          min={0}
+          max={1}
+          step={DEPTH_STEP}
+          value={bassPunch}
+          style={{ "--fill": bassPunch } as CSSProperties}
+          onChange={(event) => equalizer.setPunch(Number(event.target.value))}
+          onKeyDown={keepArrows}
+        />
+        <output className="bass__depth" htmlFor="eq-punch">
+          %{punchPercent}
+        </output>
+      </div>
+      <p className="bass__hint">
+        Davul vuruşunun ilk anını güçlendirir: vuruş göğse çarpar, sürekli bas şişmez.
       </p>
     </div>
   );

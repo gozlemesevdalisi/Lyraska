@@ -700,6 +700,7 @@ describe("ekolayzer", () => {
         bassDb: 6,
         smallSpeaker: false,
         bassDepth: 0,
+        bassPunch: 0.3,
       }),
     );
     expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "4");
@@ -708,8 +709,8 @@ describe("ekolayzer", () => {
     expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
     expect(eqLight()).toHaveClass("is-on");
     // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir
-    // (bantların en büyüğü 4 + bas düğmesi 6).
-    expect(await screen.findByText(/Bozulma koruması: −10 dB/)).toBeInTheDocument();
+    // (bantların en büyüğü 4 + bas düğmesi 6 + vuruşun en yüksek anı %30 × 8 = 2,4).
+    expect(await screen.findByText(/Bozulma koruması: −12,4 dB/)).toBeInTheDocument();
   });
 
   it("bas kulüp bölgesine çıkar; derinlik ayarlanır, küçük hoparlörde kapanır", async () => {
@@ -742,6 +743,26 @@ describe("ekolayzer", () => {
     );
     expect(depth).toBeDisabled();
     expect(screen.getByText(/Derinlik küçük hoparlörde kapalı/)).toBeInTheDocument();
+  });
+
+  it("vuruş ayarlanır; kulüp hazır ayarında güçlü, küçük hoparlörde de açık", async () => {
+    await openEq();
+    const punch = screen.getByRole("slider", { name: "Vuruş" });
+    expect(punch).toHaveValue("0");
+    expect(screen.getByText(/vuruş göğse çarpar, sürekli bas şişmez/)).toBeInTheDocument();
+    await act(async () => fireEvent.change(punch, { target: { value: "0.8" } }));
+    expect(punch).toHaveAttribute("aria-valuetext", "%80");
+    expect(eqLight()).toHaveClass("is-on");
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(expect.objectContaining({ bassPunch: 0.8 })),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kulüp" })));
+    expect(punch).toHaveValue("0.7");
+    // Vuruş küçük hoparlörde de çalışır (harmonikler de vuruşla güçlenir).
+    await act(async () =>
+      fireEvent.click(screen.getByRole("switch", { name: "Küçük hoparlör bası" })),
+    );
+    expect(punch).not.toBeDisabled();
   });
 
   it("bas düğmesi ve küçük hoparlör bası ayarlanır; hazır ayar 'özel'e döner", async () => {
@@ -1273,10 +1294,14 @@ describe("işaretleme", () => {
     expect(backend.toggle).toHaveBeenCalledTimes(1); // artık yine çal/duraklat
   });
 
+  /** İşaretlemenin başladığı an: sahte çekirdeğin konumu bundan itibaren gerçek zamanla ilerler. */
+  let playingSince = 0;
+
   /** İşaretleme sekmesini açar ve işaretlemeyi başlatır. */
   async function startMarking() {
     backend.desktop = true;
     backend.status = playing;
+    playingSince = performance.now();
     render(<App />);
     // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
@@ -1289,9 +1314,11 @@ describe("işaretleme", () => {
   /** Bir vuruş aralığı arayla `count` kez Boşluk'a basar (sürekli işaretleme). */
   async function tapBeats(count: number, intervalMs: number) {
     for (let i = 0; i < count; i++) {
-      // Sahte çekirdek de şarkının ilerlediğini bildirsin (yoksa vuruşlar üst üste düşer).
-      const status = backend.status!;
-      backend.status = { ...status, positionSecs: status.positionSecs + intervalMs / 1000 };
+      // Sahte çekirdek de şarkının gerçek zamanla ilerlediğini bildirsin. Vuruş başına sabit
+      // adım yetmez: makine yüklüyken vuruşlar arası daha uzun sürer, ekrandaki saat bildirilen
+      // konumdan uzaklaşıp geri sıçrar ve iki vuruş üst üste düşer.
+      const elapsed = (performance.now() - playingSince) / 1000;
+      backend.status = { ...backend.status!, positionSecs: playing.positionSecs + elapsed };
       await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
       await act(() => new Promise((resolve) => setTimeout(resolve, intervalMs)));
     }

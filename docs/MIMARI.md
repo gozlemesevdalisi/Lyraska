@@ -58,13 +58,20 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
   - Bas düğmesi (0–18 dB; 12'nin üstü kulüp düzeyi): 100 Hz alçak raf.
   - Derinlik (alt oktav): bas bandının (40–120 Hz) her tam dalgasında işaret değiştiren kare dalga × bandın zarfı,
     dördüncü dereceden 60 Hz süzgeçle yumuşatılır. Bas bandı sesin geri kalanından 40 dB'den kısıksa yumuşakça susar.
+  - Vuruş (`audio/punch.rs`, %0–100): davul vuruşunun ilk anı 8 dB'ye kadar güçlenir, sürekli bas aynen kalır.
+    Bas bandında (150 Hz altı) bir tepe tutucu (20 ms tutar) vuruşu anında görür; gecikmeli zarf onu ~30 ms
+    gecikmeyle izler, inişte birlikte iner. Aradaki fark (1 dB eşiğin üstü) 100 Hz alçak rafı yükseltir; raf
+    her 16 örnekte yeniden hesaplanır. Açılınca önce şarkının bas düzeyini öğrenir (150 ms; yanlış vuruş yok).
   - Küçük hoparlör bası: dizüstü hoparlörü 100 Hz altını çalamaz. O bölge dördüncü dereceden süzülür (80 Hz),
     yerine basın 2., 3. ve 4. harmonikleri (Chebyshev polinomları, tepe zarfıyla) eklenir; alt oktav eklenmez.
-  - **Akıllı taşma koruması:** her şarkının bas tepeleri tam analizde ölçülür (`BassPeakMeter`: 3–18 dB raflarda
+  - **Akıllı taşma koruması:** her şarkının bas tepeleri tam analizde ölçülür (`BassPeakMeter`: 3–27 dB raflarda
     şarkının tepesi ne kadar yükseliyor, alt oktav bandının tepesi). Koruma bas için en kötü durumu (rafın tamamı)
     değil bu ölçülen artışı kullanır: çoğu şarkıda tepe vokal ve davuldan gelir, bas yükselince ses kısılmaz.
+    Vuruşun rafı bas düğmesininkiyle aynı köşede (100 Hz): ikisi tek raf gibi, kazançları toplanarak hesaplanır;
+    vuruşun en yüksek anı (en fazla 8 dB) ayrılır. Ölçülen kazançlar bas + vuruşun tavanını kapsar (derlemede denetlenir).
     Ölçüm önbellekte saklanır; yeni şarkının ilk çalınışında birkaç saniye en kötü durum geçerlidir.
-  - Ayar değişince raf ~40 ms'de, küçük hoparlör ve derinlik geçişleri her örnekte yumuşakça uygulanır (tık yok).
+  - Ayar değişince raf ~40 ms'de, küçük hoparlör, derinlik ve vuruş geçişleri her örnekte yumuşakça uygulanır
+    (tık yok). Sıra: vuruş → bas düğmesi → alt oktav → küçük hoparlör (harmonikler de vuruşlu bastan üretilir).
 - **Bit-perfect (özel mod, ayarla açılır):**
   - Aygıt WASAPI özel modda, şarkının kendi hızında açılır; biçim aygıtın kabul ettiği en yüksek tamsayıdır
     (32 → 24 → 16 bit, `output::IntFormat`). Yeniden örnekleme yoktur.
@@ -108,7 +115,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 | Ne                              | Nerede                                    | Sürüm/değişiklik nasıl yönetilir                           |
 | ------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
 | Kütüphane ve analiz önbelleği   | `library.sqlite3` (uygulama veri klasörü) | `storage.rs`: sıralı göç adımları (`user_version`)         |
-| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır; şu an 4)    |
+| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır; şu an 5)    |
 | Ayarlar                         | `settings.json`                           | Eksik alan varsayılanla dolar; bozuk dosyada varsayılanlar |
 | İşaretler                       | `isaretler/*.json`                        | Dosyada `format` alanı                                     |
 | Hata günlüğü                    | `logs/lyraska.log`                        | 1 MB'ta bir yedeklenir                                     |
@@ -127,6 +134,8 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Bas düğmesi bası yükseltir, ortaya dokunmaz, tık yok         | `audio::bass` testleri                                           |
 | Bas motorunun korumaya bildirdiği pay tepeleri karşılar      | `audio::bass` testi `yukseltme_payi_tepeleri_karsilar`           |
 | Ölçülen bas tepeleri gerçek artışı karşılar, gereksiz kısmaz | `audio::bass` testi `olculen_bas_tepeleri_…`                     |
+| Vuruş ilk anı güçlendirir; sürekli basa ve ortaya dokunmaz   | `audio::punch` testleri, `audio::bass` testi `vurus_…`           |
+| Sahne denetiminin sahte çekirdeği arayüzün tipleriyle aynı   | `src/lib/sceneCheck.test.ts` (üretilen tipe bağlı)               |
 | Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır         | `audio::resample` testleri                                       |
 | Windows'a özel kod (WASAPI) temiz                            | Clippy, `--target x86_64-pc-windows-gnu` (yerel) ve Windows CI   |
 | Kütüphane kodunda `unwrap`/`expect`/`panic!` yok             | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`      |
