@@ -20,6 +20,7 @@ import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
 import { usePlayback } from "../hooks/usePlayback";
+import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
@@ -55,13 +56,16 @@ export function PlayerScreen() {
   const equalizer = useEqualizer();
   const headphone = useHeadphone();
   const visualSafe = useVisualSafe();
-  // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
-  const soundShaped = equalizer.active || headphone.active;
+  const playbackOptions = usePlaybackOptions();
   const [scene, chooseScene] = useScene();
 
   const playback = usePlayback(info.supportedExtensions);
   const { player, playList, upcoming } = playback;
   const { status } = player;
+  // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
+  // Bit-perfect çalarken ikisi de sese uygulanmaz.
+  const bitPerfect = status.output?.bitPerfect ?? false;
+  const soundShaped = (equalizer.active || headphone.active) && !bitPerfect;
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
@@ -291,7 +295,7 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-eq"
           hidden={drawer.panel !== "eq"}
         >
-          <EqualizerPanel equalizer={equalizer} headphone={headphone} />
+          <EqualizerPanel equalizer={equalizer} headphone={headphone} bypassed={bitPerfect} />
         </div>
         <div
           className="drawer__panel"
@@ -328,6 +332,7 @@ export function PlayerScreen() {
             status={status}
             available={player.available}
             visualSafe={visualSafe}
+            playback={playbackOptions}
           />
         </div>
       </aside>

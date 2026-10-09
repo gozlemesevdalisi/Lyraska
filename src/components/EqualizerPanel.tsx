@@ -134,6 +134,8 @@ export interface EqualizerPanelProps {
   equalizer: EqualizerControls;
   /** Kulaklık düzeltmesi (verilmezse bölüm gösterilmez). */
   headphone?: HeadphoneControls;
+  /** Bit-perfect çalıyor: ses işlenmiyor, ayarlar şimdilik etkisiz. */
+  bypassed?: boolean;
 }
 
 /** Kulaklık düzeltmesi: AutoEq profili yükleme, açma/kapama, kaldırma. */
@@ -209,7 +211,7 @@ function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
 }
 
 /** 10 bantlı ekolayzer: hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
-export function EqualizerPanel({ equalizer, headphone }: EqualizerPanelProps) {
+export function EqualizerPanel({ equalizer, headphone, bypassed = false }: EqualizerPanelProps) {
   const { settings, state, error } = equalizer;
   // Kulaklık düzeltmesinin biçimi (ön kazanç çıkarılmış: sıfır çizgisi etrafında).
   const correction = headphone?.active ? headphone.state : null;
@@ -251,11 +253,18 @@ export function EqualizerPanel({ equalizer, headphone }: EqualizerPanelProps) {
         <span className="eq__preset">{preset ?? "Özel ayar"}</span>
         <span
           className="eq__preamp"
-          title="Yükseltilen frekanslar sesi bozmasın diye ses, en yüksek bant kadar kısılır."
+          title="Yükseltilen frekanslar sesi bozmasın diye ses, şarkının tepesindeki boşluğun yetmediği kadar kısılır."
         >
           Bozulma koruması: {formatGain(enabled ? state.preampDb : 0)} dB
         </span>
       </header>
+
+      {bypassed && (
+        <p className="library__notice library__problem">
+          Bit-perfect açık: ses hiç işlenmiyor, ekolayzer ve kulaklık düzeltmesi şimdilik devre
+          dışı. Ayarlar &gt; Ses bölümünden kapatabilirsiniz.
+        </p>
+      )}
 
       {headphone && <HeadphoneStrip headphone={headphone} />}
 

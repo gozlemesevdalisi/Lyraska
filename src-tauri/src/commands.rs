@@ -21,6 +21,7 @@ use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
 use crate::audio::player::{PlaybackStatus, Player};
+use crate::audio::PlaybackOptions;
 use crate::library::{DropOutcome, LibraryService, LibraryStatus, TrackRow};
 use crate::settings::SettingsStore;
 use crate::visual_bridge::VisualFrame;
@@ -86,6 +87,8 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         player.set_headphone(settings.headphone);
         player.set_visual_safe(settings.visual_safe);
         player.set_audio_delay_ms(settings.audio_delay_ms);
+        // Açılışta çalan şarkı yok: aygıt açılmaz, hata olamaz.
+        let _ = player.set_playback_options(settings.playback);
     }
 }
 
@@ -268,7 +271,8 @@ pub async fn library_search(
 /// Ekolayzer ayarları ve uygulanan eğri.
 #[tauri::command]
 pub async fn equalizer_get(player: State<'_, PlayerState>) -> Result<EqState, String> {
-    Ok(EqState::new(player.lock()?.equalizer()))
+    let player = player.lock()?;
+    Ok(EqState::new(player.equalizer(), player.headroom_db()))
 }
 
 /// Ekolayzer ayarlarını değiştirir (çalan sese hemen yansır) ve kaydeder.
@@ -282,7 +286,7 @@ pub async fn equalizer_set(
     store
         .update(|s| s.equalizer = applied)
         .map_err(|e| reported(format!("Ekolayzer ayarı kaydedilemedi: {e}")))?;
-    Ok(EqState::new(applied))
+    Ok(EqState::new(applied, player.lock()?.headroom_db()))
 }
 
 /// Ses aygıtının ek gecikmesi (ms; görseller bu kadar geriden gösterilir).
@@ -349,6 +353,30 @@ pub async fn visual_safe_set(
         .update(|s| s.visual_safe = enabled)
         .map_err(|e| reported(format!("Güvenli mod ayarı kaydedilemedi: {e}")))?;
     Ok(enabled)
+}
+
+/// Çalma seçenekleri (ses yüksekliği eşitlemesi vb.).
+#[tauri::command]
+pub async fn playback_options_get(
+    player: State<'_, PlayerState>,
+) -> Result<PlaybackOptions, String> {
+    Ok(player.lock()?.playback_options())
+}
+
+/// Çalma seçeneklerini uygular (çalan sese hemen yansır) ve kaydeder. Bit-perfect
+/// değişince ses aygıtı yeniden açılır; açılamazsa seçenek yine kaydedilir, hata döner.
+#[tauri::command]
+pub async fn playback_options_set(
+    options: PlaybackOptions,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<PlaybackOptions, String> {
+    let applied = player.lock()?.set_playback_options(options);
+    store
+        .update(|s| s.playback = options)
+        .map_err(|e| reported(format!("Çalma seçenekleri kaydedilemedi: {e}")))?;
+    applied.map_err(reported)?;
+    Ok(options)
 }
 
 /// Kulaklık düzeltmesi ve eğrisi.
@@ -589,7 +617,7 @@ mod tests {
 
     #[test]
     fn ekolayzer_arayuz_bicimine_uyar() {
-        let json = serde_json::to_value(EqState::new(EqSettings::default())).unwrap();
+        let json = serde_json::to_value(EqState::new(EqSettings::default(), 0.0)).unwrap();
         for key in [
             "enabled",
             "gainsDb",

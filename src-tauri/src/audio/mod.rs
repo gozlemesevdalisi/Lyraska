@@ -8,19 +8,24 @@
 //!
 //! - [`decode`]: symphonia ile dosyayı açar ve 64-bit örneklere çözer.
 //! - [`eq`]: 10 bantlı grafik ekolayzer (bantlar arası taşmayı düzelten tasarım, kilitsiz ayar).
+//! - [`loudness`]: ses yüksekliği (EBU R128) ve gerçek tepe ölçümü (analizde).
+//! - [`normalize`]: çalarken ses yüksekliği eşitlemesi ve ekolayzer için boşluk yönetimi.
 //! - [`render`]: halka tampondan aygıt arabelleğini doldurur; ekolayzeri uygular,
 //!   duraklatmada yumuşak geçiş yapar.
 //!   Gerçek zamanlı iş parçacığında çalışır: bellek ayırmaz, kilit beklemez.
-//! - [`output`]: Windows WASAPI paylaşımlı mod çıkışı.
+//! - [`output`]: Windows WASAPI çıkışı (paylaşımlı mod; ayarla özel mod, bit-perfect).
 //! - [`player`]: yukarıdakileri bir araya getiren, arayüzün kullandığı oynatıcı.
 //!
 //! Bütün iç işlem [`Sample`] türüyle (64-bit) yapılır; yalnızca çıkışta aygıtın
-//! biçimine (32-bit kayan nokta) dönüştürülür.
+//! biçimine (paylaşımlı modda 32-bit kayan nokta, özel modda aygıtın tamsayısı)
+//! dönüştürülür.
 
 pub mod decode;
 pub mod eq;
 pub mod gapless;
 pub mod limiter;
+pub mod loudness;
+pub mod normalize;
 pub mod output;
 pub mod peq;
 pub mod player;
@@ -51,6 +56,9 @@ pub enum AudioError {
     NoOutputDevice,
     #[error("Ses aygıtı hatası: {0}")]
     Output(String),
+    /// Özel mod (bit-perfect) açılamadı; oynatıcı paylaşımlı moda geçer.
+    #[error("Bit-perfect açılamadı: {0}")]
+    Exclusive(String),
 }
 
 impl From<symphonia::core::errors::Error> for AudioError {
@@ -102,5 +110,29 @@ mod tests {
     #[test]
     fn ic_islem_64_bit() {
         assert_eq!(std::mem::size_of::<Sample>(), 8);
+    }
+}
+
+/// Çalma seçenekleri (kalıcı ayar). Yeni alanlar eklendiğinde eski ayar dosyaları
+/// varsayılanla tamamlanır.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+pub struct PlaybackOptions {
+    /// Ses yüksekliği eşitlemesi (EBU R128): bütün şarkılar aynı yükseklikte çalar,
+    /// ekolayzere yer açılır. Proje sahibinin kararıyla varsayılan açık.
+    pub normalize: bool,
+    /// Bit-perfect: aygıt özel modda, şarkının kendi hızında açılır; ses hiç işlenmez
+    /// (ekolayzer, kulaklık düzeltmesi, eşitleme devre dışı). Proje sahibinin kararıyla
+    /// varsayılan kapalı.
+    pub bit_perfect: bool,
+}
+
+impl Default for PlaybackOptions {
+    fn default() -> Self {
+        Self {
+            normalize: true,
+            bit_perfect: false,
+        }
     }
 }

@@ -36,12 +36,26 @@ export function signalPathText(status: PlaybackStatus): string | null {
   const { track, output } = status;
   if (!track || !output) return null;
   const source = `${track.codec.toUpperCase()} ${KHZ.format(track.sampleRate / 1000)} kHz`;
-  const conversion = output.resampled
-    ? `${KHZ.format(output.sampleRate / 1000)} kHz (yüksek kalite)`
-    : "dönüştürmesiz";
+  const conversion = output.bitPerfect
+    ? `bit-perfect (özel mod${output.bitDepth ? `, ${output.bitDepth} bit` : ""})`
+    : output.resampled
+      ? `${KHZ.format(output.sampleRate / 1000)} kHz (yüksek kalite)`
+      : "dönüştürmesiz";
   const parts = [source, conversion, output.deviceName || "varsayılan ses aygıtı"];
+  const leveling =
+    output.normalizationDb !== null ? ` · eşitleme ${formatDb(output.normalizationDb)}` : "";
+  // Bit-perfect'te ses işlenmez; taşma koruması yalnızca tam ölçeği aşan (bozuk) örneklerde çalışır.
+  const guard = output.bitPerfect ? "" : " · taşma koruması";
   const problems = status.underruns > 0 ? ` · takılma: ${status.underruns}` : "";
-  return `${parts.join(" → ")} · taşma koruması${problems}`;
+  return `${parts.join(" → ")}${leveling}${guard}${problems}`;
+}
+
+/** Desibel: "−5,2 dB", "+1 dB", "0 dB" (Türkçe ondalık virgül, gerçek eksi işareti). */
+export function formatDb(db: number): string {
+  const rounded = Math.round(db * 10) / 10;
+  if (rounded === 0) return "0 dB";
+  const sign = rounded < 0 ? "−" : "+";
+  return `${sign}${KHZ.format(Math.abs(rounded))} dB`;
 }
 
 /** Tempo: "128 BPM", kesirliyse "105,5 BPM". */
@@ -78,6 +92,9 @@ export function titleScale(title: string): "xl" | "l" | "m" {
 export function formatLabel(track: TrackInfo, output: PlaybackStatus["output"]): string {
   const codec = track.codec.toUpperCase();
   const source = KHZ.format(track.sampleRate / 1000);
+  if (output?.bitPerfect) {
+    return `${codec} ${source} kHz · bit-perfect`;
+  }
   if (output?.resampled && output.sampleRate !== track.sampleRate) {
     return `${codec} ${source} → ${KHZ.format(output.sampleRate / 1000)} kHz`;
   }

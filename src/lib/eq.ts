@@ -16,19 +16,41 @@ export interface EqPreset {
   gains: number[];
 }
 
-/** Hazır ayarlar. Değerler özgündür; ±6 dB içinde, kulağı yormayan eğriler. */
+/**
+ * Hazır ayarlar. Değerler özgündür. Sürgüler gerçekten duyulan eğridir ve ses yüksekliği
+ * eşitlemesi açıkken yükseltme sesi kısmadan yapılır: "Bas" bası gerçekten yükseltir.
+ * Bas için üç ayrı ayar var, çünkü cihazlar farklı frekansları verebilir:
+ * - Bas: 60–125 Hz (davul ve bas gitarın göğse vurduğu yer); her cihazda.
+ * - Derin bas: 30–60 Hz alt bas; iyi kulaklık ya da subwoofer ister.
+ * - Küçük hoparlör: dizüstü hoparlörü 100 Hz'in altını veremez; orayı yükseltmek yalnızca
+ *   bozulma yaratır. Hoparlörün verebildiği 125–250 Hz yükseltilir, bas yine hissedilir.
+ */
 export const EQ_PRESETS: EqPreset[] = [
   { name: "Düz", hint: "Ses olduğu gibi", gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { name: "Bas", hint: "Derin bas", gains: [6, 5.5, 4.5, 2.5, 0.5, 0, 0, 0, 0, 0] },
+  {
+    name: "Bas",
+    hint: "Davul ve bas göğse vurur (kulaklık ve hoparlör)",
+    gains: [4, 7, 6, 2.5, 0, 0, 0, 0, 0, 0],
+  },
+  {
+    name: "Derin bas",
+    hint: "Alt bas, gümbürtü (iyi kulaklık ya da subwoofer)",
+    gains: [8, 7, 3.5, 0.5, 0, 0, 0, 0, 0, 0],
+  },
+  {
+    name: "Küçük hoparlör",
+    hint: "Dizüstü ve küçük hoparlörde dolgun bas",
+    gains: [-6, -2, 4, 5, 2.5, 0, 0, 1, 1.5, 0],
+  },
   { name: "Tiz", hint: "Parlak, net tizler", gains: [0, 0, 0, 0, 0, 0.5, 2, 4, 5.5, 6] },
   { name: "Vokal", hint: "Sesler önde", gains: [-2, -2, -1, 0.5, 2, 3.5, 3.5, 2, 0, -1] },
   { name: "Akustik", hint: "Sıcak ve doğal", gains: [3, 3, 2, 1, 1, 1, 2, 2.5, 3, 2] },
   {
     name: "Elektronik",
     hint: "Güçlü bas ve parlak üst",
-    gains: [5, 4.5, 2, 0, -1.5, 0, 1, 2, 4, 4.5],
+    gains: [6, 6, 3, 0, -1.5, 0, 1, 2, 4, 4.5],
   },
-  { name: "Rock", hint: "Vurucu davul ve gitar", gains: [4, 3.5, 2, 0, -1, -1, 1, 2.5, 3.5, 4] },
+  { name: "Rock", hint: "Vurucu davul ve gitar", gains: [4, 4.5, 2.5, 0, -1, -1, 1, 2.5, 3.5, 4] },
   { name: "Gece", hint: "Kısık seste dolgun ses", gains: [4.5, 4, 2, 0, -0.5, 0, 0, 1, 2.5, 3] },
   {
     name: "Konuşma",

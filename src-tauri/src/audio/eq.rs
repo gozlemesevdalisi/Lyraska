@@ -22,8 +22,10 @@
 //! Ses işleme [`EqProcessor`] ile yapılır. Ayarlar [`EqControl`] üzerinden
 //! kilitsiz (atomik) olarak iletilir; değişiklikler ~40 ms içinde yumuşakça
 //! uygulanır ("cızırtı" olmasın). Ekolayzer düzken ses hiç işlenmez.
-//! Yükseltilen bantlar sesi kırpılmaya (bozulmaya) götürmesin diye en yüksek
-//! sürgü kadar ön kazanç düşürülür.
+//! Yükseltilen bantlar sesi taşırmasın diye kısmak gerekir; ama şarkının tepesine
+//! kalan boşluk (ses yüksekliği eşitlemesinin açtığı yer) yetiyorsa kısılmaz. Bu
+//! kararı ses yolunda [`crate::audio::normalize::Leveler`] verir: ekolayzer yalnızca
+//! en büyük yükseltmesini ([`EqProcessor::boost_db`]) bildirir.
 
 // Matris ve filtre hesaplarında indisli döngüler formüllerle bire bir eşleşir.
 #![allow(clippy::needless_range_loop)]
@@ -147,7 +149,8 @@ pub struct EqState {
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub bands_hz: [f64; BANDS],
     pub max_gain_db: f64,
-    /// Kırpılmayı önlemek için düşürülen kazanç (dB, ≤ 0).
+    /// Taşmayı önlemek için düşürülen kazanç (dB, ≤ 0): çalan şarkının boşluğunun
+    /// yetmediği kadar.
     pub preamp_db: f64,
     /// Filtrelerin toplam tepkisi (ön kazanç hariç): frekanslar (Hz) ve kazançlar (dB).
     pub curve_hz: Vec<f64>,
@@ -155,7 +158,8 @@ pub struct EqState {
 }
 
 impl EqState {
-    pub fn new(settings: EqSettings) -> Self {
+    /// `headroom_db`: çalan şarkının tepesine kalan boşluk (bilinmiyorsa 0).
+    pub fn new(settings: EqSettings, headroom_db: f64) -> Self {
         let design = Design::new(&settings.effective_gains(), DISPLAY_RATE);
         let curve_hz: Vec<f64> = (0..CURVE_POINTS)
             .map(|i| 20.0 * 1000f64.powf(i as f64 / (CURVE_POINTS - 1) as f64))
@@ -169,11 +173,17 @@ impl EqState {
             gains_db: settings.gains_db,
             bands_hz: CENTERS_HZ,
             max_gain_db: MAX_GAIN_DB,
-            preamp_db: design.preamp_db,
+            preamp_db: protection_db(-design.preamp_db, headroom_db),
             curve_hz,
             curve_db,
         }
     }
+}
+
+/// Ekolayzerin `boost_db` kadar yükselttiği seste, `headroom_db` boşluk varken taşmayı
+/// önleyen kısma (dB, ≤ 0).
+pub fn protection_db(boost_db: f64, headroom_db: f64) -> f64 {
+    -(boost_db - headroom_db.max(0.0)).max(0.0)
 }
 
 /// Arayüzden ses iş parçacığına ayar taşıyan kilitsiz kanal.
@@ -357,12 +367,12 @@ fn design_target(gains_db: &[f64; BANDS], k: usize) -> f64 {
     }
 }
 
-/// Tasarlanmış ekolayzer: bant filtreleri ve kırpılmayı önleyen ön kazanç.
+/// Tasarlanmış ekolayzer: bant filtreleri ve en kötü durumdaki ön kazanç.
 #[derive(Debug, Clone, Copy)]
 pub struct Design {
     filters: [Biquad; BANDS],
     bands: usize,
-    /// Kırpılmayı önlemek için uygulanan kazanç (dB, ≤ 0): en yüksek sürgü kadar.
+    /// Boşluk hiç yokken taşmayı önleyecek kazanç (dB, ≤ 0): en yüksek sürgü kadar.
     pub preamp_db: f64,
 }
 
@@ -504,7 +514,6 @@ pub struct EqProcessor {
     target: [f64; BANDS],
     current: [f64; BANDS],
     design: Design,
-    preamp: f64,
     flat: bool,
     state: Vec<ChannelState>,
     update_frames: usize,
@@ -526,7 +535,6 @@ impl EqProcessor {
             target,
             current: target,
             design: Design::new(&[0.0; BANDS], rate),
-            preamp: 1.0,
             flat: true,
             state: vec![[[0.0; 2]; BANDS]; channels.max(1)],
             update_frames,
@@ -540,6 +548,11 @@ impl EqProcessor {
     /// Ses şu an değişmeden mi geçiyor?
     pub fn is_flat(&self) -> bool {
         self.flat
+    }
+
+    /// Şu anki en büyük yükseltme (dB, ≥ 0): taşmayı önlemek için gereken kısma buna göre.
+    pub fn boost_db(&self) -> f64 {
+        -self.design.preamp_db
     }
 
     /// Her doldurma turunun başında çağrılır: yeni ayar var mı bakar.
@@ -592,7 +605,7 @@ impl EqProcessor {
             s[0] = f.b1 * input - f.a1 * y + s[1];
             s[1] = f.b2 * input - f.a2 * y;
         }
-        y * self.preamp
+        y
     }
 
     /// Mevcut kazançları hedefe bir adım yaklaştırır ve yeniden tasarlar.
@@ -610,7 +623,6 @@ impl EqProcessor {
 
     fn redesign(&mut self) {
         self.design = Design::with_layout(&self.current, &self.layout);
-        self.preamp = db_to_linear(self.design.preamp_db);
         let flat = self.design.is_flat();
         if flat && !self.flat {
             // Düz hale gelince işlem durur; sonraki açılışta eski durum kalmasın.
@@ -795,13 +807,15 @@ mod tests {
         }));
         let mut processor = EqProcessor::new(control, 1, rate);
         processor.begin_block();
-        // Ön kazanç -9 dB: 1 kHz'te toplam ~0 dB, 62,5 Hz'te ~-15 dB, 8 kHz'te ~-9 dB.
+        // İşlemci yalnızca süzgeçleri uygular: 1 kHz'te +9, 62,5 Hz'te −6, 8 kHz'te 0 dB.
+        // Taşmayı önleyen kısmaya ses yolu (Leveler) karar verir; işlemci yükseltmeyi bildirir.
+        assert_eq!(processor.boost_db(), 9.0);
         let at_1k = measured_gain_db(&mut processor, 1000.0, rate);
         let at_62 = measured_gain_db(&mut processor, 62.5, rate);
         let at_8k = measured_gain_db(&mut processor, 8000.0, rate);
-        assert!(at_1k.abs() < 0.6, "1 kHz: {at_1k:.2}");
-        assert!((at_62 + 15.0).abs() < 0.8, "62,5 Hz: {at_62:.2}");
-        assert!((at_8k + 9.0).abs() < 0.6, "8 kHz: {at_8k:.2}");
+        assert!((at_1k - 9.0).abs() < 0.6, "1 kHz: {at_1k:.2}");
+        assert!((at_62 + 6.0).abs() < 0.8, "62,5 Hz: {at_62:.2}");
+        assert!(at_8k.abs() < 0.6, "8 kHz: {at_8k:.2}");
     }
 
     #[test]
@@ -816,9 +830,8 @@ mod tests {
             gains_db: gains,
         });
         processor.begin_block();
-        // 1 kHz bandı yükselir, ön kazanç -12 dB'ye iner: 4 kHz'teki ses -12 dB'ye
-        // düşer. Bu iniş ani olmamalı.
-        let w = 2.0 * PI * 4000.0 / f64::from(rate);
+        // 1 kHz bandı +12 dB'ye çıkar. Bu çıkış ani olmamalı.
+        let w = 2.0 * PI * 1000.0 / f64::from(rate);
         let mut levels = Vec::new();
         let mut peak = 0.0f64;
         for i in 0..(rate as usize / 2) {
@@ -829,12 +842,13 @@ mod tests {
                 peak = 0.0;
             }
         }
-        // İlk 10 ms'de hâlâ yüksek, 0,5 sn sonra hedefte.
-        assert!(levels[0] > 0.7, "ilk 10 ms: {}", levels[0]);
+        // İlk 10 ms'de hâlâ alçak, 0,5 sn sonra hedefte.
+        assert!(levels[0] < 2.0, "ilk 10 ms: {}", levels[0]);
         let last = *levels.last().unwrap();
-        assert!((20.0 * last.log10() + 12.0).abs() < 0.7, "son: {last}");
+        assert!((20.0 * last.log10() - 12.0).abs() < 0.7, "son: {last}");
+        assert_eq!(processor.boost_db(), 12.0);
         // Ani sıçrama yok: 12 dB'lik değişim 10 ms'lik pencerelerde en fazla ~3 dB'lik
-        // adımlarla (her 2 ms'de küçük adımlarla) iner.
+        // adımlarla (her 2 ms'de küçük adımlarla) çıkar.
         for pair in levels.windows(2) {
             let jump = 20.0 * (pair[1] / pair[0]).log10();
             assert!(jump.abs() < 3.5, "sıçrama {jump:.2} dB");
@@ -873,11 +887,25 @@ mod tests {
     fn arayuz_durumu_egriyi_ve_on_kazanci_icerir() {
         let mut gains = [0.0; BANDS];
         gains[0] = 6.0;
-        let state = EqState::new(EqSettings {
+        let settings = EqSettings {
             enabled: true,
             gains_db: gains,
-        });
-        assert_eq!(state.preamp_db, -6.0);
+        };
+        let state = EqState::new(settings, 0.0);
+        assert_eq!(
+            state.preamp_db, -6.0,
+            "boşluk yokken yükseltme kadar kısılır"
+        );
+        assert_eq!(
+            EqState::new(settings, 4.0).preamp_db,
+            -2.0,
+            "boşluk yetmeyen kadar"
+        );
+        assert_eq!(
+            EqState::new(settings, 9.0).preamp_db,
+            0.0,
+            "boşluk yetiyorsa hiç"
+        );
         assert_eq!(state.curve_hz.len(), state.curve_db.len());
         assert!((state.curve_hz[0] - 20.0).abs() < 1e-9);
         assert!((state.curve_hz[CURVE_POINTS - 1] - 20000.0).abs() < 1e-6);
@@ -885,10 +913,13 @@ mod tests {
         assert!(state.curve_db[5] > 4.0);
         assert!(state.curve_db[CURVE_POINTS - 1].abs() < 0.2);
 
-        let off = EqState::new(EqSettings {
-            enabled: false,
-            gains_db: gains,
-        });
+        let off = EqState::new(
+            EqSettings {
+                enabled: false,
+                gains_db: gains,
+            },
+            0.0,
+        );
         assert_eq!(off.preamp_db, 0.0);
         assert!(off.curve_db.iter().all(|d| d.abs() < 1e-9));
         assert_eq!(off.gains_db[0], 6.0, "kapalıyken de sürgüler hatırlanır");

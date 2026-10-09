@@ -696,13 +696,14 @@ describe("ekolayzer", () => {
     await waitFor(() =>
       expect(backend.setEq).toHaveBeenLastCalledWith({
         enabled: true,
-        gainsDb: [6, 5.5, 4.5, 2.5, 0.5, 0, 0, 0, 0, 0],
+        gainsDb: [4, 7, 6, 2.5, 0, 0, 0, 0, 0, 0],
       }),
     );
-    expect(screen.getByRole("slider", { name: "31 Hz" })).toHaveAttribute("aria-valuenow", "6");
+    expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "7");
     expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
     expect(eqLight()).toHaveClass("is-on");
-    expect(await screen.findByText(/Bozulma koruması: −6 dB/)).toBeInTheDocument();
+    // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir.
+    expect(await screen.findByText(/Bozulma koruması: −7 dB/)).toBeInTheDocument();
   });
 
   it("sürgü klavyeyle ayarlanır, ok tuşları şarkıyı sarmaz", async () => {
@@ -924,7 +925,16 @@ describe("şarkı haritası ve bilgi kartları", () => {
       ...playing,
       state: "paused",
       bpm: 128,
-      output: { deviceName: "Hoparlörler", sampleRate: 48000, channels: 2, resampled: true },
+      output: {
+        deviceName: "Hoparlörler",
+        sampleRate: 48000,
+        channels: 2,
+        resampled: true,
+        normalizationDb: null,
+        bitPerfect: false,
+        bitDepth: null,
+        notice: null,
+      },
     };
     backend.songMap = {
       meter: 4,
@@ -1295,5 +1305,79 @@ describe("işaretleme", () => {
       },
     );
     expect(screen.getByRole("button", { name: "Doğruluğu ölç" })).toBeDisabled();
+  });
+});
+
+describe("bit-perfect", () => {
+  const bitPerfectOutput = {
+    deviceName: "Kulaklık (USB DAC)",
+    sampleRate: 44100,
+    channels: 2,
+    resampled: false,
+    normalizationDb: null,
+    bitPerfect: true,
+    bitDepth: 24,
+    notice: null,
+  };
+
+  it("ayarlardan açılır; uyarı ve açıklama görünür", async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    const toggle = await screen.findByRole("button", { name: "Bit-perfect (özel mod): Kapalı" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText(/Windows ses düzeyi çoğu aygıtta etkisizdir/)).toBeInTheDocument();
+    await act(async () => fireEvent.click(toggle));
+    expect(screen.getByRole("button", { name: "Bit-perfect (özel mod): Açık" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Eşitleme ayarı yerinde kalır.
+    expect(
+      screen.getByRole("button", { name: "Ses yüksekliği eşitleme: Açık" }),
+    ).toBeInTheDocument();
+  });
+
+  it("çalarken sesin yolunu söyler; ekolayzer devre dışı görünür", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused", output: bitPerfectOutput };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await waitFor(() =>
+      expect(screen.getByText("FLAC 44,1 kHz · bit-perfect")).toBeInTheDocument(),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    expect(
+      screen.getByText("FLAC 44,1 kHz → bit-perfect (özel mod, 24 bit) → Kulaklık (USB DAC)"),
+    ).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ekolayzer" })));
+    expect(screen.getByText(/Bit-perfect açık: ses hiç işlenmiyor/)).toBeInTheDocument();
+  });
+
+  it("açılamadıysa nedenini söyler", async () => {
+    backend.desktop = true;
+    backend.status = {
+      ...playing,
+      state: "paused",
+      output: {
+        ...bitPerfectOutput,
+        sampleRate: 48000,
+        resampled: true,
+        bitPerfect: false,
+        bitDepth: null,
+        notice: "aygıtı başka bir program özel modda kullanıyor",
+      },
+    };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Bit-perfect açılamadı: aygıtı başka bir program özel modda kullanıyor. Ses normal yoldan çalıyor.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ekolayzer" })));
+    expect(screen.queryByText(/Bit-perfect açık/)).not.toBeInTheDocument();
   });
 });
