@@ -11,7 +11,7 @@ use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, StandardTag};
+use symphonia::core::meta::{MetadataOptions, StandardTag, StandardVisualKey, Visual};
 use symphonia::core::units::{Time, TimeBase};
 
 use super::gapless::{self, Trim};
@@ -67,25 +67,7 @@ pub struct Decoder {
 impl Decoder {
     /// Dosyayı açar, biçimini tanır ve çözücüyü hazırlar.
     pub fn open(path: &Path) -> Result<Self, AudioError> {
-        let file = File::open(path)?;
-        let stream = MediaSourceStream::new(Box::new(file), Default::default());
-
-        let mut hint = Hint::new();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            hint.with_extension(ext);
-        }
-
-        let mut format = symphonia::default::get_probe()
-            .probe(
-                &hint,
-                stream,
-                FormatOptions::default(),
-                MetadataOptions::default(),
-            )
-            .map_err(|e| match e {
-                SymphoniaError::IoError(io) => AudioError::Unsupported(io.to_string()),
-                other => AudioError::from(other),
-            })?;
+        let mut format = probe(path)?;
 
         let track = format
             .default_track(TrackType::Audio)
@@ -317,6 +299,116 @@ fn read_tags(format: &mut dyn FormatReader) -> Tags {
     tags
 }
 
+/// Dosyayı açar ve biçimini tanır (ses çözülmez).
+fn probe(path: &Path) -> Result<Box<dyn FormatReader>, AudioError> {
+    let file = File::open(path)?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    symphonia::default::get_probe()
+        .probe(
+            &hint,
+            stream,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| match e {
+            SymphoniaError::IoError(io) => AudioError::Unsupported(io.to_string()),
+            other => AudioError::from(other),
+        })
+}
+
+/// Şarkının içindeki kapak resmi.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cover {
+    /// Resmin türü, verinin kendisinden tanınır (ör. "image/jpeg").
+    pub media_type: &'static str,
+    pub data: Vec<u8>,
+}
+
+/// Bu boyuttan büyük kapak gösterilmez: arayüze taşınması pahalı, ekranda farkı yok.
+const MAX_COVER_BYTES: usize = 8 * 1024 * 1024;
+
+impl Cover {
+    /// Arayüzde doğrudan gösterilebilen `data:` adresi.
+    pub fn data_url(&self) -> String {
+        format!("data:{};base64,{}", self.media_type, base64(&self.data))
+    }
+}
+
+/// Dosyanın içindeki kapak resmini okur (ID3, FLAC, MP4, Vorbis…): ön kapak öncelikli,
+/// yoksa ilk resim. Ses çözülmez. Resim olmayan ya da çok büyük veri atlanır.
+pub fn read_cover(path: &Path) -> Result<Option<Cover>, AudioError> {
+    let mut format = probe(path)?;
+    let mut metadata = format.metadata();
+    let Some(revision) = metadata.skip_to_latest() else {
+        return Ok(None);
+    };
+    let rank = |visual: &Visual| match visual.usage {
+        Some(StandardVisualKey::FrontCover) => 0,
+        None | Some(StandardVisualKey::OtherIcon) => 1,
+        Some(_) => 2,
+    };
+    let best = revision
+        .media
+        .visuals
+        .iter()
+        .chain(
+            revision
+                .per_track
+                .iter()
+                .flat_map(|t| t.metadata.visuals.iter()),
+        )
+        .filter_map(|v| {
+            let media_type = image_type(&v.data).filter(|_| v.data.len() <= MAX_COVER_BYTES)?;
+            Some((rank(v), media_type, v))
+        })
+        .min_by_key(|(rank, _, _)| *rank);
+    Ok(best.map(|(_, media_type, visual)| Cover {
+        media_type,
+        data: visual.data.to_vec(),
+    }))
+}
+
+/// Verinin resim türü (ilk baytlarından; etiketteki tür bilgisine güvenilmez).
+fn image_type(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if data.len() > 12 && data.starts_with(b"RIFF") && &data[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+/// Base64 (RFC 4648, dolgulu).
+fn base64(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let bytes = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]);
+        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            out.push(if i <= chunk.len() {
+                char::from(ALPHABET[((n >> shift) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
 fn non_empty(value: &str) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_owned())
@@ -455,5 +547,134 @@ mod tests {
         let error = Decoder::open(&path).err().unwrap();
         assert!(matches!(error, AudioError::Unsupported(_)), "{error:?}");
         std::fs::remove_file(path).ok();
+    }
+
+    /// Kapak testleri için küçük "resimler" (yalnızca ilk baytları gerçek; tür bunlardan tanınır).
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR-kapak";
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F'];
+
+    fn fixture(ext: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data")
+            .join(format!("uc-uc-ton.{ext}"))
+    }
+
+    /// Resimli ID3v2.3 etiketi (APIC çerçeveleri: tür, MIME, veri).
+    fn id3_with_pictures(pictures: &[(u8, &str, &[u8])]) -> Vec<u8> {
+        let mut frames = Vec::new();
+        for (kind, mime, data) in pictures {
+            let mut body = vec![0u8]; // metin kodlaması: ISO-8859-1
+            body.extend_from_slice(mime.as_bytes());
+            body.push(0);
+            body.push(*kind);
+            body.push(0); // açıklama yok
+            body.extend_from_slice(data);
+            frames.extend_from_slice(b"APIC");
+            frames.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            frames.extend_from_slice(&[0, 0]);
+            frames.extend_from_slice(&body);
+        }
+        let size = frames.len() as u32;
+        let mut tag = b"ID3\x03\x00\x00".to_vec();
+        tag.extend([21, 14, 7, 0].map(|shift| ((size >> shift) & 0x7f) as u8));
+        tag.extend(frames);
+        tag
+    }
+
+    /// Test MP3'ünün kendi etiketini resimli etiketle değiştirir (ses aynen kalır).
+    fn mp3_with_pictures(pictures: &[(u8, &str, &[u8])]) -> PathBuf {
+        let original = std::fs::read(fixture("mp3")).unwrap();
+        assert_eq!(&original[..3], b"ID3");
+        let old = original[6..10]
+            .iter()
+            .fold(0usize, |size, &b| (size << 7) | usize::from(b & 0x7f));
+        let mut bytes = id3_with_pictures(pictures);
+        bytes.extend_from_slice(&original[10 + old..]);
+        let path = temp_path("kapakli.mp3");
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// Test FLAC'ına ön kapaklı bir PICTURE bloğu ekler (STREAMINFO'nun ardına).
+    fn flac_with_cover(data: &[u8]) -> PathBuf {
+        let original = std::fs::read(fixture("flac")).unwrap();
+        assert_eq!(&original[..4], b"fLaC");
+        let header = original[4];
+        let end = 8 + u32::from_be_bytes([0, original[5], original[6], original[7]]) as usize;
+        let mut body = Vec::new();
+        body.extend_from_slice(&3u32.to_be_bytes()); // ön kapak
+        body.extend_from_slice(&9u32.to_be_bytes());
+        body.extend_from_slice(b"image/png");
+        body.extend_from_slice(&0u32.to_be_bytes()); // açıklama yok
+        for value in [1u32, 1, 32, 0] {
+            body.extend_from_slice(&value.to_be_bytes());
+        }
+        body.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        body.extend_from_slice(data);
+        let mut bytes = b"fLaC".to_vec();
+        bytes.push(header & 0x7f); // STREAMINFO artık son blok değil
+        bytes.extend_from_slice(&original[5..end]);
+        bytes.push(6 | (header & 0x80)); // PICTURE; STREAMINFO sondaysa artık o son
+        bytes.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+        bytes.extend(body);
+        bytes.extend_from_slice(&original[end..]);
+        let path = temp_path("kapakli.flac");
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn kapak_okunur_on_kapak_oncelikli() {
+        // Önce "diğer" (JPEG), sonra ön kapak (PNG): ön kapak seçilir.
+        let path = mp3_with_pictures(&[(0, "image/jpeg", JPEG), (3, "image/png", PNG)]);
+        let cover = read_cover(&path).unwrap().unwrap();
+        assert_eq!(cover.media_type, "image/png");
+        assert_eq!(cover.data, PNG);
+        // Ses yine çözülür (etiket değişti, ses aynı).
+        assert!(Decoder::open(&path).is_ok());
+        std::fs::remove_file(path).ok();
+
+        // Etiketteki tür yanlış olsa da veriden tanınır.
+        let path = mp3_with_pictures(&[(3, "image/jpg", JPEG)]);
+        assert_eq!(read_cover(&path).unwrap().unwrap().media_type, "image/jpeg");
+        std::fs::remove_file(path).ok();
+
+        let path = flac_with_cover(PNG);
+        let cover = read_cover(&path).unwrap().unwrap();
+        assert_eq!(
+            (cover.media_type, cover.data.as_slice()),
+            ("image/png", PNG)
+        );
+        assert!(Decoder::open(&path).is_ok());
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn kapak_yoksa_ya_da_resim_degilse_bos() {
+        for ext in ["mp3", "flac", "ogg", "m4a"] {
+            assert_eq!(read_cover(&fixture(ext)).unwrap(), None, "{ext}");
+        }
+        let path = mp3_with_pictures(&[(3, "image/png", b"resim degil")]);
+        assert_eq!(read_cover(&path).unwrap(), None);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn kapak_data_adresi_olur() {
+        let cover = Cover {
+            media_type: "image/png",
+            data: b"foobar".to_vec(),
+        };
+        assert_eq!(cover.data_url(), "data:image/png;base64,Zm9vYmFy");
+        for (input, expected) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+        ] {
+            assert_eq!(base64(input.as_bytes()), expected);
+        }
+        assert_eq!(base64(&[0xFB, 0xFF, 0xBF]), "+/+/");
     }
 }

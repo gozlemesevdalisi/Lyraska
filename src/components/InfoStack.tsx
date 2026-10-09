@@ -8,6 +8,8 @@ export interface UpNext {
   title: string;
   artist: string | null;
   album: string | null;
+  /** Şarkının içindeki kapak (`data:` adresi); yoksa özgün renk kapağı. */
+  cover?: string | null;
 }
 
 export interface InfoStackProps {
@@ -69,11 +71,15 @@ export function InfoStack({
       </ul>
       {next && (
         <div className="up-next">
-          <span
-            className="up-next__cover"
-            style={{ background: coverGradient(next.album ?? next.artist ?? next.title) }}
-            aria-hidden
-          />
+          {next.cover ? (
+            <img className="up-next__cover" src={next.cover} alt="" draggable={false} />
+          ) : (
+            <span
+              className="up-next__cover"
+              style={{ background: coverGradient(next.album ?? next.artist ?? next.title) }}
+              aria-hidden
+            />
+          )}
           <span className="up-next__text">
             <small>Sıradaki</small>
             {[next.title, next.artist].filter(Boolean).join(" · ")}

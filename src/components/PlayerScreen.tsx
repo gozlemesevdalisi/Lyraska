@@ -25,6 +25,7 @@ import { usePlayback } from "../hooks/usePlayback";
 import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSkyLook } from "../hooks/useSkyLook";
+import { useCover } from "../hooks/useCover";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
@@ -154,11 +155,14 @@ export function PlayerScreen() {
     () => libraryTrack(library.tracks, upcoming),
     [library.tracks, upcoming],
   );
+  const cover = useCover(statusPath);
+  const upcomingCover = useCover(upcoming);
   const upNext: UpNext | null = upcoming
     ? {
         title: upcomingTrack?.title ?? fileStem(upcoming),
         artist: upcomingTrack?.artist ?? null,
         album: upcomingTrack?.album ?? null,
+        cover: upcomingCover,
       }
     : null;
 
@@ -240,6 +244,7 @@ export function PlayerScreen() {
             queueLabel={playback.queueLabel}
             error={player.error}
             available={player.available}
+            cover={cover}
           />
           <InfoStack
             status={status}

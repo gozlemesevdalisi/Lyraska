@@ -3,6 +3,7 @@ import type { PlaybackStatus, TrackInfo } from "../lib/backend";
 import { marqueeWindow } from "./Marquee";
 import { spectrumColumns } from "./SpectrumDemo";
 import { textToColumns } from "../lib/dotFont";
+import { clearCoverCache } from "../hooks/useCover";
 
 // Rust çekirdeğini taklit eden sahte arka uç.
 const backend = vi.hoisted(() => ({
@@ -42,6 +43,9 @@ const backend = vi.hoisted(() => ({
   setSafe: vi.fn(),
   /** Çekirdek ekolayzer durumunu eksik alanlarla döndürür (0.0.29'daki sahne denetimi olayı). */
   brokenEqualizer: false,
+  /** Şarkıların içindeki kapaklar (yol → `data:` adresi). */
+  covers: {} as Record<string, string>,
+  coverAsked: vi.fn(),
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -96,6 +100,10 @@ vi.mock("../lib/backend", async (importOriginal) => {
       );
     },
     logFrontendError: async (message: string) => backend.logError(message),
+    getTrackCover: async (path: string) => {
+      backend.coverAsked(path);
+      return backend.covers[path] ?? null;
+    },
     getEqualizer: async () =>
       backend.brokenEqualizer
         ? ({
@@ -226,6 +234,8 @@ beforeEach(() => {
   backend.dropOutcome = null;
   backend.songMap = null;
   backend.annotation = null;
+  backend.covers = {};
+  clearCoverCache();
   window.localStorage.clear();
   vi.clearAllMocks();
 });
@@ -1216,6 +1226,35 @@ describe("kulaklık düzeltmesi", () => {
     backend.pickProfile.mockResolvedValue("C:\\bozuk.txt");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
     expect(screen.getByText(/kulaklık düzeltmesi bulunamadı/)).toBeInTheDocument();
+  });
+});
+
+describe("kapak", () => {
+  it("şarkının içindeki kapak başlığın yanında görünür; bir kez okunur", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    backend.covers = { [track.path]: "data:image/png;base64,iVBORw0KGgo=" };
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const art = await screen.findByRole("img", { name: "Kapak: Gece Otoyolu" });
+    expect(art.querySelector("img")).toHaveAttribute("src", "data:image/png;base64,iVBORw0KGgo=");
+    expect(container.querySelector(".now")).toHaveClass("has-art");
+    // Ekran her karede yeniden çizilir; kapak dosyası yine de bir kez okunur.
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(backend.coverAsked.mock.calls.filter(([p]) => p === track.path)).toHaveLength(1);
+  });
+
+  it("kapak yoksa albüm adından özgün renk kapağı; şarkı yokken kapak alanı yok", async () => {
+    const empty = render(<App />);
+    expect(empty.container.querySelector(".now__art")).toBeNull();
+    empty.unmount();
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    const art = await screen.findByRole("img", { name: "Kapak yok" });
+    expect(art.getAttribute("style")).toMatch(/linear-gradient/);
+    expect(art.querySelector("img")).toBeNull();
   });
 });
 

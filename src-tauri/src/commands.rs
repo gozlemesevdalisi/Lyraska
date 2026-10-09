@@ -155,6 +155,16 @@ pub async fn open_track(
     player.lock()?.load(&path, true).map_err(reported)
 }
 
+/// Şarkının içindeki kapak resmi (`data:` adresi; kapak yoksa `null`). Okunamayan dosya
+/// hata değildir: kapak yerine özgün renk kapağı gösterilir.
+#[tauri::command]
+pub async fn track_cover(path: PathBuf) -> Result<Option<String>, String> {
+    Ok(crate::audio::decode::read_cover(&path)
+        .ok()
+        .flatten()
+        .map(|cover| cover.data_url()))
+}
+
 /// Boşluksuz geçiş için sıradaki şarkıyı bildirir (`null`: sıra yok).
 #[tauri::command]
 pub async fn set_next_track(
