@@ -75,6 +75,7 @@ lyraska/
 │   │   │   ├── gapless.rs    #   boşluksuz çalma: MP4/AAC kodlayıcı dolgusu (iTunSMPB, elst)
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
 │   │   │   ├── bass.rs       #   bas düğmesi (raf, 0–18 dB), derinlik (alt oktav), küçük hoparlör bası, bas tepesi ölçümü
+│   │   │   ├── punch.rs      #   vuruş: davulun ilk anını güçlendiren dinamik bas rafı (sürekli bas aynen kalır)
 │   │   │   ├── biquad.rs     #   ortak ikinci dereceden süzgeçler (RBJ): kulaklık düzeltmesi ve bas kullanır
 │   │   │   ├── loudness.rs   #   EBU R128 ses yüksekliği (LUFS) ve gerçek tepe (dBTP) ölçümü
 │   │   │   ├── normalize.rs  #   çalarken eşitleme (−14 LUFS) ve ekolayzerin boşluğa göre taşma koruması
