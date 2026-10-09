@@ -79,8 +79,9 @@ lyraska/
 │   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
 │   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (0 dBFS)
 │   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, eşitleme, taşma koruması, duraklatma geçişi
-│   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
-│   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
+│   │   │   ├── output.rs     #   çıkış soyutlaması, özel mod tamsayı biçimi; output/wasapi.rs = Windows WASAPI
+│   │   │   │                 #   (paylaşımlı; ayarla özel mod = bit-perfect), output/simulated.rs = testlerde
+│   │   │   │                 #   aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
 │   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama, BPM
@@ -141,25 +142,27 @@ Kurallar:
 
 Hepsi depo kökünde çalıştırılır.
 
-| İş                             | Komut                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------ |
-| Bağımlılıkları kur             | `npm ci`                                                                             |
-| Programı geliştirme modunda aç | `npm run tauri dev`                                                                  |
-| Yalnızca arayüz (tarayıcıda)   | `npm run dev`                                                                        |
-| Arayüz testleri                | `npm test`                                                                           |
-| Arayüz lint / tür / biçim      | `npm run lint`, `npm run typecheck`, `npm run format:check`                          |
-| Biçimlendir                    | `npm run format` ve `cd src-tauri && cargo fmt`                                      |
-| Rust testleri                  | `cd src-tauri && cargo test` (arayüz veri tiplerini de `src/lib/bindings/`'e üretir) |
-| Komut sözleşmesi               | `npm run check:commands` (arayüzün çağrıları ↔ çekirdeğin komutları)                 |
-| Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                          |
-| Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources` |
-| Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)     |
-| Sahneler gerçek tarayıcıda     | `npm run check:scenes` (önce `npm run build`; CI'da Windows Edge)                    |
-| Windows'a özel kodu denetle    | CI'daki Windows işi (SQLite C kodu yüzünden Linux'tan çapraz denetim yapılamıyor)    |
-| Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                   |
-| Kurulum dosyası (Windows)      | `npm run tauri build`                                                                |
+| İş                             | Komut                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Bağımlılıkları kur             | `npm ci`                                                                                              |
+| Programı geliştirme modunda aç | `npm run tauri dev`                                                                                   |
+| Yalnızca arayüz (tarayıcıda)   | `npm run dev`                                                                                         |
+| Arayüz testleri                | `npm test`                                                                                            |
+| Arayüz lint / tür / biçim      | `npm run lint`, `npm run typecheck`, `npm run format:check`                                           |
+| Biçimlendir                    | `npm run format` ve `cd src-tauri && cargo fmt`                                                       |
+| Rust testleri                  | `cd src-tauri && cargo test` (arayüz veri tiplerini de `src/lib/bindings/`'e üretir)                  |
+| Komut sözleşmesi               | `npm run check:commands` (arayüzün çağrıları ↔ çekirdeğin komutları)                                  |
+| Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                                           |
+| Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources`                  |
+| Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)                      |
+| Sahneler gerçek tarayıcıda     | `npm run check:scenes` (önce `npm run build`; CI'da Windows Edge)                                     |
+| Windows'a özel kodu denetle    | `cd src-tauri && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` (bkz. not) |
+| Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                                    |
+| Kurulum dosyası (Windows)      | `npm run tauri build`                                                                                 |
 
 Not: Rust derlemesi için önce `npm run build` ile `dist/` oluşturulmuş olmalıdır.
+Windows'a özel kodun (WASAPI) Linux'tan denetimi için bir kez `rustup target add x86_64-pc-windows-gnu` ve
+`apt-get install gcc-mingw-w64-x86-64` gerekir; CI'daki Windows işi de aynı denetimi Windows'ta yapar.
 Linux'ta Tauri derlemek için `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf` gerekir.
 
 ## Kod standartları

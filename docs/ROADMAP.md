@@ -80,7 +80,13 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       "Küçük hoparlör". Bas raf filtresi gerekmedi: sürgüler zaten duyulan eğri, sorun ön kazançtaydı
 - [ ] Crossfeed
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
-- [ ] Bit-perfect mod — **öne alındı**: WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin kararı)
+- [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
+      kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
+      aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
+      yazılır
+- [x] Ses kalitesi ölçülebilir testlerde (0.0.28): bütün ses yolu (kulaklık düzeltmesi + ekolayzer + eşitleme +
+      çıkış) en fazla −140 dB bozulma ve gürültü ekler (ölçülen −152 dB); yeniden örneklemede Nyquist üstü tonlar
+      ≥ 140 dB bastırılır (ölçülen −195 dB)
 
 ## Sürekli: mimari güvenceler
 

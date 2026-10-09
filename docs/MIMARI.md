@@ -54,6 +54,17 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
     şarkı sınırında değişir.
   - İlk ses, ölçüm için en fazla 0,6 sn bekler (sessizlik yazılır, şarkı yerinde durur); önbellekteki şarkıda ve
     sarmada beklenmez. Ölçüm yetişmezse tipik bir kayıt (−10 LUFS) varsayılır, ölçüm gelince yavaşça düzelir.
+- **Bit-perfect (özel mod, ayarla açılır):**
+  - Aygıt WASAPI özel modda, şarkının kendi hızında açılır; biçim aygıtın kabul ettiği en yüksek tamsayıdır
+    (32 → 24 → 16 bit, `output::IntFormat`). Yeniden örnekleme yoktur.
+  - Ses çıkışı kulaklık düzeltmesini, ekolayzeri ve eşitlemeyi atlar (`RenderControls.bit_perfect`). Çözücü
+    tamsayıları 2'nin kuvvetine böldüğü için çıkışta aynı kuvvetle çarpılan örnekler bit bit aynıdır.
+  - Özel mod yoklamalıdır (olay güdümlü özel mod bazı USB aygıtlarda takılır); arabellek ~100 ms.
+  - Aygıt biçimi desteklemiyorsa ya da başka program aygıtı tutuyorsa ses paylaşımlı yoldan çalar; neden sinyal
+    yolunda (`SignalPath.notice`) yazar.
+  - Boşluksuz geçişte hızı farklı şarkı dönüştürülmez: oturum biter, sıradaki şarkı kendi hızında açılır.
+- Ses çıkışı 64-bit örnek verir; aygıtın biçimine (32-bit kayan nokta ya da tamsayı) çevirme yalnızca
+  `output`'ta yapılır.
 
 ## Görsel yolu
 
@@ -95,21 +106,25 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 
 Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanması gereken kural yoktur.
 
-| Kural                                                 | Denetleyen                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------- |
-| Ses çıkışında bellek ayırma yok                       | `audio::render` testi `ses_yolu_bellek_ayirmaz`               |
-| Ses yüksekliği ölçümü EBU R128'e uyar                 | `audio::loudness` testleri (EBU Tech 3341 durumları 1–5)      |
-| Eşitleme ve ekolayzer kapalıyken ses bit bit aynı     | `audio::render` ve `audio::normalize` testleri                |
-| Kütüphane kodunda `unwrap`/`expect`/`panic!` yok      | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`   |
-| `unsafe` yok                                          | `unsafe_code = "deny"`                                        |
-| Rust ↔ arayüz veri tipleri aynı                       | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı       |
-| Arayüzün çağırdığı komut ve argümanlar çekirdekte var | `npm run check:commands` (CI)                                 |
-| Veritabanı yapısı değişince eski dosyalar güncellenir | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)   |
-| Analiz hesabı değişince eski sonuçlar kullanılmaz     | `ANALYSIS_VERSION` ve önbellek testleri                       |
-| Hiçbir sahne saniyede 3'ten fazla parlamaz            | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI) |
-| Yasaklı lisans yok                                    | `npm run check:licenses`, `cargo deny` (CI)                   |
-| Depoda ses dosyası yok                                | `npm run check:audio` (CI)                                    |
-| Biçim ve lint temiz, tür hatası yok                   | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)             |
+| Kural                                                  | Denetleyen                                                       |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| Ses çıkışında bellek ayırma yok                        | `audio::render` testi `ses_yolu_bellek_ayirmaz`                  |
+| Ses yüksekliği ölçümü EBU R128'e uyar                  | `audio::loudness` testleri (EBU Tech 3341 durumları 1–5)         |
+| Eşitleme ve ekolayzer kapalıyken ses bit bit aynı      | `audio::render` ve `audio::normalize` testleri                   |
+| Bit-perfect'te dosyadaki tamsayılar aygıta aynen gider | `audio::player` testi `bit_perfect_zinciri_…`, `output` testleri |
+| Ses yolu ≤ −140 dB bozulma + gürültü ekler             | `audio::render` testi `ses_yolu_bozulma_ve_gurultu_eklemez`      |
+| Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır   | `audio::resample` testleri                                       |
+| Windows'a özel kod (WASAPI) temiz                      | Clippy, `--target x86_64-pc-windows-gnu` (yerel) ve Windows CI   |
+| Kütüphane kodunda `unwrap`/`expect`/`panic!` yok       | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`      |
+| `unsafe` yok                                           | `unsafe_code = "deny"`                                           |
+| Rust ↔ arayüz veri tipleri aynı                        | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı          |
+| Arayüzün çağırdığı komut ve argümanlar çekirdekte var  | `npm run check:commands` (CI)                                    |
+| Veritabanı yapısı değişince eski dosyalar güncellenir  | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)      |
+| Analiz hesabı değişince eski sonuçlar kullanılmaz      | `ANALYSIS_VERSION` ve önbellek testleri                          |
+| Hiçbir sahne saniyede 3'ten fazla parlamaz             | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)    |
+| Yasaklı lisans yok                                     | `npm run check:licenses`, `cargo deny` (CI)                      |
+| Depoda ses dosyası yok                                 | `npm run check:audio` (CI)                                       |
+| Biçim ve lint temiz, tür hatası yok                    | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                |
 
 ## Nasıl eklenir?
 
