@@ -21,7 +21,7 @@ use rtrb::{Producer, RingBuffer};
 use serde::Serialize;
 
 use super::decode::{Decoder, TrackInfo};
-use super::eq::{Design, EqControl, EqSettings};
+use super::eq::{protection_db, Design, EqControl, EqSettings};
 use super::normalize::{LoudnessControl, TrackLevels};
 use super::output::{self, DeviceInfo, OutputSpec};
 use super::peq::{HeadphoneSettings, PeqControl};
@@ -498,9 +498,9 @@ pub struct Player {
     analysis_context: AnalysisContext,
     /// Ses aygıtının ek gecikmesi (ms): görseller bu kadar geriden okunur.
     audio_delay_ms: i32,
-    /// Görsellere uygulanan ekolayzer kazançları (dB, spektrum bantları için),
-    /// hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
-    visual_eq: Option<(u64, u32, [f64; BANDS])>,
+    /// Görsellere uygulanan ekolayzer tepkisi (dB, spektrum bantları için) ve en büyük
+    /// yükseltme, hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
+    visual_eq: Option<(u64, u32, [f64; BANDS], f64)>,
 }
 
 impl Player {
@@ -845,26 +845,30 @@ impl Player {
         self.analysis_for(&track.path)?.spectrogram.song_map()
     }
 
-    /// Ekolayzerin spektrum bantlarındaki toplam kazancı (ön kazanç dahil, dB).
-    /// Ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
+    /// Ekolayzerin spektrum bantlarındaki toplam kazancı (dB): filtrelerin tepkisi ve ses
+    /// yolundaki gibi, şarkının boşluğunun yetmediği kadar taşma koruması kısması.
+    /// Tepki, ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
     fn visual_eq_offsets(&mut self, rate: u32) -> [f64; BANDS] {
         let version = self.eq.version();
-        if let Some((v, r, offsets)) = self.visual_eq {
-            if v == version && r == rate {
-                return offsets;
+        let (response, boost_db) = match self.visual_eq {
+            Some((v, r, response, boost_db)) if v == version && r == rate => (response, boost_db),
+            _ => {
+                let settings = self.eq.settings();
+                let (response, boost_db) = if settings.is_active() {
+                    let rate_hz = f64::from(rate);
+                    let design = Design::new(&settings.gains_db, rate_hz);
+                    let response = spectrogram::band_centers(rate_hz)
+                        .map(|hz| design.response_db(hz, rate_hz));
+                    (response, -design.preamp_db)
+                } else {
+                    ([0.0; BANDS], 0.0)
+                };
+                self.visual_eq = Some((version, rate, response, boost_db));
+                (response, boost_db)
             }
-        }
-        let settings = self.eq.settings();
-        let offsets = if settings.is_active() {
-            let rate_hz = f64::from(rate);
-            let design = Design::new(&settings.gains_db, rate_hz);
-            spectrogram::band_centers(rate_hz)
-                .map(|hz| design.response_db(hz, rate_hz) + design.preamp_db)
-        } else {
-            [0.0; BANDS]
         };
-        self.visual_eq = Some((version, rate, offsets));
-        offsets
+        let protection = protection_db(boost_db, self.headroom_db());
+        response.map(|db| db + protection)
     }
 
     pub fn status(&self) -> PlaybackStatus {
@@ -1574,6 +1578,47 @@ mod tests {
         let session = player.session.as_ref().unwrap();
         assert!(Arc::ptr_eq(&session.shared.controls.eq, &player.eq));
         assert_eq!(session.shared.controls.eq.settings().gains_db[5], -12.0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn gorseller_ekolayzer_yukseltmesini_duyuldugu_gibi_gosterir() {
+        use crate::audio::eq::BANDS as EQ_BANDS;
+        // Yarım genlikte 1 kHz sinüs: tepe −6 dBTP; eşitleme sonrası tepeye 14 dB boşluk kalır.
+        let path = temp_path("eq-yukselt.wav");
+        write_wav(&path, 44_100, 1, 88_200, |frame, _| {
+            0.5 * crate::audio::test_util::sine(1000.0, 44_100, frame)
+        });
+        let mut player = Player::new();
+        player.load(&path, false).unwrap();
+        let analysis = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| analysis.is_done()));
+        player.seek(1.0).unwrap();
+        let before = player.visual_now().unwrap().bands;
+        let loudest = (0..BANDS)
+            .max_by(|&a, &b| before[a].total_cmp(&before[b]))
+            .unwrap();
+        let change_db = |player: &mut Player| {
+            let after = player.visual_now().unwrap().bands;
+            f64::from(after[loudest] - before[loudest]) * 60.0
+        };
+
+        // 31 Hz +12 dB: boşluk yettiği için ses kısılmaz; 1 kHz görselde yerinde kalır.
+        // (Eskiden ekolayzer bütün sesi 12 dB kısıyordu; görseller de öyle gösteriyordu.)
+        let mut gains = [0.0; EQ_BANDS];
+        gains[0] = 12.0;
+        player.set_equalizer(EqSettings {
+            enabled: true,
+            gains_db: gains,
+        });
+        let change = change_db(&mut player);
+        assert!(change.abs() < 1.0, "1 kHz değişimi {change:.1} dB");
+
+        // Eşitleme kapalıyken boşluk yalnızca şarkının tepesinden (6 dB): yükseltmenin
+        // kalan 6 dB'si için ses kısılır, görsel de öyle.
+        player.set_playback_options(super::super::PlaybackOptions { normalize: false });
+        let change = change_db(&mut player);
+        assert!((change + 6.0).abs() < 1.0, "1 kHz değişimi {change:.1} dB");
         std::fs::remove_file(path).ok();
     }
 
