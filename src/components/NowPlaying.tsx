@@ -1,4 +1,5 @@
 import type { PlaybackStatus } from "../lib/backend";
+import { coverGradient } from "../lib/cover";
 import { titleScale, trackName } from "../lib/format";
 
 /** Başlığın üstündeki küçük satır: çalma durumu. */
@@ -28,14 +29,23 @@ export interface NowPlayingProps {
   /** Gösterilecek hata (komut ya da çalma hatası). */
   error: string | null;
   available: boolean;
+  /** Şarkının içindeki kapak (`data:` adresi); yoksa özgün renk kapağı. */
+  cover?: string | null;
 }
 
 /**
- * Sahnenin sol altındaki büyük başlık: şarkının adı ve sanatçısı. Şarkı yokken
+ * Sahnenin sol altındaki büyük başlık: kapak, şarkının adı ve sanatçısı. Şarkı yokken
  * karşılama ve müziği pencereye sürükleme daveti. Hata olursa başlığın altında
  * kehribar renkle yazılır (yanıp sönmez).
  */
-export function NowPlaying({ status, album, queueLabel, error, available }: NowPlayingProps) {
+export function NowPlaying({
+  status,
+  album,
+  queueLabel,
+  error,
+  available,
+  cover = null,
+}: NowPlayingProps) {
   const { track } = status;
   const problem = error ?? status.error;
   const over = [stateLabel(status), queueLabel].filter(Boolean).join(" · ");
@@ -43,23 +53,35 @@ export function NowPlaying({ status, album, queueLabel, error, available }: NowP
   const byline = track ? [track.artist, album].filter(Boolean).join(" — ") : null;
 
   return (
-    <section className="now" aria-label="Çalan şarkı">
-      <p className={`now__over${status.state === "playing" ? " is-playing" : ""}`}>
-        <span className="now__dot" aria-hidden />
-        {over}
-      </p>
-      <h1 className={`now__title now__title--${titleScale(title)}`}>{title}</h1>
-      {track ? (
-        byline && <p className="now__byline">{byline}</p>
-      ) : (
-        <p className="now__byline">Müzik klasörünüzü ya da şarkılarınızı pencereye sürükleyin.</p>
+    <section className={`now${track ? " has-art" : ""}`} aria-label="Çalan şarkı">
+      {track && (
+        <div
+          className={`now__art${cover ? " is-real" : ""}`}
+          role="img"
+          aria-label={cover ? `Kapak: ${album ?? title}` : "Kapak yok"}
+          style={cover ? undefined : { background: coverGradient(album ?? track.artist ?? title) }}
+        >
+          {cover && <img src={cover} alt="" draggable={false} />}
+        </div>
       )}
-      {!available && <p className="now__hint">Ses çalmak için programı Windows'ta açın.</p>}
-      {problem && (
-        <p className="now__error" role="alert">
-          {problem}
+      <div className="now__text">
+        <p className={`now__over${status.state === "playing" ? " is-playing" : ""}`}>
+          <span className="now__dot" aria-hidden />
+          {over}
         </p>
-      )}
+        <h1 className={`now__title now__title--${titleScale(title)}`}>{title}</h1>
+        {track ? (
+          byline && <p className="now__byline">{byline}</p>
+        ) : (
+          <p className="now__byline">Müzik klasörünüzü ya da şarkılarınızı pencereye sürükleyin.</p>
+        )}
+        {!available && <p className="now__hint">Ses çalmak için programı Windows'ta açın.</p>}
+        {problem && (
+          <p className="now__error" role="alert">
+            {problem}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

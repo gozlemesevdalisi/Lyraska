@@ -54,6 +54,12 @@ export type {
 };
 
 /** Çalan şarkının yapısı; analiz bitmediyse `null`. */
+/** Şarkının içindeki kapak resmi (`data:` adresi); yoksa ya da tarayıcı önizlemesinde `null`. */
+export async function getTrackCover(path: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return invoke<string | null>("track_cover", { path });
+}
+
 export async function getSongMap(): Promise<SongMap | null> {
   if (!isTauri()) return null;
   return invoke<SongMap | null>("song_map");
