@@ -74,12 +74,12 @@ export function PlayerScreen() {
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
-  const marker = useMarker(statusPath, playing, player.positionNow, songMap);
   const sync = useSync(
     player.openPath,
     player.positionNow,
     status.state === "ended" ? statusPath : null,
   );
+  const marker = useMarker(statusPath, playing, player.positionNow, songMap, sync.delayMs);
 
   // Panelden ayrılınca işaretleme biter (Boşluk yine çal/duraklat olur), senkron ölçümü de.
   const { setRecording } = marker;

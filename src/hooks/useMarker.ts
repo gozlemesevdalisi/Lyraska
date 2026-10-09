@@ -57,12 +57,17 @@ export interface MarkerControls {
  * İşaretleme aracı: şarkı çalarken Boşluk beat, D drop işaretler; Geri tuşu son
  * işareti geri alır, Esc işaretlemeyi bitirir. İşaretler değiştikçe kendiliğinden
  * kaydedilir (şarkı başına bir dosya; ses içermez).
+ *
+ * `audioDelayMs`: ses aygıtının ek gecikmesi (Senkron ayarı). Bluetooth kulaklıkta ses
+ * oynatıcının bildirdiğinden bu kadar geç duyulur; işaret, duyulan vuruşun şarkıdaki anına
+ * düşsün diye düşülür. Yoksa işaretler 150–250 ms geç kalır ve doğruluk ölçümü düşük çıkar.
  */
 export function useMarker(
   trackPath: string | null,
   playing: boolean,
   positionNow: () => number,
   songMap: SongMap | null,
+  audioDelayMs = 0,
 ): MarkerControls {
   const [marks, setMarks] = useState<Marks>(EMPTY_MARKS);
   const [recording, setRecordingState] = useState(false);
@@ -174,13 +179,15 @@ export function useMarker(
     setEvaluation(null); // eski sonuç artık bu işaretlere ait değil
   }, []);
 
+  /** Oynatıcının konumundan (saniye) duyulan an: ses aygıtının gecikmesi düşülür. */
+  const delaySecs = (Number.isFinite(audioDelayMs) ? audioDelayMs : 0) / 1000;
   const markAt = useCallback(
     (kind: MarkKind, time: number) => {
-      change((m) => addMark(m, kind, time));
+      change((m) => addMark(m, kind, Math.max(0, time - delaySecs)));
       tapId.current += 1;
       setLastTap({ kind, id: tapId.current });
     },
-    [change],
+    [change, delaySecs],
   );
 
   const mark = useCallback((kind: MarkKind) => markAt(kind, positionNow()), [markAt, positionNow]);
