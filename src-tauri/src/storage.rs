@@ -72,8 +72,21 @@ const V3: &str = "
 ALTER TABLE analyses ADD COLUMN bass_peaks TEXT;
 ";
 
+/// 4: şarkıların etiket okuma sürümü ([`crate::library::db::TAGS_VERSION`]). Eski tip (ID3v1)
+/// etiketler Türkçe harflerle okunmaya başladı: etiketi eksik ya da harfleri bozuk görünen
+/// (Ş, Ğ, İ yerine Þ, Ð, Ý) MP3'ler bir sonraki taramada yeniden okunur; diğerleri ve analiz
+/// önbelleği olduğu gibi kalır.
+const V4: &str = "
+ALTER TABLE tracks ADD COLUMN tags_version INTEGER NOT NULL DEFAULT 1;
+UPDATE tracks SET tags_version = 0
+ WHERE lower(path) LIKE '%.mp3'
+   AND (title IS NULL OR artist IS NULL OR album IS NULL
+        OR title GLOB '*[ÐÝÞðýþ]*' OR artist GLOB '*[ÐÝÞðýþ]*'
+        OR album GLOB '*[ÐÝÞðýþ]*' OR album_artist GLOB '*[ÐÝÞðýþ]*');
+";
+
 /// Sıralı göç adımları (bkz. modül belgesi). Yalnızca sona eklenir.
-const MIGRATIONS: &[&str] = &[V1, V2, V3];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
 
 /// Bu sürümün bildiği en yeni şema.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -180,6 +193,50 @@ mod tests {
         // Yeniden açmak hiçbir şeyi ikinci kez uygulamaz (ALTER ikinci kez hata verirdi).
         apply(&mut conn, &steps).unwrap();
         assert_eq!(tables(&conn), ["analyses", "folders", "notes", "tracks"]);
+    }
+
+    #[test]
+    fn etiketi_bozuk_gorunen_mp3ler_yeniden_okunmak_uzere_isaretlenir() {
+        // 0.0.32'nin veritabanı (3. adım): ID3v1 etiketleri Latin-1 okunmuştu.
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply(&mut conn, &MIGRATIONS[..3]).unwrap();
+        conn.execute("INSERT INTO folders (id, path) VALUES (1, 'C:/Müzik')", [])
+            .unwrap();
+        let rows = [
+            (
+                "C:/Müzik/bozuk.mp3",
+                Some("Þarký"),
+                Some("Sanatçı"),
+                Some("Albüm"),
+            ),
+            ("C:/Müzik/etiketsiz.MP3", None, None, None),
+            (
+                "C:/Müzik/saglam.mp3",
+                Some("Şarkı"),
+                Some("Sanatçı"),
+                Some("Albüm"),
+            ),
+            ("C:/Müzik/kayipsiz.flac", None, None, None),
+        ];
+        for (path, title, artist, album) in rows {
+            conn.execute(
+                "INSERT INTO tracks (folder_id, path, file_name, title, artist, album, codec,
+                     sample_rate, channels, file_size, modified, sort_key, search)
+                 VALUES (1, ?1, 'ad', ?2, ?3, ?4, 'mp3', 44100, 2, 1, 1, '', '')",
+                rusqlite::params![path, title, artist, album],
+            )
+            .unwrap();
+        }
+        migrate(&mut conn).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT path FROM tracks WHERE tags_version = 0 ORDER BY path")
+            .unwrap();
+        let stale: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(stale, ["C:/Müzik/bozuk.mp3", "C:/Müzik/etiketsiz.MP3"]);
     }
 
     #[test]
