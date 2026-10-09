@@ -102,7 +102,7 @@ lyraska/
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   ├── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
 │   │   │   ├── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
-│   │   │   ├── cache.rs      #   şarkı haritası önbelleği (SQLite; yol + boyut + değişme zamanı + ANALYSIS_VERSION)
+│   │   │   ├── cache.rs      #   şarkı haritası önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
 │   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)
 │   │   ├── director/         # Görsel Yönetmen: şarkı haritasından koreografi (atmosfer, ritim, doku),
 │   │   │                     # drop beklentisi/açılımı; nabız hız garantisi (≤ 3/sn, güvenli modda ≤ 1/sn)
@@ -136,8 +136,11 @@ Kurallar:
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
 - Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
   konumuna karşılık gelen analiz karesini `visual_bridge` üzerinden okur.
-- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Spektrum, beat, ölçü, bölüm, drop ya da enerji
-  hesabını değiştiren her iş `ANALYSIS_VERSION`'ı artırır; eski kayıtlar böylece kendiliğinden yeniden hesaplanır.
+- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Analiz dört parçadır ve her birinin kendi sürümü
+  vardır (`cache::VERSIONS`): spektrum (kareler), ritim (beat, ölçü, bölüm, drop, enerji), ses yüksekliği, bas
+  tepeleri. Bir hesabı değiştiren iş **yalnızca o parçanın** sürümünü artırır; kütüphanede yalnızca o parça yeniden
+  hesaplanır (ritim karelerden, şarkı çözülmeden). Bütün kütüphaneyi baştan analiz ettiren spektrum sürümü yalnızca
+  karelerin kendisi değişince artırılır.
 - Sahneler hareket ve parlaklığı Görsel Yönetmen'in notundan (`VisualFrame.director`) türetir; parlaklığı
   yalnızca nabız olaylarına ve yumuşak değerlere bağlar ve kendi parlama testini taşır.
 - Oynatıcı akışları (aç, sar, durdur, şarkı sonu) birim testlerinde sanal çıkışla sınanır; gerçek

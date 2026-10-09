@@ -115,14 +115,14 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 
 ## Veri ve kalıcılık
 
-| Ne                              | Nerede                                    | Sürüm/değişiklik nasıl yönetilir                           |
-| ------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| Kütüphane ve analiz önbelleği   | `library.sqlite3` (uygulama veri klasörü) | `storage.rs`: sıralı göç adımları (`user_version`)         |
-| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır; şu an 5)    |
-| Şarkı etiketlerinin okunuşu     | aynı dosya, `tracks.tags_version`         | `TAGS_VERSION` (okuma kuralı değişince; şu an 1)           |
-| Ayarlar                         | `settings.json`                           | Eksik alan varsayılanla dolar; bozuk dosyada varsayılanlar |
-| İşaretler                       | `isaretler/*.json`                        | Dosyada `format` alanı                                     |
-| Hata günlüğü                    | `logs/lyraska.log`                        | 1 MB'ta bir yedeklenir                                     |
+| Ne                              | Nerede                                    | Sürüm/değişiklik nasıl yönetilir                                                  |
+| ------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------- |
+| Kütüphane ve analiz önbelleği   | `library.sqlite3` (uygulama veri klasörü) | `storage.rs`: sıralı göç adımları (`user_version`)                                |
+| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | Parça başına sürüm (`cache::VERSIONS`); yalnızca değişen parça yeniden hesaplanır |
+| Şarkı etiketlerinin okunuşu     | aynı dosya, `tracks.tags_version`         | `TAGS_VERSION` (okuma kuralı değişince; şu an 1)                                  |
+| Ayarlar                         | `settings.json`                           | Eksik alan varsayılanla dolar; bozuk dosyada varsayılanlar                        |
+| İşaretler                       | `isaretler/*.json`                        | Dosyada `format` alanı                                                            |
+| Hata günlüğü                    | `logs/lyraska.log`                        | 1 MB'ta bir yedeklenir                                                            |
 
 ## Kurallar ve onları denetleyenler
 
@@ -148,7 +148,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Rust ↔ arayüz veri tipleri aynı                              | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı          |
 | Arayüzün çağırdığı komut ve argümanlar çekirdekte var        | `npm run check:commands` (CI)                                    |
 | Veritabanı yapısı değişince eski dosyalar güncellenir        | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)      |
-| Analiz hesabı değişince eski sonuçlar kullanılmaz            | `ANALYSIS_VERSION` ve önbellek testleri                          |
+| Analiz hesabı değişince eski sonuçlar kullanılmaz            | `cache::VERSIONS` ve önbellek testleri                           |
+| Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı   | `analysis::spectrogram` testi `eskiyen_ritim_…`                  |
+| Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez      | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)             |
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                   | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)    |
 | Parlama sınırı her renk temasında ve her gök manzarasında    | `npm run check:scenes` (temaya göre renklenen sahneler, CI)      |
 | Yasaklı lisans yok                                           | `npm run check:licenses`, `cargo deny` (CI)                      |
@@ -186,4 +188,10 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 
 **Analizde yeni bir hesap**
 
-- `ANALYSIS_VERSION`'ı artırın; sonuç yeni bir alansa önbellek kaydına ekleyin (gerekirse göç adımı).
+- Hesap hangi parçayı değiştiriyorsa `analysis::cache::VERSIONS`'ta **yalnızca onun** sürümünü artırın:
+  - `rhythm`: vuruş, ölçü, bölüm, drop, enerji (şarkı haritası). Saklanan karelerden yeniden hesaplanır, şarkı
+    çözülmez (4 dakikalık şarkıda ~50 ms). Yeni bir şarkı haritası alanı da buraya girer.
+  - `loudness`, `bass`: şarkı bir kez çözülür, FFT yapılmaz; yalnızca o ölçüm yapılır.
+  - `spectrum`: yalnızca karelerin kendisi (bantlar, kanal seviyeleri, başlangıç gücü) değişirse. Bütün kütüphane
+    baştan analiz edilir; çok büyük kütüphanelerde saatler sürer, kaçınılmalıdır.
+- Sonuç yeni bir alansa önbellek kaydına ekleyin (gerekirse göç adımı).
