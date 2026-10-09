@@ -6,6 +6,7 @@ import { InfoStack, type UpNext } from "./InfoStack";
 import { LibraryPanel } from "./LibraryPanel";
 import { MarkerPanel } from "./MarkerPanel";
 import { NowPlaying } from "./NowPlaying";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { SceneStage } from "./SceneStage";
 import { SettingsPanel } from "./SettingsPanel";
 import { SyncPanel } from "./SyncPanel";
@@ -179,13 +180,26 @@ export function PlayerScreen() {
         status.state === "error" || player.error ? " is-error" : ""
       }`}
     >
-      <SceneStage
-        scene={scene}
-        playing={playing}
-        hasTrack={hasTrack}
-        safe={visualSafe.safe}
-        skyLook={skyLook.look}
-      />
+      {/* Sahne çizilemezse yalnızca sahne yerine durgun gök kalır; başka sahne seçilince yeniden denenir. */}
+      <ErrorBoundary
+        key={`${scene}-${skyLook.look}`}
+        name="Sahne"
+        fallback={() => (
+          <div className="stage" data-scene="error">
+            <p className="stage__error" role="alert">
+              Sahne çizilemedi; hata günlüğe yazıldı. Başka bir sahne seçebilirsiniz (1–4).
+            </p>
+          </div>
+        )}
+      >
+        <SceneStage
+          scene={scene}
+          playing={playing}
+          hasTrack={hasTrack}
+          safe={visualSafe.safe}
+          skyLook={skyLook.look}
+        />
+      </ErrorBoundary>
       <div className="stage__shade" aria-hidden />
 
       <header className="topbar chrome">
@@ -287,14 +301,16 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-library"
           hidden={drawer.panel !== "library"}
         >
-          <LibraryPanel
-            library={library}
-            available={player.available}
-            extensions={info.supportedExtensions}
-            currentPath={statusPath}
-            playing={playing}
-            onPlay={playFromLibrary}
-          />
+          <ErrorBoundary name="Kütüphane">
+            <LibraryPanel
+              library={library}
+              available={player.available}
+              extensions={info.supportedExtensions}
+              currentPath={statusPath}
+              playing={playing}
+              onPlay={playFromLibrary}
+            />
+          </ErrorBoundary>
         </div>
         <div
           className="drawer__panel"
@@ -303,7 +319,9 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-eq"
           hidden={drawer.panel !== "eq"}
         >
-          <EqualizerPanel equalizer={equalizer} headphone={headphone} bypassed={bitPerfect} />
+          <ErrorBoundary name="Ekolayzer">
+            <EqualizerPanel equalizer={equalizer} headphone={headphone} bypassed={bitPerfect} />
+          </ErrorBoundary>
         </div>
         <div
           className="drawer__panel"
@@ -312,12 +330,14 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-marker"
           hidden={drawer.panel !== "marker"}
         >
-          <MarkerPanel
-            marker={marker}
-            trackTitle={status.track ? trackTitle(status.track) : null}
-            playing={playing}
-            durationSecs={durationSecs}
-          />
+          <ErrorBoundary name="İşaretleme">
+            <MarkerPanel
+              marker={marker}
+              trackTitle={status.track ? trackTitle(status.track) : null}
+              playing={playing}
+              durationSecs={durationSecs}
+            />
+          </ErrorBoundary>
         </div>
         <div
           className="drawer__panel"
@@ -326,7 +346,9 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-sync"
           hidden={drawer.panel !== "sync"}
         >
-          <SyncPanel sync={sync} playing={playing} available={player.available} />
+          <ErrorBoundary name="Senkron">
+            <SyncPanel sync={sync} playing={playing} available={player.available} />
+          </ErrorBoundary>
         </div>
         <div
           className="drawer__panel"
@@ -335,14 +357,16 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-settings"
           hidden={drawer.panel !== "settings"}
         >
-          <SettingsPanel
-            info={info}
-            status={status}
-            available={player.available}
-            visualSafe={visualSafe}
-            playback={playbackOptions}
-            skyLook={skyLook}
-          />
+          <ErrorBoundary name="Ayarlar">
+            <SettingsPanel
+              info={info}
+              status={status}
+              available={player.available}
+              visualSafe={visualSafe}
+              playback={playbackOptions}
+              skyLook={skyLook}
+            />
+          </ErrorBoundary>
         </div>
       </aside>
 

@@ -40,6 +40,8 @@ const backend = vi.hoisted(() => ({
   songMap: null as import("../lib/backend").SongMap | null,
   safe: false,
   setSafe: vi.fn(),
+  /** Çekirdek ekolayzer durumunu eksik alanlarla döndürür (0.0.29'daki sahne denetimi olayı). */
+  brokenEqualizer: false,
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -94,6 +96,13 @@ vi.mock("../lib/backend", async (importOriginal) => {
       );
     },
     logFrontendError: async (message: string) => backend.logError(message),
+    getEqualizer: async () =>
+      backend.brokenEqualizer
+        ? ({
+            enabled: true,
+            gainsDb: Array(10).fill(0),
+          } as unknown as import("../lib/backend").EqState)
+        : actual.getEqualizer(),
     getLibraryStatus: async () => backend.library ?? actual.EMPTY_LIBRARY,
     searchLibrary: async (query: string) => {
       backend.search(query);
@@ -1205,6 +1214,26 @@ describe("kulaklık düzeltmesi", () => {
     backend.pickProfile.mockResolvedValue("C:\\bozuk.txt");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Profil yükle" })));
     expect(screen.getByText(/kulaklık düzeltmesi bulunamadı/)).toBeInTheDocument();
+  });
+});
+
+describe("hata sınırları", () => {
+  afterEach(() => {
+    backend.brokenEqualizer = false;
+    vi.restoreAllMocks();
+  });
+
+  it("bir panel çökerse yalnızca o panel 'açılamadı' der; sahne ve diğer paneller çalışır", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    backend.brokenEqualizer = true;
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Ekolayzer/ })));
+    expect(await screen.findByText(/Ekolayzer açılamadı/)).toBeInTheDocument();
+    expect(backend.logError).toHaveBeenCalledWith(expect.stringMatching(/^Ekolayzer çizilemedi/));
+    // Sahne yerinde, diğer paneller açılıyor.
+    expect(document.querySelector(".stage")).not.toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    expect(screen.getByRole("button", { name: "Göl" })).toBeInTheDocument();
   });
 });
 
