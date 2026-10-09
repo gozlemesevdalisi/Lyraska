@@ -78,6 +78,9 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       şarkılar −14 LUFS'e getirilir (varsayılan açık, yükseltme gerçek tepeyi −1 dBTP'de tutar); ekolayzer sesi
       kısmadan yükseltebilir (eşitlemenin açtığı boşluk kullanılır); yeni hazır ayarlar "Bas", "Derin bas",
       "Küçük hoparlör". Bas raf filtresi gerekmedi: sürgüler zaten duyulan eğri, sorun ön kazançtaydı
+- [x] Bas motoru (0.0.29; proje sahibi: "bas dedin mi gerçekten o bas hissedilsin"): ekolayzerin üstünde büyük
+      "Bas" düğmesi (100 Hz raf, 0–12 dB) ve küçük hoparlör bası (dizüstünde çalınamayan alt bas yerine
+      harmonikleri; beyin eksik notayı tamamlar). Hazır ayarlar ikisini birlikte kullanır
 - [ ] Crossfeed
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin

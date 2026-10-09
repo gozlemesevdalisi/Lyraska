@@ -73,6 +73,8 @@ lyraska/
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
 │   │   │   ├── gapless.rs    #   boşluksuz çalma: MP4/AAC kodlayıcı dolgusu (iTunSMPB, elst)
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
+│   │   │   ├── bass.rs       #   bas düğmesi (100 Hz raf) ve küçük hoparlör bası (alt bas yerine harmonikler)
+│   │   │   ├── biquad.rs     #   ortak ikinci dereceden süzgeçler (RBJ): kulaklık düzeltmesi ve bas kullanır
 │   │   │   ├── loudness.rs   #   EBU R128 ses yüksekliği (LUFS) ve gerçek tepe (dBTP) ölçümü
 │   │   │   ├── normalize.rs  #   çalarken eşitleme (−14 LUFS) ve ekolayzerin boşluğa göre taşma koruması
 │   │   │   ├── peq.rs        #   kulaklık düzeltmesi: AutoEq/Equalizer APO profili, parametrik EQ (RBJ)
