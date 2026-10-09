@@ -136,6 +136,7 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Veritabanı yapısı değişince eski dosyalar güncellenir        | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)      |
 | Analiz hesabı değişince eski sonuçlar kullanılmaz            | `ANALYSIS_VERSION` ve önbellek testleri                          |
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                   | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)    |
+| Parlama sınırı her renk temasında ve her gök manzarasında    | `npm run check:scenes` (temaya göre renklenen sahneler, CI)      |
 | Yasaklı lisans yok                                           | `npm run check:licenses`, `cargo deny` (CI)                      |
 | Depoda ses dosyası yok                                       | `npm run check:audio` (CI)                                       |
 | Biçim ve lint temiz, tür hatası yok                          | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                |
@@ -161,6 +162,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 
 - Hareket ve parlaklığı Görsel Yönetmen'in notundan türetin; parlaklığı yalnızca nabız olaylarına ve
   yumuşak değerlere bağlayın; kendi parlama testini yazın; `scripts/check-scenes.mjs`'e ekleyin.
+  Renkleri bölüm temasından geliyorsa `themed: true` verin (parlama her temada ölçülür).
+- Sahnenin yeni bir biçimi (gece göğündeki manzaralar gibi) varsa `looks` listesine ekleyin; denetim her
+  biçimi derleyip çizer ve parlama sınırını ölçer.
 
 **Analizde yeni bir hesap**
 

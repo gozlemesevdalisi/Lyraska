@@ -58,7 +58,8 @@ lyraska/
 │   │                         # useMarker (işaretleme), useSync (ses–görüntü senkronu), useVisualFeed (görsel
 │   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
 │   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
-│   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme)
+│   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
+│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
 │   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
