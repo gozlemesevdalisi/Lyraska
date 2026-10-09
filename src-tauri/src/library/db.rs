@@ -75,6 +75,12 @@ impl Library {
         self.conn.execute_batch(sql).unwrap();
     }
 
+    /// Testlerde tek sayılık sorgu.
+    #[cfg(test)]
+    pub fn count_for_test(&self, sql: &str) -> i64 {
+        self.conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
     fn init(mut conn: Connection) -> Result<Self, LibraryError> {
         // Analiz önbelleği aynı dosyaya yazarken kısa süre beklenir.
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -95,6 +101,33 @@ impl Library {
         }
         Ok(FolderRow {
             id: self.conn.last_insert_rowid(),
+            path: path.to_owned(),
+        })
+    }
+
+    /// Yeni bir klasör ekler ve kapsadığı eski kaynakların (`covered`) yerini alır: şarkıları
+    /// silinmez, yeni klasöre taşınır. Silinseydi analizleri de silinir (tetikleyici) ve bütün
+    /// şarkılar baştan analiz edilirdi; etiketleri de yeniden okunurdu. Tek işlemde.
+    pub fn replace_folders(
+        &mut self,
+        path: &str,
+        covered: &[i64],
+    ) -> Result<FolderRow, LibraryError> {
+        let tx = self.conn.transaction()?;
+        if tx.execute("INSERT OR IGNORE INTO folders (path) VALUES (?1)", [path])? == 0 {
+            return Err(LibraryError::FolderExists);
+        }
+        let id = tx.last_insert_rowid();
+        for old in covered {
+            tx.execute(
+                "UPDATE tracks SET folder_id = ?1 WHERE folder_id = ?2",
+                [id, *old],
+            )?;
+            tx.execute("DELETE FROM folders WHERE id = ?1", [*old])?;
+        }
+        tx.commit()?;
+        Ok(FolderRow {
+            id,
             path: path.to_owned(),
         })
     }

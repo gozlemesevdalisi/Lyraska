@@ -114,7 +114,7 @@ impl LibraryService {
             return Err(LibraryError::FolderMissing(text));
         }
         let folder = {
-            let lib = self.lock()?;
+            let mut lib = self.lock()?;
             let existing = lib.folders()?;
             if let Some(parent) = existing
                 .iter()
@@ -126,13 +126,12 @@ impl LibraryService {
                     LibraryError::AlreadyCovered(parent.path.clone())
                 });
             }
-            for covered in existing
+            let covered: Vec<i64> = existing
                 .iter()
                 .filter(|f| path_covers(path, Path::new(&f.path)))
-            {
-                lib.remove_folder(covered.id)?;
-            }
-            lib.add_folder(&text)?
+                .map(|f| f.id)
+                .collect();
+            lib.replace_folders(&text, &covered)?
         };
         // Yalnızca yeni kaynak taranır: büyük kütüphanede tek bir şarkı eklemek bütün
         // diskleri yeniden dolaşmasın, şarkı listede hemen görünsün.
@@ -440,6 +439,15 @@ mod tests {
         service.add_folder(&dir.join("uc-uc-ton.mp3")).unwrap();
         wait_idle(&service);
         assert_eq!(service.status().unwrap().track_count, 1);
+        // Şarkının analizi önbellekte (aynı veritabanı).
+        let song = dir
+            .join("uc-uc-ton.mp3")
+            .to_string_lossy()
+            .replace('\'', "''");
+        service.lock().unwrap().execute_for_test(&format!(
+            "INSERT INTO analyses (path, file_size, modified, version, frames, levels, meters, onset)
+             SELECT path, file_size, modified, 1, 0, x'', x'', x'' FROM tracks WHERE path = '{song}'"
+        ));
 
         // Sonra bütün klasör eklenince tek şarkı kaynağı kalkar, şarkılar klasörden gelir.
         service.add_folder(&dir).unwrap();
@@ -448,6 +456,12 @@ mod tests {
         assert_eq!(status.folders.len(), 1);
         assert_eq!(status.folders[0].path, dir.to_string_lossy());
         assert_eq!(status.track_count, 2);
+        // Şarkı silinip yeniden eklenmedi: analizi (ve etiketi) korunur, baştan analiz edilmez.
+        let analyses = service
+            .lock()
+            .unwrap()
+            .count_for_test("SELECT COUNT(*) FROM analyses");
+        assert_eq!(analyses, 1, "analiz silinmemeli");
     }
 
     #[test]
