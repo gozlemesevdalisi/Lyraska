@@ -24,24 +24,36 @@ PlayerScreen ── usePlayback ── invoke ──▶ commands.rs (ince) ─�
 
 ## İş parçacıkları
 
-| İş parçacığı            | Ne yapar                                           | Kural                                      |
-| ----------------------- | -------------------------------------------------- | ------------------------------------------ |
-| Tauri komutları         | Arayüzün isteklerini karşılar                      | Kısa sürer; ağır işi arka plana verir      |
-| Çözme (`player.rs`)     | Dosyayı çözer, boşluksuz geçiş, hız dönüştürme     | Halka tampona (rtrb) yazar                 |
-| **Ses çıkışı**          | Halka tampondan okur, EQ ve taşma koruması, aygıta | **Gerçek zamanlı:** ayırma/kilit/panik yok |
-| Analiz (şarkı açılınca) | Spektrum, seviye, vuruş, şarkı haritası            | Sonuç önbelleğe yazılır                    |
-| Arka plan analizi       | Kütüphaneyi düşük öncelikle analiz eder            | Çalan → sıradaki → geri kalan              |
-| Kütüphane taraması      | Klasörleri tarar, etiketleri okur                  | Değişmeyeni atlar                          |
+| İş parçacığı            | Ne yapar                                         | Kural                                      |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------ |
+| Tauri komutları         | Arayüzün isteklerini karşılar                    | Kısa sürer; ağır işi arka plana verir      |
+| Çözme (`player.rs`)     | Dosyayı çözer, boşluksuz geçiş, hız dönüştürme   | Halka tampona (rtrb) yazar                 |
+| **Ses çıkışı**          | Halka tampondan okur, EQ, eşitleme, aygıta yazar | **Gerçek zamanlı:** ayırma/kilit/panik yok |
+| Analiz (şarkı açılınca) | Spektrum, seviye, vuruş, şarkı haritası, LUFS    | Sonuç önbelleğe yazılır                    |
+| Hızlı ölçüm             | Yalnızca ses yüksekliği (EBU R128), FFT'siz      | İlk sesten önce bitsin diye ayrı ve hızlı  |
+| Arka plan analizi       | Kütüphaneyi düşük öncelikle analiz eder          | Çalan → sıradaki → geri kalan              |
+| Kütüphane taraması      | Klasörleri tarar, etiketleri okur                | Değişmeyeni atlar                          |
 
 ## Ses yolu
 
 ```
 dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rubato (aygıt hızına) ─▶ halka tampon
-      ─▶ [ses çıkışı] kulaklık düzeltmesi ─▶ ekolayzer ─▶ geçiş (fade) ─▶ taşma koruması ─▶ f32 ─▶ WASAPI
+      ─▶ [ses çıkışı] kulaklık düzeltmesi ─▶ ekolayzer ─▶ eşitleme × ekolayzer koruması ─▶ geçiş (fade)
+      ─▶ taşma koruması (sınırlayıcı) ─▶ f32 ─▶ WASAPI
 ```
 
 - İç işlem 64-bit kayan noktadır; dönüşüm yalnızca çözme girişinde ve aygıt çıkışında yapılır.
-- EQ ve kulaklık ayarları ses iş parçacığına kilitsiz (atomik) iletilir; değişiklik yumuşakça uygulanır.
+- EQ, kulaklık ve eşitleme ayarları ses iş parçacığına kilitsiz (atomik) iletilir; değişiklik yumuşakça uygulanır.
+- **Ses yüksekliği eşitlemesi** (`audio/loudness.rs`, `audio/normalize.rs`):
+  - Her şarkının EBU R128 yüksekliği (LUFS) ve gerçek tepesi (dBTP) analizde ölçülür, önbellekte saklanır.
+    Önbellekte yoksa şarkı açılınca ayrı bir hızlı ölçüm yapılır.
+  - Şarkı −14 LUFS'e getirilir; yükseltme gerçek tepeyi −1 dBTP'nin üstüne çıkarmaz.
+  - Ekolayzer artık sesi kendisi kısmaz; yalnızca en büyük yükseltmesini bildirir. Eşitlemenin tepeye açtığı
+    boşluk yetiyorsa hiç kısılmaz, yetmezse yalnızca eksik kadar kısılır (hızlı iner, yavaş kalkar).
+  - Oturumdaki her şarkının akıştaki başlangıç karesi `TrackLevels`'ta tutulur: boşluksuz geçişte kazanç tam
+    şarkı sınırında değişir.
+  - İlk ses, ölçüm için en fazla 0,6 sn bekler (sessizlik yazılır, şarkı yerinde durur); önbellekteki şarkıda ve
+    sarmada beklenmez. Ölçüm yetişmezse tipik bir kayıt (−10 LUFS) varsayılır, ölçüm gelince yavaşça düzelir.
 
 ## Görsel yolu
 
@@ -74,7 +86,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 | Ne                              | Nerede                                    | Sürüm/değişiklik nasıl yönetilir                           |
 | ------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
 | Kütüphane ve analiz önbelleği   | `library.sqlite3` (uygulama veri klasörü) | `storage.rs`: sıralı göç adımları (`user_version`)         |
-| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır)             |
+| Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır; şu an 3)    |
 | Ayarlar                         | `settings.json`                           | Eksik alan varsayılanla dolar; bozuk dosyada varsayılanlar |
 | İşaretler                       | `isaretler/*.json`                        | Dosyada `format` alanı                                     |
 | Hata günlüğü                    | `logs/lyraska.log`                        | 1 MB'ta bir yedeklenir                                     |
@@ -86,6 +98,8 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Kural                                                 | Denetleyen                                                    |
 | ----------------------------------------------------- | ------------------------------------------------------------- |
 | Ses çıkışında bellek ayırma yok                       | `audio::render` testi `ses_yolu_bellek_ayirmaz`               |
+| Ses yüksekliği ölçümü EBU R128'e uyar                 | `audio::loudness` testleri (EBU Tech 3341 durumları 1–5)      |
+| Eşitleme ve ekolayzer kapalıyken ses bit bit aynı     | `audio::render` ve `audio::normalize` testleri                |
 | Kütüphane kodunda `unwrap`/`expect`/`panic!` yok      | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`   |
 | `unsafe` yok                                          | `unsafe_code = "deny"`                                        |
 | Rust ↔ arayüz veri tipleri aynı                       | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı       |

@@ -57,7 +57,8 @@ lyraska/
 │   ├── hooks/                # usePlayback (oynatıcı + çalma sırası), useLibrary, useEqualizer, useHeadphone,
 │   │                         # useMarker (işaretleme), useSync (ses–görüntü senkronu), useVisualFeed (görsel
 │   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
-│   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü)
+│   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
+│   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
 │   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
@@ -72,10 +73,12 @@ lyraska/
 │   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
 │   │   │   ├── gapless.rs    #   boşluksuz çalma: MP4/AAC kodlayıcı dolgusu (iTunSMPB, elst)
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
+│   │   │   ├── loudness.rs   #   EBU R128 ses yüksekliği (LUFS) ve gerçek tepe (dBTP) ölçümü
+│   │   │   ├── normalize.rs  #   çalarken eşitleme (−14 LUFS) ve ekolayzerin boşluğa göre taşma koruması
 │   │   │   ├── peq.rs        #   kulaklık düzeltmesi: AutoEq/Equalizer APO profili, parametrik EQ (RBJ)
 │   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
 │   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (0 dBFS)
-│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, taşma koruması, duraklatma geçişi
+│   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, eşitleme, taşma koruması, duraklatma geçişi
 │   │   │   ├── output.rs     #   çıkış soyutlaması; output/wasapi.rs = Windows WASAPI,
 │   │   │   │                 #   output/simulated.rs = testlerde aygıtsız sanal çıkış
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
@@ -85,9 +88,9 @@ lyraska/
 │   │   │   └── service.rs    #   arka plan taraması; komutların kullandığı katman
 │   │   ├── storage.rs        # library.sqlite3 şeması ve sıralı göçleri (kütüphane + analiz önbelleği)
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
-│   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, güvenli mod, ses gecikmesi)
+│   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, eşitleme, güvenli mod, ses gecikmesi)
 │   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
-│   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant) ve seviyeler
+│   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant), seviyeler, LUFS
 │   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
 │   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
