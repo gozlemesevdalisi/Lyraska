@@ -20,7 +20,11 @@ export const SEEK_STEP_SECONDS = 5;
 
 export interface PlayerControls {
   status: PlaybackStatus;
-  /** Ekranda gösterilecek konum: her karede akıcı ilerler, sarmada anında değişir. */
+  /**
+   * Son bilinen konum: ses motorunun düzenli bildiriminde (saniyede birkaç kez) ve sarmada
+   * güncellenir. Her karede akıcı ilerleyen konum için [`useLivePosition`]: ekranın tamamı
+   * her karede yeniden çizilmesin diye yalnızca onu gösteren bileşenler kullanır.
+   */
   position: number;
   /** Tam şu anki konum (saat ölçümü; React çizimini beklemez). İşaretleme için. */
   positionNow: () => number;
@@ -196,19 +200,6 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     return () => window.clearInterval(timer);
   }, [available, hasTrack, applyStatus]);
 
-  // Çalarken konumu her ekran karesinde ilerlet.
-  const playing = status.state === "playing";
-  useEffect(() => {
-    if (!playing || typeof window.requestAnimationFrame !== "function") return;
-    let raf = 0;
-    const tick = () => {
-      setPosition(positionNow());
-      raf = window.requestAnimationFrame(tick);
-    };
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
-  }, [playing, positionNow]);
-
   // Klavye kısayolları
   useEffect(() => {
     if (!available) return;
@@ -249,4 +240,36 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     stop,
     seek,
   };
+}
+
+/**
+ * Çalarken her ekran karesinde akıcı ilerleyen konum (duraklatılmışken son bilinen konum).
+ * Yalnızca konumu gösteren küçük bileşenler (süre, şarkı haritası şeridi, drop sayacı)
+ * kullanır: yoksa her karede bütün ekran (çekmecedeki paneller, kütüphane listesi) yeniden
+ * çizilirdi; büyük kütüphanede bu, karenin önemli bir kısmını yiyordu.
+ */
+export function useLivePosition(
+  player: Pick<PlayerControls, "status" | "position" | "positionNow">,
+) {
+  const { status, position, positionNow } = player;
+  const playing = status.state === "playing";
+  const [live, setLive] = useState(position);
+  // Sarma ve ses motorunun bildirimi bir sonraki kareyi beklemeden görünsün.
+  const [known, setKnown] = useState(position);
+  if (known !== position) {
+    setKnown(position);
+    setLive(position);
+  }
+  useEffect(() => {
+    if (!playing || typeof window.requestAnimationFrame !== "function") return;
+    let raf = 0;
+    const tick = () => {
+      setLive(positionNow());
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [playing, positionNow]);
+  // Duraklatılmışken ya da sarınca (bir sonraki kareden önce) bilinen konum.
+  return playing ? live : position;
 }
