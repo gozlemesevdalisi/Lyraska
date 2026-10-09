@@ -7,6 +7,8 @@
 //!   kulüpteki gibi göğüste hissedilen gümbürtü, kayıtta derin bas olmasa da. Bas bandının
 //!   (40–120 Hz) her tam dalgasında işaret değiştiren bir kare dalga, bandın zarfıyla
 //!   çarpılır ve dördüncü dereceden 60 Hz süzgeçle yumuşatılır (klasik oktav bölücü).
+//! - **Vuruş** (%0–100; [`super::punch`]): davul vuruşlarının ilk anı 8 dB'ye kadar
+//!   güçlenir, sürekli bas aynen kalır. Bas şişmeden göğse çarpan vuruş.
 //! - **Küçük hoparlör bası**: dizüstü ve küçük hoparlörler ~100 Hz'in altını çalamaz;
 //!   oradaki bası yükseltmek yalnızca bozulma yaratır. Bunun yerine basın 2., 3. ve 4.
 //!   harmonikleri üretilip eklenir: beyin, duyulmayan temel notayı harmoniklerden
@@ -20,7 +22,8 @@
 //! taşacağı kadar kısar. Her şarkının bas tepeleri analizde ölçülür ([`BassPeakMeter`]):
 //! rafın her kazancında şarkının tepesi ne kadar yükseliyor. Çoğu şarkıda tepe bastan
 //! değil vokal ve davuldan gelir; bas +12 dB'de bile tepe birkaç dB yükselir. Ölçüm yoksa
-//! en kötü durum (rafın tamamı) varsayılır.
+//! en kötü durum (rafın tamamı) varsayılır. Vuruşun rafı bas düğmesininkiyle aynı köşede:
+//! ikisi tek raf gibi (kazançlar toplanarak) hesaplanır; vuruşun en yüksek anı ayrılır.
 //!
 //! Ayarlar ekolayzerin kilitsiz kanalından ([`EqControl`]) okunur; değişiklikler ~40 ms'de
 //! yumuşakça uygulanır. Hepsi kapalıyken ses hiç işlenmez. Bellek yalnızca kurulurken
@@ -33,6 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use super::biquad::{self, Biquad, State};
 use super::eq::EqControl;
+use super::punch::{Punch, PUNCH_MAX_DB};
 use super::Sample;
 
 /// Bas düğmesinin üst sınırı (dB).
@@ -85,8 +89,11 @@ const HARMONIC_ALLOWANCE_DB: f64 = 3.0;
 /// Ölçülen bas tepelerine eklenen güvenlik payı (dB): çalma hızı analizinkinden farklı
 /// olabilir, ara değerler doğrusal tahmin edilir.
 const MEASURED_MARGIN_DB: f64 = 0.5;
-/// Bas tepelerinin ölçüldüğü raf kazançları (dB).
-pub const PEAK_STEPS_DB: [f64; 6] = [3.0, 6.0, 9.0, 12.0, 15.0, 18.0];
+/// Bas tepelerinin ölçüldüğü raf kazançları (dB): bas düğmesi ve vuruş birlikte (18 + 8).
+pub const PEAK_STEPS_DB: [f64; 9] = [3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0];
+const STEPS: usize = PEAK_STEPS_DB.len();
+// Bas düğmesi ve vuruş birlikte en yüksekteyken de tepe ölçümü yetişir (derlemede denetlenir).
+const _: () = assert!(PEAK_STEPS_DB[STEPS - 1] >= MAX_BASS_DB + PUNCH_MAX_DB);
 
 /// Düğmenin ayarından harmonik miktarı.
 fn harmonic_amount(bass_db: f64) -> f64 {
@@ -133,7 +140,7 @@ const REFERENCE_RATE: f64 = 48_000.0;
 #[serde(rename_all = "camelCase")]
 pub struct BassPeaks {
     /// [`PEAK_STEPS_DB`] kazançlarındaki raf, şarkının tepesini kaç dB yükseltiyor.
-    pub shelf_rise_db: [f64; 6],
+    pub shelf_rise_db: [f64; STEPS],
     /// Alt oktavın kaynak bandının (40–120 Hz) tepesi, şarkının tepesine göre (dB, ≤ 0).
     pub octave_band_db: f64,
 }
@@ -160,9 +167,9 @@ impl BassPeaks {
 /// Analizde bas tepelerini ölçer: her kanal [`PEAK_STEPS_DB`] kazançlarındaki raflardan
 /// geçirilir, tepeleri tutulur.
 pub struct BassPeakMeter {
-    shelves: [Biquad; 6],
-    states: Vec<[State; 6]>,
-    peaks: [f64; 6],
+    shelves: [Biquad; STEPS],
+    states: Vec<[State; STEPS]>,
+    peaks: [f64; STEPS],
     raw_peak: f64,
     band: [Biquad; 2],
     band_state: [State; 3],
@@ -174,8 +181,8 @@ impl BassPeakMeter {
         let rate = f64::from(sample_rate.max(1));
         Self {
             shelves: PEAK_STEPS_DB.map(|db| Biquad::low_shelf(SHELF_HZ, db, FRAC_1_SQRT_2, rate)),
-            states: vec![[[0.0; 2]; 6]; channels.max(1)],
-            peaks: [0.0; 6],
+            states: vec![[[0.0; 2]; STEPS]; channels.max(1)],
+            peaks: [0.0; STEPS],
             raw_peak: 0.0,
             band: [
                 Biquad::highpass(OCTAVE_LOW_HZ, FRAC_1_SQRT_2, rate),
@@ -218,6 +225,8 @@ impl BassPeakMeter {
 pub struct BassBoost {
     /// Raf kazancı (dB).
     pub shelf_db: f64,
+    /// Vuruşun en büyük raf kazancı (dB; vuruşun en yüksek anı, rafa eklenir).
+    pub punch_db: f64,
     /// Derinlik (0..1).
     pub depth: f64,
     /// Ölçümden bağımsız en küçük yükseltme (dB): küçük hoparlör kipi ve geçişleri.
@@ -227,7 +236,8 @@ pub struct BassBoost {
 impl BassBoost {
     /// Şarkının tepesinin en fazla kaç dB yükseleceği.
     pub fn rise_db(&self, peaks: Option<&BassPeaks>) -> f64 {
-        let shelf = peaks.map_or(self.shelf_db.max(0.0), |p| p.shelf_rise_db(self.shelf_db));
+        let total = self.shelf_db + self.punch_db;
+        let shelf = peaks.map_or(total.max(0.0), |p| p.shelf_rise_db(total));
         let band = peaks.map_or(1.0, |p| db_to_linear(p.octave_band_db));
         let octave = self.depth.max(0.0) * OCTAVE_PEAK * band;
         linear_to_db(db_to_linear(shelf) + octave).max(self.floor_db)
@@ -236,22 +246,25 @@ impl BassBoost {
 
 /// Ayarlardan bas motorunun en kötü durum yükseltmesi (dB; arayüzdeki koruma göstergesi ve
 /// ölçüm yokken).
-pub fn boost_db(bass_db: f64, depth: f64, small_speaker: bool) -> f64 {
-    settings_boost(bass_db, depth, small_speaker).rise_db(None)
+pub fn boost_db(bass_db: f64, depth: f64, punch: f64, small_speaker: bool) -> f64 {
+    settings_boost(bass_db, depth, punch, small_speaker).rise_db(None)
 }
 
-/// Ayarlardan bas motorunun yükseltmesi (ölçüm uygulanmadan).
-pub fn settings_boost(bass_db: f64, depth: f64, small_speaker: bool) -> BassBoost {
+/// Ayarlardan bas motorunun yükseltmesi (ölçüm uygulanmadan). `punch`: vuruş (0..1).
+pub fn settings_boost(bass_db: f64, depth: f64, punch: f64, small_speaker: bool) -> BassBoost {
+    let punch_db = punch.clamp(0.0, 1.0) * PUNCH_MAX_DB;
     if small_speaker {
-        // Alt oktav küçük hoparlörde süzülür.
+        // Alt oktav küçük hoparlörde süzülür; vuruşun rafı da alt bas süzgecinden geçer.
         BassBoost {
             shelf_db: 0.0,
+            punch_db: 0.0,
             depth: 0.0,
-            floor_db: small_speaker_boost_db(bass_db),
+            floor_db: small_speaker_boost_db(bass_db + punch_db),
         }
     } else {
         BassBoost {
             shelf_db: bass_db,
+            punch_db,
             depth,
             floor_db: 0.0,
         }
@@ -346,6 +359,10 @@ pub struct BassProcessor {
     /// Derinlik (0..1) ve hedefi.
     depth: f64,
     depth_target: f64,
+    /// Vuruş (0..1) ve hedefi.
+    punch_amount: f64,
+    punch_target: f64,
+    punch: Punch,
     /// Karışım ve derinlik her örnekte bu kadar ilerler: basamaklı geçiş "fermuar" sesi yapar.
     ramp_step: f64,
     /// Bas bandını ayıran Linkwitz-Riley süzgeci (iki Butterworth art arda).
@@ -387,6 +404,9 @@ impl BassProcessor {
             mix_target: 0.0,
             depth: 0.0,
             depth_target: 0.0,
+            punch_amount: 0.0,
+            punch_target: 0.0,
+            punch: Punch::new(channels, sample_rate),
             ramp_step: 1.0 / (SMOOTH_SECONDS * rate),
             split: Biquad::lowpass(SPLIT_HZ, q, rate),
             split_state: [[0.0; 2]; 2],
@@ -409,6 +429,7 @@ impl BassProcessor {
         processor.shelf_db = processor.target_db;
         processor.mix = processor.mix_target;
         processor.depth = processor.depth_target;
+        processor.punch_amount = processor.punch_target;
         processor.shelf = Biquad::low_shelf(SHELF_HZ, processor.shelf_db, q, rate);
         processor.refresh_boost();
         processor
@@ -422,6 +443,8 @@ impl BassProcessor {
             && self.mix_target == 0.0
             && self.depth == 0.0
             && self.depth_target == 0.0
+            && self.punch_amount == 0.0
+            && self.punch_target == 0.0
     }
 
     /// Şu anki yükseltme (taşma korumasına). Gerçek zamanlı yolda her turda okunur; hesap
@@ -435,14 +458,15 @@ impl BassProcessor {
     fn refresh_boost(&mut self) {
         let bass_db = self.shelf_db.max(self.target_db);
         let depth = self.depth.max(self.depth_target);
-        let full = settings_boost(bass_db, depth, false);
+        let punch = self.punch_amount.max(self.punch_target);
+        let full = settings_boost(bass_db, depth, punch, false);
         self.boost = if self.mix == 0.0 && self.mix_target == 0.0 {
             full
         } else if self.mix == 1.0 && self.mix_target == 1.0 {
-            settings_boost(bass_db, depth, true)
+            settings_boost(bass_db, depth, punch, true)
         } else {
             BassBoost {
-                floor_db: small_speaker_boost_db(bass_db),
+                floor_db: small_speaker_boost_db(bass_db + full.punch_db),
                 ..full
             }
         };
@@ -463,6 +487,12 @@ impl BassProcessor {
                 0.0
             };
             self.depth_target = if on { settings.bass_depth } else { 0.0 };
+            let punch_target = if on { settings.bass_punch } else { 0.0 };
+            if punch_target > 0.0 && self.punch_amount == 0.0 && self.punch_target == 0.0 {
+                // Kapalıyken açıldı: algılayıcı önce şarkının bas düzeyini öğrensin.
+                self.punch.restart();
+            }
+            self.punch_target = punch_target;
             // Yeni hedef hemen korumaya girsin (yükseltme gelmeden ses kısılmış olsun).
             self.boost_dirty = true;
         }
@@ -479,6 +509,7 @@ impl BassProcessor {
             biquad::flush(state);
         }
         self.octaver.flush();
+        self.punch.flush();
     }
 
     /// Ayarları hedefe bir adım yaklaştırır (her `update_frames` karede bir).
@@ -551,6 +582,15 @@ impl BassProcessor {
         {
             self.boost_dirty = true;
         }
+        if self.punch_amount != self.punch_target
+            && Self::ramp(&mut self.punch_amount, self.punch_target, self.ramp_step)
+        {
+            self.boost_dirty = true;
+        }
+        // Vuruş önce: bas düğmesi, alt oktav ve harmonikler vuruşlu bası işler.
+        if self.punch_amount > 0.0 {
+            self.punch.process_frame(frame, self.punch_amount);
+        }
 
         let small = self.mix > 0.0;
         // Alt oktav küçük hoparlörde süzülür (çalınamaz); geçişte karışımla azalır.
@@ -597,10 +637,15 @@ mod tests {
     }
 
     fn deep(bass_db: f64, bass_depth: f64, small_speaker: bool) -> Arc<EqControl> {
+        punchy(bass_db, bass_depth, 0.0, small_speaker)
+    }
+
+    fn punchy(bass_db: f64, bass_depth: f64, bass_punch: f64, small: bool) -> Arc<EqControl> {
         Arc::new(EqControl::new(EqSettings {
             bass_db,
-            small_speaker,
+            small_speaker: small,
             bass_depth,
+            bass_punch,
             ..EqSettings::default()
         }))
     }
@@ -840,13 +885,13 @@ mod tests {
         assert_eq!(BassPeakMeter::new(RATE, 2).finish(), None);
         // Ara değerler doğrusal ve güvenlik paylı.
         let p = BassPeaks {
-            shelf_rise_db: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            shelf_rise_db: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
             octave_band_db: -6.0,
         };
         assert_eq!(p.shelf_rise_db(0.0), 0.0);
         assert!((p.shelf_rise_db(1.5) - (0.5 + MEASURED_MARGIN_DB)).abs() < 1e-9);
         assert!((p.shelf_rise_db(10.5) - (3.5 + MEASURED_MARGIN_DB)).abs() < 1e-9);
-        assert!((p.shelf_rise_db(30.0) - (6.0 + MEASURED_MARGIN_DB)).abs() < 1e-9);
+        assert!((p.shelf_rise_db(30.0) - (9.0 + MEASURED_MARGIN_DB)).abs() < 1e-9);
     }
 
     #[test]
@@ -854,18 +899,21 @@ mod tests {
         // Alt bas süzüldüğü için rafın tamamı tepeye eklenmez (ölçülen: bas 8'de ~3 dB).
         // Fazla koruma, dizüstünde sesi gereksiz kısardı.
         assert!(
-            boost_db(8.0, 0.0, true) < 5.0,
+            boost_db(8.0, 0.0, 0.0, true) < 5.0,
             "{}",
-            boost_db(8.0, 0.0, true)
+            boost_db(8.0, 0.0, 0.0, true)
         );
         assert!(
-            boost_db(12.0, 0.0, true) < 7.0,
+            boost_db(12.0, 0.0, 0.0, true) < 7.0,
             "{}",
-            boost_db(12.0, 0.0, true)
+            boost_db(12.0, 0.0, 0.0, true)
         );
-        assert_eq!(boost_db(8.0, 0.0, false), 8.0);
+        assert_eq!(boost_db(8.0, 0.0, 0.0, false), 8.0);
         let processor = BassProcessor::new(control(8.0, true), 1, RATE);
-        assert_eq!(processor.boost().rise_db(None), boost_db(8.0, 0.0, true));
+        assert_eq!(
+            processor.boost().rise_db(None),
+            boost_db(8.0, 0.0, 0.0, true)
+        );
     }
 
     #[test]
@@ -902,6 +950,91 @@ mod tests {
             during <= settled * 1.1,
             "geçişte {during:.4}, oturunca {settled:.4}"
         );
+    }
+
+    #[test]
+    fn olculen_kazanclar_artarak_sirali() {
+        assert!(PEAK_STEPS_DB.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn vurus_koruma_payi_tepeleri_karsilar() {
+        use crate::audio::punch::tests::kick;
+        // Tipik kayıt: davul vuruşları, sürekli bas ve ortada ses (vokal).
+        let signal =
+            |f: usize| 0.35 * kick(f) + 0.1 * sine(55.0, RATE, f) + 0.35 * sine(1000.0, RATE, f);
+        let mut meter = BassPeakMeter::new(RATE, 1);
+        for f in 0..RATE as usize * 2 {
+            meter.add(&[signal(f)]);
+        }
+        let peaks = meter.finish().unwrap();
+        let input_peak = peak(&(0..RATE as usize * 2).map(signal).collect::<Vec<_>>());
+        for (bass_db, punch, small) in [
+            (0.0, 1.0, false),
+            (6.0, 0.5, false),
+            (14.0, 0.7, false),
+            (18.0, 1.0, false),
+            (8.0, 1.0, true),
+        ] {
+            let mut processor = BassProcessor::new(punchy(bass_db, 0.0, punch, small), 1, RATE);
+            let rise = linear_to_db(peak(&run_signal(&mut processor, signal)) / input_peak);
+            let worst = processor.boost().rise_db(None);
+            assert!(
+                rise <= worst + 0.01,
+                "bas {bass_db}, vuruş {punch}, küçük {small}: gerçek {rise:.2} > en kötü {worst:.2}"
+            );
+            if !small {
+                let predicted = processor.boost().rise_db(Some(&peaks));
+                assert!(
+                    rise <= predicted + 0.1,
+                    "bas {bass_db}, vuruş {punch}: gerçek {rise:.2} > ölçülen {predicted:.2}"
+                );
+            }
+        }
+        // Vuruş yalnızca ilk an; koruma ona göre: vuruş %100 = 8 dB'lik raf.
+        assert_eq!(boost_db(10.0, 0.0, 1.0, false), 10.0 + PUNCH_MAX_DB);
+        assert_eq!(boost_db(10.0, 0.0, 0.5, false), 10.0 + PUNCH_MAX_DB / 2.0);
+    }
+
+    #[test]
+    fn vurus_acilinca_tik_olmaz_surekli_bas_degismez() {
+        let control = control(0.0, false);
+        let mut processor = BassProcessor::new(Arc::clone(&control), 1, RATE);
+        let quarter = RATE as usize / 4;
+        let mut previous = 0.0;
+        let (mut during, mut settled): (f64, f64) = (0.0, 0.0);
+        let mut tail = Vec::new();
+        for f in 0..RATE as usize * 2 {
+            if f % 480 == 0 {
+                processor.begin_block();
+            }
+            if f == quarter {
+                control.set(EqSettings {
+                    bass_punch: 1.0,
+                    ..EqSettings::default()
+                });
+            }
+            let mut frame = [0.3 * sine(55.0, RATE, f)];
+            processor.process_frame(&mut frame);
+            let jump = (frame[0] - previous).abs();
+            previous = frame[0];
+            if (quarter..2 * quarter).contains(&f) {
+                during = during.max(jump);
+            } else if f >= 3 * quarter {
+                settled = settled.max(jump);
+            }
+            if f >= RATE as usize {
+                tail.push(frame[0]);
+            }
+        }
+        assert!(
+            during <= settled * 1.01,
+            "geçişte {during:.4}, oturunca {settled:.4}"
+        );
+        // Sürekli bas (bas gitar) vuruş açıkken de aynen geçer.
+        let (amplitude, noise_db) = fit(&tail, 55.0, RATE);
+        assert!((linear_to_db(amplitude / 0.3)).abs() < 0.05);
+        assert!(noise_db < -100.0, "bozulma {noise_db:.1} dB");
     }
 
     #[test]

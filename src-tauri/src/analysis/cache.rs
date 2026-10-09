@@ -30,7 +30,9 @@ use crate::audio::loudness::Loudness;
 /// 2: kareler her örnekleme hızında tam 1/60 saniyede (22,05 / 32 kHz'te kayıyordu);
 /// vuruş gecikmesi örnekleme hızına göre düşülüyor.
 /// 3: ses yüksekliği (EBU R128) ve gerçek tepe ölçülüyor.
-pub const ANALYSIS_VERSION: i64 = 4;
+/// 4: bas tepeleri ölçülüyor (bas düğmesinin akıllı koruması).
+/// 5: bas tepeleri 27 dB'ye kadar ölçülüyor (bas düğmesi ve vuruş birlikte).
+pub const ANALYSIS_VERSION: i64 = 5;
 
 /// Sıkıştırma düzeyi (0–10): 6 hız ve boyut arasında iyi bir denge.
 const COMPRESSION_LEVEL: u8 = 6;
@@ -310,7 +312,7 @@ mod tests {
                 true_peak_dbtp: 0.4,
             }),
             bass_peaks: Some(BassPeaks {
-                shelf_rise_db: [0.2, 0.5, 1.25, 2.5, 4.0, 6.5],
+                shelf_rise_db: [0.2, 0.5, 1.25, 2.5, 4.0, 6.5, 8.75, 11.0, 13.5],
                 octave_band_db: -7.5,
             }),
         }

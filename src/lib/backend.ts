@@ -242,6 +242,7 @@ export async function getEqualizer(): Promise<EqState> {
       bassDb: 0,
       smallSpeaker: false,
       bassDepth: 0,
+      bassPunch: 0,
     });
   }
   return invoke<EqState>("equalizer_get");

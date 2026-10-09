@@ -33,6 +33,7 @@ pub mod normalize;
 pub mod output;
 pub mod peq;
 pub mod player;
+pub mod punch;
 pub mod render;
 pub mod resample;
 
