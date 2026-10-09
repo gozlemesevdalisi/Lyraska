@@ -21,7 +21,7 @@ use rtrb::{Producer, RingBuffer};
 use serde::Serialize;
 
 use super::decode::{Decoder, TrackInfo};
-use super::eq::{protection_db, Design, EqControl, EqSettings};
+use super::eq::{protection_db, Design, EqControl, EqSettings, EqState};
 use super::normalize::{LoudnessControl, TrackLevels};
 use super::output::{self, DeviceInfo, OutputMode, OutputSpec};
 use super::peq::{HeadphoneSettings, PeqControl};
@@ -323,6 +323,9 @@ impl Session {
         if let Some(measured) = analysis.as_ref().and_then(|a| a.measured_loudness()) {
             levels.set_loudness(0, measured);
         }
+        if let Some(peaks) = analysis.as_ref().and_then(|a| a.bass_peaks()) {
+            levels.set_bass_peaks(0, &peaks);
+        }
         let shared = Arc::new(SharedState::new(
             !autoplay,
             first,
@@ -534,7 +537,7 @@ pub struct Player {
     audio_delay_ms: i32,
     /// Görsellere uygulanan ekolayzer tepkisi (dB, spektrum bantları için) ve en büyük
     /// yükseltme, hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
-    visual_eq: Option<(u64, u32, [f64; BANDS], f64)>,
+    visual_eq: Option<(u64, u32, [f64; BANDS], f64, super::bass::BassBoost)>,
 }
 
 impl Player {
@@ -809,14 +812,27 @@ impl Player {
             return;
         };
         for (index, segment) in segments.iter().enumerate() {
-            if levels.is_known(index) {
+            let known = levels.is_known(index);
+            let bass_known = levels.has_bass_peaks(index);
+            if known && bass_known {
                 continue;
             }
-            if let Some(measured) = self
+            let Some(spectrogram) = self
                 .analysis_for(&segment.info.path)
-                .and_then(|a| a.spectrogram.measured_loudness())
-            {
-                levels.set_loudness(index, measured);
+                .map(|a| &a.spectrogram)
+            else {
+                continue;
+            };
+            if !known {
+                if let Some(measured) = spectrogram.measured_loudness() {
+                    levels.set_loudness(index, measured);
+                }
+            }
+            // Bas tepeleri tam analizle gelir: koruma o an yumuşakça gevşer.
+            if !bass_known {
+                if let Some(peaks) = spectrogram.bass_peaks() {
+                    levels.set_bass_peaks(index, &peaks);
+                }
             }
         }
     }
@@ -841,6 +857,17 @@ impl Player {
     /// Ekolayzer ayarları.
     pub fn equalizer(&self) -> EqSettings {
         self.eq.settings()
+    }
+
+    /// Arayüzün gösterdiği ekolayzer durumu: eğri ve çalan şarkıya göre taşma koruması
+    /// (boşluk ve ölçülmüş bas tepeleri).
+    pub fn equalizer_state(&self) -> EqState {
+        let level = self.current_level();
+        EqState::new(
+            self.eq.settings(),
+            level.map_or(0.0, |l| l.headroom_db),
+            level.and_then(|l| l.bass_peaks).as_ref(),
+        )
     }
 
     /// Ekolayzer ayarlarını değiştirir; çalan ses ~40 ms içinde yumuşakça uyar.
@@ -928,11 +955,13 @@ impl Player {
     /// Tepki, ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
     fn visual_eq_offsets(&mut self, rate: u32) -> [f64; BANDS] {
         let version = self.eq.version();
-        let (response, boost_db) = match self.visual_eq {
-            Some((v, r, response, boost_db)) if v == version && r == rate => (response, boost_db),
+        let (response, eq_db, bass) = match self.visual_eq {
+            Some((v, r, response, eq_db, bass)) if v == version && r == rate => {
+                (response, eq_db, bass)
+            }
             _ => {
                 let settings = self.eq.settings();
-                let (response, boost_db) = if settings.is_active() {
+                let (response, eq_db) = if settings.is_active() {
                     let rate_hz = f64::from(rate);
                     let design = Design::new(&settings.gains_db, rate_hz);
                     let (bass_db, small_speaker) = settings.effective_bass();
@@ -940,18 +969,20 @@ impl Player {
                         design.response_db(hz, rate_hz)
                             + super::bass::response_db(bass_db, small_speaker, hz, rate_hz)
                     });
-                    (
-                        response,
-                        -design.preamp_db + super::bass::boost_db(bass_db, small_speaker),
-                    )
+                    (response, -design.preamp_db)
                 } else {
                     ([0.0; BANDS], 0.0)
                 };
-                self.visual_eq = Some((version, rate, response, boost_db));
-                (response, boost_db)
+                let bass = settings.bass_boost();
+                self.visual_eq = Some((version, rate, response, eq_db, bass));
+                (response, eq_db, bass)
             }
         };
-        let protection = protection_db(boost_db, self.headroom_db());
+        // Ses yolundaki gibi: bas, şarkının ölçülmüş bas tepelerine göre.
+        let level = self.current_level();
+        let headroom = level.map_or(0.0, |l| l.headroom_db);
+        let peaks = level.and_then(|l| l.bass_peaks);
+        let protection = protection_db(eq_db + bass.rise_db(peaks.as_ref()), headroom);
         response.map(|db| db + protection)
     }
 
@@ -1364,9 +1395,16 @@ mod tests {
     #[test]
     fn oynatici_siradakine_kesintisiz_gecer() {
         // 8 kHz şarkılar, 48 kHz sanal aygıt: geçiş, aygıt hızına çevrilen akışta olur.
+        // Şarkılar 2 saniyelik halka tampondan uzun (4 sn): kısa şarkı tampona tamamen sığıp
+        // çözme, sıradaki bildirilmeden bitebilirdi (yük altında yarış).
         output::simulated::set_device_rate(Some(48_000));
-        let a = ramp_song("gecis-a.wav");
-        let b = ramp_song("gecis-b.wav");
+        let song = |name: &str| {
+            let path = temp_path(name);
+            write_wav(&path, 8_000, 1, 32_000, |frame, _| frame as f64 / 32_000.0);
+            path
+        };
+        let a = song("gecis-a.wav");
+        let b = song("gecis-b.wav");
         let mut player = Player::new();
         player.load(&a, true).unwrap();
         player.set_next(Some(b.clone()));
@@ -1383,7 +1421,7 @@ mod tests {
         let status = player.status();
         assert_eq!(status.track.unwrap().path, b);
         assert!(
-            (status.position_secs - 2.0).abs() < 1e-9,
+            (status.position_secs - 4.0).abs() < 1e-9,
             "{}",
             status.position_secs
         );
@@ -1753,6 +1791,12 @@ mod tests {
             session.shared.controls.levels.is_known(0),
             "ses yoluna yazıldı"
         );
+        // Tam analiz bitince bas tepeleri de ses yoluna geçer (taşma koruması için).
+        assert!(wait_until(|| analysis.is_done()));
+        player.status();
+        let session = player.session.as_ref().unwrap();
+        assert!(session.shared.controls.levels.has_bass_peaks(0));
+        assert!(player.equalizer_state().preamp_db <= 0.0);
 
         // Sarma yeni oturum açar: ölçüm baştan bilinir, ilk ses beklemez.
         player.seek(1.0).unwrap();

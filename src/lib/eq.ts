@@ -18,14 +18,20 @@ export interface EqPreset {
   bassDb: number;
   /** Küçük hoparlör bası (alt bas yerine harmonikler). */
   smallSpeaker: boolean;
+  /** Derinlik (0–1): bas notalarının bir oktav altı. */
+  bassDepth: number;
 }
 
 /** Bas düğmesinin üst sınırı (dB); Rust tarafındaki `MAX_BASS_DB` ile aynı. */
-export const BASS_MAX_DB = 12;
+export const BASS_MAX_DB = 18;
+/** Bunun üstü "kulüp bölgesi" (Rust: `CLUB_BASS_DB`). */
+export const BASS_CLUB_DB = 12;
+/** Derinlik sürgüsünün adımı. */
+export const DEPTH_STEP = 0.05;
 
 /** Yalnızca bantları ayarlayan hazır ayar (bas düğmesi 0). */
 function bands(name: string, hint: string, gains: number[]): EqPreset {
-  return { name, hint, gains, bassDb: 0, smallSpeaker: false };
+  return { name, hint, gains, bassDb: 0, smallSpeaker: false, bassDepth: 0 };
 }
 
 /**
@@ -46,13 +52,23 @@ export const EQ_PRESETS: EqPreset[] = [
     gains: [0, 4, 3, 1, 0, 0, 0, 0, 0, 0],
     bassDb: 6,
     smallSpeaker: false,
+    bassDepth: 0,
   },
   {
     name: "Derin bas",
-    hint: "Alt bas, gümbürtü (iyi kulaklık ya da subwoofer)",
+    hint: "Alt bas ve gümbürtü: notaların bir oktav altı da (iyi kulaklık ya da subwoofer)",
     gains: [2, 1, 0, 0, 0, 0, 0, 0, 0, 0],
     bassDb: 9,
     smallSpeaker: false,
+    bassDepth: 0.5,
+  },
+  {
+    name: "Kulüp",
+    hint: "Kulüp düzeyinde bas ve göğüste hissedilen gümbürtü (kulaklık ve harici hoparlör)",
+    gains: [0, 2, 1, 0, -1, 0, 0, 1, 2, 2],
+    bassDb: 14,
+    smallSpeaker: false,
+    bassDepth: 0.7,
   },
   {
     name: "Küçük hoparlör",
@@ -60,6 +76,7 @@ export const EQ_PRESETS: EqPreset[] = [
     gains: [0, 0, 3, 3, 1.5, 0, 0, 1, 1.5, 0],
     bassDb: 8,
     smallSpeaker: true,
+    bassDepth: 0,
   },
   bands("Tiz", "Parlak, net tizler", [0, 0, 0, 0, 0, 0.5, 2, 4, 5.5, 6]),
   bands("Vokal", "Sesler önde", [-2, -2, -1, 0.5, 2, 3.5, 3.5, 2, 0, -1]),
@@ -70,6 +87,7 @@ export const EQ_PRESETS: EqPreset[] = [
     gains: [3, 3, 2, 0, -1.5, 0, 1, 2, 4, 4.5],
     bassDb: 4,
     smallSpeaker: false,
+    bassDepth: 0.3,
   },
   bands("Rock", "Vurucu davul ve gitar", [4, 4.5, 2.5, 0, -1, -1, 1, 2.5, 3.5, 4]),
   bands("Gece", "Kısık seste dolgun ses", [4.5, 4, 2, 0, -0.5, 0, 0, 1, 2.5, 3]),
@@ -78,15 +96,24 @@ export const EQ_PRESETS: EqPreset[] = [
 
 /** Ayar (bantlar, bas düğmesi, küçük hoparlör) bir hazır ayarla aynıysa onun adı, değilse `null`. */
 export function matchPreset(
-  settings: Pick<EqSettings, "gainsDb" | "bassDb" | "smallSpeaker">,
+  settings: Pick<EqSettings, "gainsDb" | "bassDb" | "smallSpeaker" | "bassDepth">,
 ): string | null {
   const found = EQ_PRESETS.find(
     (preset) =>
       preset.gains.every((g, i) => Math.abs(g - (settings.gainsDb[i] ?? 0)) < 1e-6) &&
       Math.abs(preset.bassDb - settings.bassDb) < 1e-6 &&
+      Math.abs(preset.bassDepth - settings.bassDepth) < 1e-6 &&
       preset.smallSpeaker === settings.smallSpeaker,
   );
   return found?.name ?? null;
+}
+
+/** Derinliği 0–1 aralığına ve %5 adımına oturtur. */
+export function snapDepth(depth: number): number {
+  if (!Number.isFinite(depth)) return 0;
+  // Adım sayısına bölmek (× 20) kayan nokta artığı bırakmaz (0,7000000000000001 değil 0,7).
+  const steps = Math.round(1 / DEPTH_STEP);
+  return Math.round(Math.min(1, Math.max(0, depth)) * steps) / steps + 0;
 }
 
 /** Bas düğmesinin değerini aralığa (0–12) ve 0,5 dB adımına oturtur. */
@@ -180,17 +207,20 @@ export function previewEqState(settings: EqSettings): EqState {
   });
   // Rust'taki gibi: küçük hoparlörde alt bas süzüldüğü için rafın tamamı değil, süzgeçlerin
   // en büyük artışı ve harmonikler için 3 dB.
+  const depth = settings.enabled && !small ? snapDepth(settings.bassDepth) : 0;
   const bassBoost = small
     ? Math.max(
         0,
         ...curveHz.filter((f) => f >= 30 && f <= 300).map((f) => previewBassDb(bass, true, f)),
       ) + 3
-    : bass;
+    : // Ölçüm yokken en kötü durum (Rust: `BassBoost::rise_db`): raf + alt oktav.
+      20 * Math.log10(10 ** (bass / 20) + depth * 1.1);
   return {
     enabled: settings.enabled,
     gainsDb: gains,
     bassDb: snapBass(settings.bassDb),
     smallSpeaker: settings.smallSpeaker,
+    bassDepth: snapDepth(settings.bassDepth),
     maxBassDb: BASS_MAX_DB,
     bandsHz: EQ_BANDS_HZ,
     maxGainDb: EQ_MAX_DB,

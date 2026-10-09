@@ -8,6 +8,8 @@ import {
   frequencyToRatio,
   matchPreset,
   snapBass,
+  snapDepth,
+  BASS_CLUB_DB,
   previewEqState,
   snapGain,
 } from "./eq";
@@ -47,10 +49,11 @@ describe("ekolayzer yardımcıları", () => {
 
   it("hazır ayarı tanır, değiştirilince 'özel' sayar", () => {
     const rock = EQ_PRESETS.find((p) => p.name === "Rock")!;
-    const of = (gainsDb: number[], bassDb = 0, smallSpeaker = false) => ({
+    const of = (gainsDb: number[], bassDb = 0, smallSpeaker = false, bassDepth = 0) => ({
       gainsDb,
       bassDb,
       smallSpeaker,
+      bassDepth,
     });
     expect(matchPreset(of(rock.gains))).toBe("Rock");
     expect(matchPreset(of(Array(10).fill(0)))).toBe("Düz");
@@ -60,6 +63,10 @@ describe("ekolayzer yardımcıları", () => {
     expect(matchPreset(of(rock.gains, 0, true))).toBeNull();
     const small = EQ_PRESETS.find((p) => p.name === "Küçük hoparlör")!;
     expect(matchPreset(of(small.gains, small.bassDb, true))).toBe("Küçük hoparlör");
+    // Derinlik de.
+    const club = EQ_PRESETS.find((p) => p.name === "Kulüp")!;
+    expect(matchPreset(of(club.gains, club.bassDb, false, club.bassDepth))).toBe("Kulüp");
+    expect(matchPreset(of(club.gains, club.bassDb, false, 0))).toBeNull();
   });
 
   it("hazır ayarlar 10 bant, ±8 dB içinde ve adları farklı", () => {
@@ -69,6 +76,9 @@ describe("ekolayzer yardımcıları", () => {
       expect(preset.gains).toHaveLength(10);
       expect(preset.gains.every((g) => Math.abs(g) <= 8 && snapGain(g) === g)).toBe(true);
       expect(snapBass(preset.bassDb)).toBe(preset.bassDb);
+      expect(snapDepth(preset.bassDepth)).toBe(preset.bassDepth);
+      // Küçük hoparlörde alt oktav çalınamaz.
+      if (preset.smallSpeaker) expect(preset.bassDepth).toBe(0);
     }
     expect(new Set(EQ_PRESETS.map((p) => p.name)).size).toBe(EQ_PRESETS.length);
   });
@@ -83,6 +93,7 @@ describe("ekolayzer yardımcıları", () => {
       gainsDb: p.gains,
       bassDb: p.bassDb,
       smallSpeaker: p.smallSpeaker,
+      bassDepth: p.bassDepth,
     });
     // "Bas": bas düğmesi ve 62–125 Hz birlikte; 62 Hz en az +8 dB.
     expect(preset("Bas").bassDb).toBeGreaterThanOrEqual(6);
@@ -93,6 +104,11 @@ describe("ekolayzer yardımcıları", () => {
     expect(preset("Küçük hoparlör").smallSpeaker).toBe(true);
     expect(at("Küçük hoparlör", 31)).toBeLessThan(0);
     expect(at("Küçük hoparlör", 200)).toBeGreaterThan(2);
+    // "Kulüp": kulüp bölgesinde bas ve alt oktav; "Derin bas" da alt oktav kullanır.
+    expect(preset("Kulüp").bassDb).toBeGreaterThan(BASS_CLUB_DB);
+    expect(preset("Kulüp").bassDepth).toBeGreaterThanOrEqual(0.5);
+    expect(at("Kulüp", 40)).toBeGreaterThan(12);
+    expect(preset("Derin bas").bassDepth).toBeGreaterThan(0);
     // Diğerlerinde küçük hoparlör kapalı.
     expect(EQ_PRESETS.filter((p) => p.smallSpeaker).map((p) => p.name)).toEqual(["Küçük hoparlör"]);
   });
@@ -111,13 +127,19 @@ describe("ekolayzer yardımcıları", () => {
 
   it("tarayıcı önizlemesinde yaklaşık eğri üretir", () => {
     const gains = [6, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    const flat = { bassDb: 0, smallSpeaker: false };
+    const flat = { bassDb: 0, smallSpeaker: false, bassDepth: 0 };
     const state = previewEqState({ enabled: true, gainsDb: gains, ...flat });
     expect(state.preampDb).toBe(-6);
     const at31 = state.curveDb[state.curveHz.findIndex((f) => f >= 31.25)]!;
     expect(at31).toBeGreaterThan(5);
     expect(state.curveDb[state.curveDb.length - 1]).toBe(0);
-    const off = previewEqState({ enabled: false, gainsDb: gains, bassDb: 9, smallSpeaker: true });
+    const off = previewEqState({
+      enabled: false,
+      gainsDb: gains,
+      bassDb: 9,
+      smallSpeaker: true,
+      bassDepth: 0.5,
+    });
     expect(off.curveDb.every((d) => d === 0)).toBe(true);
     expect(off.gainsDb[0]).toBe(6);
     expect(off.bassDb).toBe(9);
@@ -127,11 +149,24 @@ describe("ekolayzer yardımcıları", () => {
       gainsDb: Array(10).fill(0),
       bassDb: 9,
       smallSpeaker: false,
+      bassDepth: 0,
     });
     expect(bass.curveDb[0]).toBeGreaterThan(8);
     expect(Math.abs(bass.curveDb[bass.curveHz.findIndex((f) => f >= 2000)]!)).toBeLessThan(0.1);
     expect(bass.preampDb).toBe(-9);
-    expect(snapBass(13)).toBe(12);
+    // Derinlik eğride görünmez (doğrusal değil) ama korumaya girer.
+    const deep = previewEqState({
+      enabled: true,
+      gainsDb: Array(10).fill(0),
+      bassDb: 9,
+      smallSpeaker: false,
+      bassDepth: 1,
+    });
+    expect(deep.curveDb).toEqual(bass.curveDb);
+    expect(deep.preampDb).toBeLessThan(bass.preampDb);
+    expect(snapDepth(0.33)).toBe(0.35);
+    expect(snapDepth(2)).toBe(1);
+    expect(snapBass(19)).toBe(18);
     expect(snapBass(-1)).toBe(0);
     expect(snapBass(4.3)).toBe(4.5);
   });

@@ -2,7 +2,9 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerE
 import type { EqualizerControls } from "../hooks/useEqualizer";
 import type { HeadphoneControls } from "../hooks/useHeadphone";
 import {
+  BASS_CLUB_DB,
   BASS_MAX_DB,
+  DEPTH_STEP,
   EQ_MAX_DB,
   EQ_PRESETS,
   EQ_STEP_DB,
@@ -216,15 +218,25 @@ function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
  * harmonikleri). Ekolayzerin en üstünde, büyük: "bas dedin mi bas hissedilsin".
  */
 function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
-  const { bassDb, smallSpeaker, enabled } = equalizer.settings;
-  const ratio = bassDb / BASS_MAX_DB;
+  const { bassDb, smallSpeaker, bassDepth, enabled } = equalizer.settings;
+  const club = bassDb > BASS_CLUB_DB;
+  const depthPercent = Math.round(bassDepth * 100);
+  // Ok tuşları şarkıyı sarmasın.
+  const keepArrows = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key.startsWith("Arrow")) event.stopPropagation();
+  };
   return (
-    <div className={`bass${enabled ? "" : " is-off"}`} role="group" aria-label="Bas">
+    <div
+      className={`bass${enabled ? "" : " is-off"}${club ? " is-club" : ""}`}
+      role="group"
+      aria-label="Bas"
+    >
       <div className="bass__head">
         <span className="bass__title">Bas</span>
         <output className="bass__value" htmlFor="eq-bass">
           {formatGain(bassDb)} dB
         </output>
+        {club && <span className="bass__badge">Kulüp</span>}
         <button
           type="button"
           role="switch"
@@ -247,17 +259,48 @@ function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
         max={BASS_MAX_DB}
         step={EQ_STEP_DB}
         value={bassDb}
-        style={{ "--fill": ratio } as CSSProperties}
+        style={
+          {
+            "--fill": bassDb / BASS_MAX_DB,
+            "--club": BASS_CLUB_DB / BASS_MAX_DB,
+          } as CSSProperties
+        }
         onChange={(event) => equalizer.setBass(Number(event.target.value))}
-        onKeyDown={(event) => {
-          // Ok tuşları şarkıyı sarmasın.
-          if (event.key.startsWith("Arrow")) event.stopPropagation();
-        }}
+        onKeyDown={keepArrows}
       />
       <p className="bass__hint">
         {smallSpeaker
           ? "Küçük hoparlör: çalınamayan alt bas süzülür, harmonikleri eklenir; bas dizüstünde de hissedilir."
-          : "Davulun ve bas gitarın gövdesini (100 Hz altı) yükseltir; ses kısılmadan."}
+          : club
+            ? "Kulüp düzeyi: bas her şeyin önünde. Kulaklık zorlanırsa (cızırtı) biraz azaltın."
+            : "Davulun ve bas gitarın gövdesini (100 Hz altı) yükseltir; ses kısılmadan."}
+      </p>
+      <div className={`bass__row${smallSpeaker ? " is-dimmed" : ""}`}>
+        <label className="bass__label" htmlFor="eq-depth">
+          Derinlik
+        </label>
+        <input
+          id="eq-depth"
+          className="bass__slider bass__slider--depth"
+          type="range"
+          aria-valuetext={`%${depthPercent}`}
+          min={0}
+          max={1}
+          step={DEPTH_STEP}
+          value={bassDepth}
+          disabled={smallSpeaker}
+          style={{ "--fill": bassDepth } as CSSProperties}
+          onChange={(event) => equalizer.setDepth(Number(event.target.value))}
+          onKeyDown={keepArrows}
+        />
+        <output className="bass__depth" htmlFor="eq-depth">
+          %{depthPercent}
+        </output>
+      </div>
+      <p className="bass__hint">
+        {smallSpeaker
+          ? "Derinlik küçük hoparlörde kapalı: dizüstü o kadar derini çalamaz."
+          : "Bas notalarının bir oktav altını ekler: kayıtta olmasa da göğüste hissedilen gümbürtü."}
       </p>
     </div>
   );

@@ -699,6 +699,7 @@ describe("ekolayzer", () => {
         gainsDb: [0, 4, 3, 1, 0, 0, 0, 0, 0, 0],
         bassDb: 6,
         smallSpeaker: false,
+        bassDepth: 0,
       }),
     );
     expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "4");
@@ -709,6 +710,38 @@ describe("ekolayzer", () => {
     // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir
     // (bantların en büyüğü 4 + bas düğmesi 6).
     expect(await screen.findByText(/Bozulma koruması: −10 dB/)).toBeInTheDocument();
+  });
+
+  it("bas kulüp bölgesine çıkar; derinlik ayarlanır, küçük hoparlörde kapanır", async () => {
+    await openEq();
+    const bass = screen.getByRole("slider", { name: "Bas" });
+    expect(bass).toHaveAttribute("max", "18");
+    expect(screen.queryByText("Kulüp", { selector: ".bass__badge" })).not.toBeInTheDocument();
+    await act(async () => fireEvent.change(bass, { target: { value: "15" } }));
+    expect(screen.getByText("Kulüp", { selector: ".bass__badge" })).toBeInTheDocument();
+    expect(screen.getByText(/Kulüp düzeyi: bas her şeyin önünde/)).toBeInTheDocument();
+
+    const depth = screen.getByRole("slider", { name: "Derinlik" });
+    await act(async () => fireEvent.change(depth, { target: { value: "0.6" } }));
+    expect(depth).toHaveAttribute("aria-valuetext", "%60");
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(
+        expect.objectContaining({ bassDb: 15, bassDepth: 0.6 }),
+      ),
+    );
+
+    // "Kulüp" hazır ayarı ikisini birlikte ayarlar.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kulüp" })));
+    expect(bass).toHaveValue("14");
+    expect(depth).toHaveValue("0.7");
+    expect(screen.getByRole("button", { name: "Kulüp" })).toHaveAttribute("aria-pressed", "true");
+
+    // Küçük hoparlörde alt oktav çalınamaz: derinlik kapanır.
+    await act(async () =>
+      fireEvent.click(screen.getByRole("switch", { name: "Küçük hoparlör bası" })),
+    );
+    expect(depth).toBeDisabled();
+    expect(screen.getByText(/Derinlik küçük hoparlörde kapalı/)).toBeInTheDocument();
   });
 
   it("bas düğmesi ve küçük hoparlör bası ayarlanır; hazır ayar 'özel'e döner", async () => {

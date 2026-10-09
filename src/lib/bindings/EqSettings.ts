@@ -5,10 +5,14 @@
  */
 export type EqSettings = { enabled: boolean, gainsDb: Array<number>, 
 /**
- * Bas düğmesi (0–12 dB, 100 Hz raf; bkz. [`super::bass`]).
+ * Bas düğmesi (0–18 dB, 100 Hz raf; 12 dB üstü kulüp bölgesi; bkz. [`super::bass`]).
  */
 bassDb: number, 
 /**
  * Küçük hoparlör bası: alt bas yerine harmonikleri (dizüstü ve küçük hoparlörler).
  */
-smallSpeaker: boolean, };
+smallSpeaker: boolean, 
+/**
+ * Derinlik (0–1): bas notalarının bir oktav altı eklenir.
+ */
+bassDepth: number, };

@@ -271,8 +271,7 @@ pub async fn library_search(
 /// Ekolayzer ayarları ve uygulanan eğri.
 #[tauri::command]
 pub async fn equalizer_get(player: State<'_, PlayerState>) -> Result<EqState, String> {
-    let player = player.lock()?;
-    Ok(EqState::new(player.equalizer(), player.headroom_db()))
+    Ok(player.lock()?.equalizer_state())
 }
 
 /// Ekolayzer ayarlarını değiştirir (çalan sese hemen yansır) ve kaydeder.
@@ -286,7 +285,7 @@ pub async fn equalizer_set(
     store
         .update(|s| s.equalizer = applied)
         .map_err(|e| reported(format!("Ekolayzer ayarı kaydedilemedi: {e}")))?;
-    Ok(EqState::new(applied, player.lock()?.headroom_db()))
+    Ok(player.lock()?.equalizer_state())
 }
 
 /// Ses aygıtının ek gecikmesi (ms; görseller bu kadar geriden gösterilir).
@@ -617,7 +616,7 @@ mod tests {
 
     #[test]
     fn ekolayzer_arayuz_bicimine_uyar() {
-        let json = serde_json::to_value(EqState::new(EqSettings::default(), 0.0)).unwrap();
+        let json = serde_json::to_value(EqState::new(EqSettings::default(), 0.0, None)).unwrap();
         for key in [
             "enabled",
             "gainsDb",

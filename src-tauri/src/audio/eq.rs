@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::bass;
+use super::bass::{self, BassBoost, BassPeaks};
 use super::Sample;
 
 /// Bant sayısı.
@@ -100,10 +100,12 @@ pub struct EqSettings {
     pub enabled: bool,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub gains_db: [f64; BANDS],
-    /// Bas düğmesi (0–12 dB, 100 Hz raf; bkz. [`super::bass`]).
+    /// Bas düğmesi (0–18 dB, 100 Hz raf; 12 dB üstü kulüp bölgesi; bkz. [`super::bass`]).
     pub bass_db: f64,
     /// Küçük hoparlör bası: alt bas yerine harmonikleri (dizüstü ve küçük hoparlörler).
     pub small_speaker: bool,
+    /// Derinlik (0–1): bas notalarının bir oktav altı eklenir.
+    pub bass_depth: f64,
 }
 
 impl Default for EqSettings {
@@ -113,6 +115,7 @@ impl Default for EqSettings {
             gains_db: [0.0; BANDS],
             bass_db: 0.0,
             small_speaker: false,
+            bass_depth: 0.0,
         }
     }
 }
@@ -132,6 +135,11 @@ impl EqSettings {
         } else {
             0.0
         };
+        self.bass_depth = if self.bass_depth.is_finite() {
+            self.bass_depth.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         self
     }
 
@@ -140,15 +148,25 @@ impl EqSettings {
         self.enabled
             && (self.gains_db.iter().any(|g| g.abs() > FLAT_DB)
                 || self.bass_db > FLAT_DB
+                || self.bass_depth > 0.0
                 || self.small_speaker)
     }
 
-    /// Ses işlemede hedeflenen bas ayarı: kapalıyken düz.
+    /// Ses işlemede hedeflenen bas ayarı (raf, küçük hoparlör): kapalıyken düz.
     pub fn effective_bass(&self) -> (f64, bool) {
         if self.enabled {
             (self.bass_db, self.small_speaker)
         } else {
             (0.0, false)
+        }
+    }
+
+    /// Bas motorunun taşma korumasına bildireceği yükseltme (kapalıyken yok).
+    pub fn bass_boost(&self) -> BassBoost {
+        if self.enabled {
+            bass::settings_boost(self.bass_db, self.bass_depth, self.small_speaker)
+        } else {
+            BassBoost::default()
         }
     }
 
@@ -172,6 +190,7 @@ pub struct EqState {
     pub gains_db: [f64; BANDS],
     pub bass_db: f64,
     pub small_speaker: bool,
+    pub bass_depth: f64,
     pub max_bass_db: f64,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub bands_hz: [f64; BANDS],
@@ -186,8 +205,9 @@ pub struct EqState {
 }
 
 impl EqState {
-    /// `headroom_db`: çalan şarkının tepesine kalan boşluk (bilinmiyorsa 0).
-    pub fn new(settings: EqSettings, headroom_db: f64) -> Self {
+    /// `headroom_db`: çalan şarkının tepesine kalan boşluk (bilinmiyorsa 0); `bass_peaks`:
+    /// çalan şarkının ölçülmüş bas tepeleri (bilinmiyorsa en kötü durum).
+    pub fn new(settings: EqSettings, headroom_db: f64, bass_peaks: Option<&BassPeaks>) -> Self {
         let design = Design::new(&settings.effective_gains(), DISPLAY_RATE);
         let curve_hz: Vec<f64> = (0..CURVE_POINTS)
             .map(|i| 20.0 * 1000f64.powf(i as f64 / (CURVE_POINTS - 1) as f64))
@@ -200,12 +220,13 @@ impl EqState {
                     + bass::response_db(bass_db, small_speaker, hz, DISPLAY_RATE)
             })
             .collect();
-        let boost_db = -design.preamp_db + bass::boost_db(bass_db, small_speaker);
+        let boost_db = -design.preamp_db + settings.bass_boost().rise_db(bass_peaks);
         Self {
             enabled: settings.enabled,
             gains_db: settings.gains_db,
             bass_db: settings.bass_db,
             small_speaker: settings.small_speaker,
+            bass_depth: settings.bass_depth,
             max_bass_db: bass::MAX_BASS_DB,
             bands_hz: CENTERS_HZ,
             max_gain_db: MAX_GAIN_DB,
@@ -234,6 +255,7 @@ pub struct EqControl {
     gains: [AtomicU64; BANDS],
     bass_db: AtomicU64,
     small_speaker: AtomicBool,
+    bass_depth: AtomicU64,
 }
 
 impl Default for EqControl {
@@ -250,6 +272,7 @@ impl EqControl {
             gains: std::array::from_fn(|_| AtomicU64::new(0f64.to_bits())),
             bass_db: AtomicU64::new(0f64.to_bits()),
             small_speaker: AtomicBool::new(false),
+            bass_depth: AtomicU64::new(0f64.to_bits()),
         };
         control.set(settings);
         control
@@ -265,6 +288,8 @@ impl EqControl {
             .store(settings.bass_db.to_bits(), Ordering::Relaxed);
         self.small_speaker
             .store(settings.small_speaker, Ordering::Relaxed);
+        self.bass_depth
+            .store(settings.bass_depth.to_bits(), Ordering::Relaxed);
         self.enabled.store(settings.enabled, Ordering::Relaxed);
         self.version.fetch_add(1, Ordering::Release);
         settings
@@ -278,6 +303,7 @@ impl EqControl {
             }),
             bass_db: f64::from_bits(self.bass_db.load(Ordering::Relaxed)),
             small_speaker: self.small_speaker.load(Ordering::Relaxed),
+            bass_depth: f64::from_bits(self.bass_depth.load(Ordering::Relaxed)),
         }
     }
 
@@ -946,6 +972,7 @@ mod tests {
                 ..EqSettings::default()
             },
             6.0,
+            None,
         );
         let at = |hz: f64| {
             let i = state.curve_hz.iter().position(|&f| f >= hz).unwrap();
@@ -997,18 +1024,18 @@ mod tests {
             gains_db: gains,
             ..EqSettings::default()
         };
-        let state = EqState::new(settings, 0.0);
+        let state = EqState::new(settings, 0.0, None);
         assert_eq!(
             state.preamp_db, -6.0,
             "boşluk yokken yükseltme kadar kısılır"
         );
         assert_eq!(
-            EqState::new(settings, 4.0).preamp_db,
+            EqState::new(settings, 4.0, None).preamp_db,
             -2.0,
             "boşluk yetmeyen kadar"
         );
         assert_eq!(
-            EqState::new(settings, 9.0).preamp_db,
+            EqState::new(settings, 9.0, None).preamp_db,
             0.0,
             "boşluk yetiyorsa hiç"
         );
@@ -1026,6 +1053,7 @@ mod tests {
                 ..EqSettings::default()
             },
             0.0,
+            None,
         );
         assert_eq!(off.preamp_db, 0.0);
         assert!(off.curve_db.iter().all(|d| d.abs() < 1e-9));

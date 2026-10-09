@@ -117,12 +117,13 @@ fn run(path: &Path) -> Result<(), Outcome> {
     let mut gains = [0.0; BANDS];
     gains[3] = 9.0;
     gains[7] = -6.0;
-    // Ekolayzer, bas düğmesi ve küçük hoparlör bası gerçek aygıtta da çalarken değişir.
+    // Ekolayzer, bas düğmesi, derinlik ve küçük hoparlör bası gerçek aygıtta da çalarken değişir.
     player.set_equalizer(EqSettings {
         enabled: true,
         gains_db: gains,
-        bass_db: 9.0,
-        small_speaker: true,
+        bass_db: 15.0,
+        small_speaker: false,
+        bass_depth: 0.8,
     });
     std::thread::sleep(Duration::from_millis(150));
     player.set_equalizer(EqSettings {
@@ -130,6 +131,7 @@ fn run(path: &Path) -> Result<(), Outcome> {
         gains_db: gains,
         bass_db: 9.0,
         small_speaker: true,
+        bass_depth: 0.8,
     });
     let deadline = Instant::now() + Duration::from_secs(10);
     while player.state() == PlaybackState::Playing && Instant::now() < deadline {

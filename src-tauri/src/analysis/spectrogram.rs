@@ -14,6 +14,7 @@ use rustfft::{Fft, FftPlanner};
 use super::beats::{self, BeatGrid, OnsetDetector};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use super::structure::{self, SongMap};
+use crate::audio::bass::{BassPeakMeter, BassPeaks};
 use crate::audio::decode::Decoder;
 use crate::audio::loudness::{Loudness, LoudnessMeter};
 use crate::audio::Sample;
@@ -55,6 +56,8 @@ pub struct Spectrogram {
     /// geçişiyle analiz bitmeden de gelebilir ([`Spectrogram::set_measured_loudness`]).
     loudness: RwLock<Option<Loudness>>,
     loudness_ready: AtomicBool,
+    /// Bas tepeleri (yalnızca tam analizde ölçülür).
+    bass_peaks: RwLock<Option<BassPeaks>>,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -73,6 +76,7 @@ impl Spectrogram {
             choreography: RwLock::new(None),
             loudness: RwLock::new(None),
             loudness_ready: AtomicBool::new(false),
+            bass_peaks: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -98,7 +102,12 @@ impl Spectrogram {
     pub fn from_saved(saved: SavedAnalysis) -> Arc<Self> {
         let spectrogram = Self::new();
         spectrogram.push(&saved.levels, &saved.meters, &saved.onset);
-        spectrogram.complete(saved.beats, saved.song_map, saved.loudness);
+        spectrogram.complete(
+            saved.beats,
+            saved.song_map,
+            saved.loudness,
+            saved.bass_peaks,
+        );
         spectrogram
     }
 
@@ -114,6 +123,7 @@ impl Spectrogram {
             beats: self.beat_grid().map(|b| (*b).clone()),
             song_map: self.song_map().map(|m| (*m).clone()),
             loudness: self.loudness(),
+            bass_peaks: self.bass_peaks(),
         })
     }
 
@@ -168,6 +178,11 @@ impl Spectrogram {
     }
 
     /// Şarkının ses yüksekliği ve gerçek tepesi; ölçülmediyse ya da sessizse `None`.
+    /// Bas tepeleri (tam analiz bitince; sessiz şarkıda `None`).
+    pub fn bass_peaks(&self) -> Option<BassPeaks> {
+        self.bass_peaks.read().ok().and_then(|b| *b)
+    }
+
     pub fn loudness(&self) -> Option<Loudness> {
         self.loudness.read().ok().and_then(|l| *l)
     }
@@ -208,7 +223,12 @@ impl Spectrogram {
 
     /// Analiz bitince: vuruşlar (başlangıç gücünün `onset_latency` saniyelik gecikmesi
     /// düşülerek), şarkı yapısı ve koreografi.
-    fn finish(&self, onset_latency: f64, loudness: Option<Loudness>) {
+    fn finish(
+        &self,
+        onset_latency: f64,
+        loudness: Option<Loudness>,
+        bass_peaks: Option<BassPeaks>,
+    ) {
         let grid = self
             .onset
             .read()
@@ -225,11 +245,20 @@ impl Spectrogram {
                 .collect();
             structure::map_song(&levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
         });
-        self.complete(grid, map, loudness);
+        self.complete(grid, map, loudness, bass_peaks);
     }
 
     /// Analizi tamamlar: VU referansı ve koreografi hesaplanır, sonuçlar yayımlanır.
-    fn complete(&self, grid: Option<BeatGrid>, map: Option<SongMap>, loudness: Option<Loudness>) {
+    fn complete(
+        &self,
+        grid: Option<BeatGrid>,
+        map: Option<SongMap>,
+        loudness: Option<Loudness>,
+        bass_peaks: Option<BassPeaks>,
+    ) {
+        if let Ok(mut stored) = self.bass_peaks.write() {
+            *stored = bass_peaks;
+        }
         self.set_measured_loudness(loudness);
         let reference = self
             .meters
@@ -276,6 +305,8 @@ pub struct SavedAnalysis {
     pub song_map: Option<SongMap>,
     /// Ses yüksekliği ve gerçek tepe (sessiz şarkıda `None`).
     pub loudness: Option<Loudness>,
+    /// Bas tepeleri (sessiz şarkıda `None`).
+    pub bass_peaks: Option<BassPeaks>,
 }
 
 impl SavedAnalysis {
@@ -347,6 +378,8 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
     let mut onset_batch: Vec<f32> = Vec::with_capacity(64);
     // Ses yüksekliği şarkının kendi hızında, bütün kanallarıyla ölçülür (EBU R128).
     let mut loudness = LoudnessMeter::new(info.sample_rate, channels);
+    // Bas düğmesinin şarkının tepesini ne kadar yükselttiği (taşma koruması buna göre).
+    let mut bass_peaks = BassPeakMeter::new(info.sample_rate, channels);
 
     loop {
         if target.cancelled.load(Ordering::Acquire) {
@@ -360,6 +393,7 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         for frame in chunk.chunks_exact(channels) {
             meters.add(frame);
             loudness.add(frame);
+            bass_peaks.add(frame);
             let mono = frame.iter().sum::<Sample>() / channels as Sample;
             window[head] = mono;
             head = (head + 1) % FFT_SIZE;
@@ -392,6 +426,7 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
     target.finish(
         beats::onset_latency(info.sample_rate, FFT_SIZE),
         loudness.finish(),
+        bass_peaks.finish(),
     );
 }
 
@@ -634,6 +669,7 @@ mod tests {
         analyze(Decoder::open(&path).unwrap(), &original);
         let saved = original.saved().expect("analiz bitti");
         assert!(saved.is_consistent());
+        assert!(saved.bass_peaks.is_some(), "bas tepeleri ölçüldü");
         assert!(saved.beats.is_some(), "tıklamalarda tempo bulunur");
 
         let restored = Spectrogram::from_saved(saved.clone());

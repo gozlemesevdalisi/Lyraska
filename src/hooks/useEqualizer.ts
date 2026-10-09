@@ -6,7 +6,14 @@ import {
   type EqSettings,
   type EqState,
 } from "../lib/backend";
-import { EQ_BANDS_HZ, previewEqState, snapBass, snapGain, type EqPreset } from "../lib/eq";
+import {
+  EQ_BANDS_HZ,
+  previewEqState,
+  snapBass,
+  snapDepth,
+  snapGain,
+  type EqPreset,
+} from "../lib/eq";
 
 export interface EqualizerControls {
   /** Sürgülerin gösterdiği ayar (dokunulduğu anda güncellenir). */
@@ -18,10 +25,12 @@ export interface EqualizerControls {
   error: string | null;
   setGain: (band: number, db: number) => void;
   setEnabled: (enabled: boolean) => void;
-  /** Bas düğmesi (0–12 dB). */
+  /** Bas düğmesi (0–18 dB; 12 dB üstü kulüp bölgesi). */
   setBass: (db: number) => void;
   /** Küçük hoparlör bası. */
   setSmallSpeaker: (on: boolean) => void;
+  /** Derinlik (0–1): alt oktav. */
+  setDepth: (depth: number) => void;
   /** Hazır ayarı (bantlar ve bas) uygular ve ekolayzeri açar. */
   applyPreset: (preset: EqPreset) => void;
 }
@@ -31,6 +40,7 @@ const INITIAL: EqSettings = {
   gainsDb: EQ_BANDS_HZ.map(() => 0),
   bassDb: 0,
   smallSpeaker: false,
+  bassDepth: 0,
 };
 
 /**
@@ -58,6 +68,7 @@ export function useEqualizer(): EqualizerControls {
           gainsDb: loaded.gainsDb,
           bassDb: loaded.bassDb,
           smallSpeaker: loaded.smallSpeaker,
+          bassDepth: loaded.bassDepth,
         };
         settingsRef.current = next;
         setSettings(next);
@@ -126,6 +137,11 @@ export function useEqualizer(): EqualizerControls {
     [update],
   );
 
+  const setDepth = useCallback(
+    (depth: number) => update((current) => ({ ...current, bassDepth: snapDepth(depth) })),
+    [update],
+  );
+
   const applyPreset = useCallback(
     (preset: EqPreset) =>
       update(() => ({
@@ -133,13 +149,17 @@ export function useEqualizer(): EqualizerControls {
         gainsDb: EQ_BANDS_HZ.map((_, i) => snapGain(preset.gains[i] ?? 0)),
         bassDb: snapBass(preset.bassDb),
         smallSpeaker: preset.smallSpeaker,
+        bassDepth: snapDepth(preset.bassDepth),
       })),
     [update],
   );
 
   const active =
     settings.enabled &&
-    (settings.gainsDb.some((g) => g !== 0) || settings.bassDb > 0 || settings.smallSpeaker);
+    (settings.gainsDb.some((g) => g !== 0) ||
+      settings.bassDb > 0 ||
+      settings.bassDepth > 0 ||
+      settings.smallSpeaker);
   return {
     settings,
     state,
@@ -149,6 +169,7 @@ export function useEqualizer(): EqualizerControls {
     setEnabled,
     setBass,
     setSmallSpeaker,
+    setDepth,
     applyPreset,
   };
 }

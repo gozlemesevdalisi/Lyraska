@@ -152,8 +152,12 @@ impl Renderer {
                 return outcome;
             }
         }
-        self.leveler
-            .begin_block(&self.levels, normalize, self.boost_db());
+        self.leveler.begin_block(
+            &self.levels,
+            normalize,
+            self.eq.boost_db(),
+            self.bass.boost(),
+        );
 
         for frame in out.chunks_exact_mut(self.channels) {
             // Sessiz karelerde de taşma korumasının gecikme hattı ilerler: duraklatma
@@ -193,8 +197,7 @@ impl Renderer {
                     *value = self.eq.process(channel, *value);
                 }
                 self.bass.process_frame(&mut self.frame);
-                let boost_db = self.boost_db();
-                let level = self.leveler.next_gain(&self.levels, normalize, boost_db);
+                let level = self.leveler.next_gain(&self.levels, normalize);
                 let gain = level * self.gain;
                 for value in self.frame.iter_mut() {
                     *value *= gain;
@@ -217,12 +220,6 @@ impl Renderer {
 }
 
 impl Renderer {
-    /// Ekolayzer ve bas motorunun birlikte en büyük yükseltmesi (dB): taşma koruması
-    /// bunun eşitlemenin açtığı boşluğa sığmayan kısmı kadar kısar.
-    fn boost_db(&self) -> f64 {
-        self.eq.boost_db() + self.bass.boost_db()
-    }
-
     /// Çalışma alanındaki kareyi taşma korumasından geçirip aygıt arabelleğine yazar.
     fn write_frame(&mut self, out: &mut [Sample]) {
         self.limiter.process_frame(&mut self.frame);
@@ -454,12 +451,17 @@ mod tests {
             gains_db: [0.0; BANDS],
             ..EqSettings::default()
         };
-        // Bas düğmesi ve küçük hoparlör bası da ölçüme girsin.
+        // Bas düğmesi, derinlik (alt oktav) ve küçük hoparlör bası da ölçüme girsin.
         let boosted = EqSettings {
             enabled: true,
             gains_db: [12.0; BANDS],
-            bass_db: 12.0,
+            bass_db: 18.0,
+            small_speaker: false,
+            bass_depth: 1.0,
+        };
+        let small = EqSettings {
             small_speaker: true,
+            ..boosted
         };
 
         let info = allocation_counter::measure(|| {
@@ -476,6 +478,16 @@ mod tests {
                         }),
                     ),
                     70 => levels.begin_track(70 * 480),
+                    75 => levels.set_bass_peaks(
+                        1,
+                        &crate::audio::bass::BassPeaks {
+                            shelf_rise_db: [0.5, 1.0, 2.0, 3.0, 4.5, 6.0],
+                            octave_band_db: -6.0,
+                        },
+                    ),
+                    85 => {
+                        eq.set(small);
+                    }
                     80 => headphone.set(Some(&profile), false),
                     90 => loudness.set(false),
                     100 => {
