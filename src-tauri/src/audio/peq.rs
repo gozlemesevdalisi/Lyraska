@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use super::biquad::{self, Biquad};
 use super::Sample;
 
 /// Bir profilde en fazla bu kadar filtre (AutoEq genellikle 10 kullanır).
@@ -258,7 +259,7 @@ impl HeadphoneProfile {
         let coefs: Vec<Biquad> = self
             .filters
             .iter()
-            .map(|f| Biquad::design(f, sample_rate))
+            .map(|f| design(f, sample_rate))
             .collect();
         freqs_hz
             .iter()
@@ -296,7 +297,7 @@ fn finite_or(x: f64, fallback: f64) -> f64 {
 /// Filtrelerin toplam yanıtının en yüksek değeri (dB); 20 Hz–20 kHz taranır.
 fn response_peak_db(filters: &[PeqFilter]) -> f64 {
     let rate = 96_000.0;
-    let coefs: Vec<Biquad> = filters.iter().map(|f| Biquad::design(f, rate)).collect();
+    let coefs: Vec<Biquad> = filters.iter().map(|f| design(f, rate)).collect();
     (0..=400)
         .map(|i| 20.0 * 1000f64.powf(f64::from(i) / 400.0))
         .map(|hz| {
@@ -306,85 +307,18 @@ fn response_peak_db(filters: &[PeqFilter]) -> f64 {
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
-/// İkinci dereceden filtre katsayıları (a0 = 1).
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Biquad {
-    b0: f64,
-    b1: f64,
-    b2: f64,
-    a1: f64,
-    a2: f64,
-}
-
-impl Biquad {
-    const IDENTITY: Self = Self {
-        b0: 1.0,
-        b1: 0.0,
-        b2: 0.0,
-        a1: 0.0,
-        a2: 0.0,
-    };
-
-    /// RBJ Audio EQ Cookbook. Nyquist'e çok yakın filtreler etkisiz bırakılır.
-    fn design(filter: &PeqFilter, sample_rate: f64) -> Self {
-        if filter.freq_hz >= sample_rate * 0.49 || filter.gain_db.abs() < 1e-6 {
-            return Self::IDENTITY;
-        }
-        let a = 10f64.powf(filter.gain_db / 40.0);
-        let w0 = 2.0 * PI * filter.freq_hz / sample_rate;
-        let (sin, cos) = w0.sin_cos();
-        let alpha = sin / (2.0 * filter.q);
-        let (b0, b1, b2, a0, a1, a2) = match filter.kind {
-            FilterKind::Peaking => (
-                1.0 + alpha * a,
-                -2.0 * cos,
-                1.0 - alpha * a,
-                1.0 + alpha / a,
-                -2.0 * cos,
-                1.0 - alpha / a,
-            ),
-            FilterKind::LowShelf => {
-                let k = 2.0 * a.sqrt() * alpha;
-                (
-                    a * ((a + 1.0) - (a - 1.0) * cos + k),
-                    2.0 * a * ((a - 1.0) - (a + 1.0) * cos),
-                    a * ((a + 1.0) - (a - 1.0) * cos - k),
-                    (a + 1.0) + (a - 1.0) * cos + k,
-                    -2.0 * ((a - 1.0) + (a + 1.0) * cos),
-                    (a + 1.0) + (a - 1.0) * cos - k,
-                )
-            }
-            FilterKind::HighShelf => {
-                let k = 2.0 * a.sqrt() * alpha;
-                (
-                    a * ((a + 1.0) + (a - 1.0) * cos + k),
-                    -2.0 * a * ((a - 1.0) + (a + 1.0) * cos),
-                    a * ((a + 1.0) + (a - 1.0) * cos - k),
-                    (a + 1.0) - (a - 1.0) * cos + k,
-                    2.0 * ((a - 1.0) - (a + 1.0) * cos),
-                    (a + 1.0) - (a - 1.0) * cos - k,
-                )
-            }
-        };
-        Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: a1 / a0,
-            a2: a2 / a0,
-        }
-    }
-
-    fn response_db(&self, w: f64) -> f64 {
-        let (cos_w, cos_2w) = (w.cos(), (2.0 * w).cos());
-        let Self { b0, b1, b2, a1, a2 } = *self;
-        let num = b0 * b0
-            + b1 * b1
-            + b2 * b2
-            + 2.0 * (b0 * b1 + b1 * b2) * cos_w
-            + 2.0 * b0 * b2 * cos_2w;
-        let den = 1.0 + a1 * a1 + a2 * a2 + 2.0 * (a1 + a1 * a2) * cos_w + 2.0 * a2 * cos_2w;
-        10.0 * (num.max(1e-300) / den.max(1e-300)).log10()
+/// Profildeki bir filtrenin katsayıları (RBJ Audio EQ Cookbook).
+fn design(filter: &PeqFilter, sample_rate: f64) -> Biquad {
+    let PeqFilter {
+        kind,
+        freq_hz,
+        gain_db,
+        q,
+    } = *filter;
+    match kind {
+        FilterKind::Peaking => Biquad::peaking(freq_hz, gain_db, q, sample_rate),
+        FilterKind::LowShelf => Biquad::low_shelf(freq_hz, gain_db, q, sample_rate),
+        FilterKind::HighShelf => Biquad::high_shelf(freq_hz, gain_db, q, sample_rate),
     }
 }
 
@@ -455,7 +389,7 @@ impl PeqControl {
                     2 => FilterKind::HighShelf,
                     _ => FilterKind::Peaking,
                 };
-                Biquad::design(
+                design(
                     &PeqFilter {
                         kind,
                         freq_hz: v(1),
@@ -515,10 +449,7 @@ impl Bank {
         };
         let mut y = x;
         for (f, s) in self.coefs.iter().zip(state.iter_mut()).take(self.count) {
-            let input = y;
-            y = f.b0 * input + s[0];
-            s[0] = f.b1 * input - f.a1 * y + s[1];
-            s[1] = f.b2 * input - f.a2 * y;
+            y = f.process(s, y);
         }
         y * self.gain
     }
@@ -568,11 +499,7 @@ impl PeqProcessor {
             self.fade_left = self.fade_frames;
         }
         for bank in [&mut self.current, &mut self.next] {
-            for value in bank.state.iter_mut().flatten().flatten() {
-                if value.abs() < 1e-200 {
-                    *value = 0.0;
-                }
-            }
+            bank.state.iter_mut().flatten().for_each(biquad::flush);
         }
     }
 

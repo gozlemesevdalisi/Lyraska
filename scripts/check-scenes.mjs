@@ -44,7 +44,9 @@ const fakeCore = (level = null) => `
       case "library_status": return { folders: [], trackCount: 0, analyzed: 0,
         scan: { scanning: false, found: 0, processed: 0, current: null }, problems: [] };
       case "library_search": return [];
-      case "equalizer_get": return { enabled: true, gainsDb: Array(10).fill(0),
+      // EqState'in bütün alanları (src/lib/bindings/EqState.ts): eksik alan arayüzü çökertir.
+      case "equalizer_get": return { enabled: true, gainsDb: Array(10).fill(0), bassDb: 0,
+        smallSpeaker: false, bassDepth: 0, maxBassDb: 18,
         bandsHz: [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], maxGainDb: 12, preampDb: 0,
         curveHz: [20, 20000], curveDb: [0, 0] };
       case "headphone_get": return { enabled: false, profile: null, curveHz: [], curveDb: [] };
@@ -140,14 +142,37 @@ async function hideChrome(page) {
 }
 
 /**
+ * Ekran kartsız CI makinesinde (Windows, "Microsoft Basic Render Driver") tam pencere sahne
+ * yazılımsal çizilir: tek bir ekran görüntüsü 10–60 sn sürebiliyor. İşlemlerin süresi buna
+ * göre uzun tutulur; denetlenen şey hız değil, çizimin doğruluğudur.
+ */
+const SLOW = 180_000;
+
+/** Sahne denetimi için yeni sayfa: bütün işlemler yavaş çizime göre beklenir. */
+async function openPage(browser) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  page.setDefaultTimeout(SLOW);
+  return page;
+}
+
+/**
+ * Arayüz çöktüyse (ör. sahte çekirdeğin verisinde yeni bir alan eksik) sahne hiç çizilmez:
+ * zaman aşımını beklemeden nedeni bildirilir.
+ */
+async function renderProblem(page, locator, errors) {
+  if ((await locator.count()) > 0) return null;
+  return `sahne çizilmedi${errors.length > 0 ? ` (${errors.join("; ")})` : ""}`;
+}
+
+/**
  * Öğenin ekran görüntüsü (base64 PNG). Playwright'ın öğe görüntüsü öğenin "durgun"
- * olmasını bekler; ekran kartsız CI makinesinde yazılımsal çizim çok yavaş olduğundan
- * bu bekleme zaman aşımına düşebiliyordu. Konum bir kez okunur, o alan çekilir.
+ * olmasını bekler; yazılımsal çizimde bu bekleme bitmeyebiliyor. Konum bir kez okunur,
+ * o alan çekilir.
  */
 async function capture(page, locator) {
-  const box = await locator.boundingBox({ timeout: 60_000 });
+  const box = await locator.boundingBox();
   if (!box) throw new Error("öğe görünmüyor");
-  const shot = await page.screenshot({ clip: box, timeout: 60_000, animations: "allow" });
+  const shot = await page.screenshot({ clip: box, animations: "allow" });
   return shot.toString("base64");
 }
 
@@ -215,7 +240,9 @@ const FLASH_DELTA = 0.1;
 async function checkFlashBound(browser, scene) {
   const shots = [];
   for (const level of [0, 1]) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    const page = await openPage(browser);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(`sayfa hatası: ${e}`));
     await page.addInitScript(
       `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${fakeCore(level)}`,
     );
@@ -225,7 +252,13 @@ async function checkFlashBound(browser, scene) {
     await page.keyboard.press("Space");
     await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
     await hideChrome(page);
-    shots.push(await capture(page, page.locator(".stage")));
+    const stage = page.locator(".stage");
+    const problem = await renderProblem(page, stage, errors);
+    if (problem) {
+      await page.close();
+      return [`${scene.name}: ${problem}`];
+    }
+    shots.push(await capture(page, stage));
     await page.close();
   }
   const page = await browser.newPage();
@@ -258,7 +291,7 @@ const ALL_SCENES = [
 ];
 
 async function checkScene(browser, scene) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  const page = await openPage(browser);
   const problems = [];
   page.on("console", (m) => {
     // Yedek çizim denetiminde WebGL'in açılamadığı bildirimi beklenen bir şeydir.
@@ -277,6 +310,11 @@ async function checkScene(browser, scene) {
   await hideChrome(page);
 
   const canvas = page.locator("canvas:not([hidden])").first();
+  const problem = await renderProblem(page, canvas, problems);
+  if (problem) {
+    await page.close();
+    return [`${scene.name}: ${problem}`];
+  }
   const state = await canvas.evaluate((c) => ({
     webgl: c.dataset.webgl,
     fallback: c.dataset.fallback ?? null,

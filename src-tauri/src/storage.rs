@@ -67,8 +67,13 @@ ALTER TABLE analyses ADD COLUMN loudness_lufs REAL;
 ALTER TABLE analyses ADD COLUMN true_peak_dbtp REAL;
 ";
 
+/// 3: analize bas tepeleri (bas düğmesinin şarkının tepesini ne kadar yükselttiği; JSON).
+const V3: &str = "
+ALTER TABLE analyses ADD COLUMN bass_peaks TEXT;
+";
+
 /// Sıralı göç adımları (bkz. modül belgesi). Yalnızca sona eklenir.
-const MIGRATIONS: &[&str] = &[V1, V2];
+const MIGRATIONS: &[&str] = &[V1, V2, V3];
 
 /// Bu sürümün bildiği en yeni şema.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

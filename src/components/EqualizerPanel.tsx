@@ -1,7 +1,10 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { EqualizerControls } from "../hooks/useEqualizer";
 import type { HeadphoneControls } from "../hooks/useHeadphone";
 import {
+  BASS_CLUB_DB,
+  BASS_MAX_DB,
+  DEPTH_STEP,
   EQ_MAX_DB,
   EQ_PRESETS,
   EQ_STEP_DB,
@@ -210,7 +213,100 @@ function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
   );
 }
 
-/** 10 bantlı ekolayzer: hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
+/**
+ * Bas: tek dokunuşla bas düğmesi (100 Hz raf) ve küçük hoparlör bası (alt bas yerine
+ * harmonikleri). Ekolayzerin en üstünde, büyük: "bas dedin mi bas hissedilsin".
+ */
+function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
+  const { bassDb, smallSpeaker, bassDepth, enabled } = equalizer.settings;
+  const club = bassDb > BASS_CLUB_DB;
+  const depthPercent = Math.round(bassDepth * 100);
+  // Ok tuşları şarkıyı sarmasın.
+  const keepArrows = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key.startsWith("Arrow")) event.stopPropagation();
+  };
+  return (
+    <div
+      className={`bass${enabled ? "" : " is-off"}${club ? " is-club" : ""}`}
+      role="group"
+      aria-label="Bas"
+    >
+      <div className="bass__head">
+        <span className="bass__title">Bas</span>
+        <output className="bass__value" htmlFor="eq-bass">
+          {formatGain(bassDb)} dB
+        </output>
+        {club && <span className="bass__badge">Kulüp</span>}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={smallSpeaker}
+          className={`switch${smallSpeaker ? " is-on" : ""}`}
+          onClick={() => equalizer.setSmallSpeaker(!smallSpeaker)}
+          title="Dizüstü ve küçük hoparlörler 100 Hz'in altını çalamaz. Açıkken o bas süzülür, harmonikleri eklenir: beyin eksik notayı tamamlar, bas hissedilir."
+        >
+          <span className="switch__knob" aria-hidden />
+          <span>Küçük hoparlör bası</span>
+        </button>
+      </div>
+      <input
+        id="eq-bass"
+        className="bass__slider"
+        type="range"
+        aria-label="Bas"
+        aria-valuetext={`${formatGain(bassDb)} dB`}
+        min={0}
+        max={BASS_MAX_DB}
+        step={EQ_STEP_DB}
+        value={bassDb}
+        style={
+          {
+            "--fill": bassDb / BASS_MAX_DB,
+            "--club": BASS_CLUB_DB / BASS_MAX_DB,
+          } as CSSProperties
+        }
+        onChange={(event) => equalizer.setBass(Number(event.target.value))}
+        onKeyDown={keepArrows}
+      />
+      <p className="bass__hint">
+        {smallSpeaker
+          ? "Küçük hoparlör: çalınamayan alt bas süzülür, harmonikleri eklenir; bas dizüstünde de hissedilir."
+          : club
+            ? "Kulüp düzeyi: bas her şeyin önünde. Kulaklık zorlanırsa (cızırtı) biraz azaltın."
+            : "Davulun ve bas gitarın gövdesini (100 Hz altı) yükseltir; ses kısılmadan."}
+      </p>
+      <div className={`bass__row${smallSpeaker ? " is-dimmed" : ""}`}>
+        <label className="bass__label" htmlFor="eq-depth">
+          Derinlik
+        </label>
+        <input
+          id="eq-depth"
+          className="bass__slider bass__slider--depth"
+          type="range"
+          aria-valuetext={`%${depthPercent}`}
+          min={0}
+          max={1}
+          step={DEPTH_STEP}
+          value={bassDepth}
+          disabled={smallSpeaker}
+          style={{ "--fill": bassDepth } as CSSProperties}
+          onChange={(event) => equalizer.setDepth(Number(event.target.value))}
+          onKeyDown={keepArrows}
+        />
+        <output className="bass__depth" htmlFor="eq-depth">
+          %{depthPercent}
+        </output>
+      </div>
+      <p className="bass__hint">
+        {smallSpeaker
+          ? "Derinlik küçük hoparlörde kapalı: dizüstü o kadar derini çalamaz."
+          : "Bas notalarının bir oktav altını ekler: kayıtta olmasa da göğüste hissedilen gümbürtü."}
+      </p>
+    </div>
+  );
+}
+
+/** 10 bantlı ekolayzer: bas, hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
 export function EqualizerPanel({ equalizer, headphone, bypassed = false }: EqualizerPanelProps) {
   const { settings, state, error } = equalizer;
   // Kulaklık düzeltmesinin biçimi (ön kazanç çıkarılmış: sıfır çizgisi etrafında).
@@ -225,7 +321,7 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
       )
     : "";
   const sliders = useRef<(HTMLDivElement | null)[]>([]);
-  const preset = matchPreset(settings.gainsDb);
+  const preset = matchPreset(settings);
   const enabled = settings.enabled;
   const path = curvePath(state.curveHz, state.curveDb, PLOT_WIDTH, PLOT_HEIGHT, PLOT_RANGE_DB);
   const zeroY = PLOT_HEIGHT / 2;
@@ -266,6 +362,8 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
         </p>
       )}
 
+      <BassStrip equalizer={equalizer} />
+
       {headphone && <HeadphoneStrip headphone={headphone} />}
 
       <div className="eq__presets" role="group" aria-label="Hazır ayarlar">
@@ -276,7 +374,7 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
             className={`chip chip--button${enabled && preset === p.name ? " is-selected" : ""}`}
             aria-pressed={enabled && preset === p.name}
             title={p.hint}
-            onClick={() => equalizer.applyGains(p.gains)}
+            onClick={() => equalizer.applyPreset(p)}
           >
             {p.name}
           </button>

@@ -14,6 +14,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
+use super::bass::{BassBoost, BassPeaks, PEAK_STEPS_DB};
 use super::loudness::{Loudness, TARGET_LUFS};
 use super::Sample;
 
@@ -64,12 +65,18 @@ const MEASURED: u8 = 1;
 /// Analiz bitti ama ölçülecek ses yok (sessiz şarkı): kazanç uygulanmaz.
 const SILENT: u8 = 2;
 
+/// Bas tepeleri: raf kazançlarındaki artışlar ve alt oktav bandı.
+const BASS_VALUES: usize = PEAK_STEPS_DB.len() + 1;
+
 #[derive(Debug)]
 struct Slot {
     first_frame: AtomicU64,
     state: AtomicU8,
     lufs: AtomicU64,
     peak: AtomicU64,
+    /// Bas tepeleri ölçüldü mü (tam analizden; ses yüksekliğinden sonra gelebilir).
+    bass_known: AtomicBool,
+    bass: [AtomicU64; BASS_VALUES],
 }
 
 impl Default for Slot {
@@ -79,6 +86,8 @@ impl Default for Slot {
             state: AtomicU8::new(UNKNOWN),
             lufs: AtomicU64::new(0),
             peak: AtomicU64::new(0),
+            bass_known: AtomicBool::new(false),
+            bass: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
 }
@@ -98,6 +107,8 @@ pub struct TrackLevel {
     pub gain_db: f64,
     /// Eşitlemeden sonra tepeye kalan boşluk (dB, ≥ 0): ekolayzer bu kadar yükseltebilir.
     pub headroom_db: f64,
+    /// Ölçülmüş bas tepeleri: bas düğmesi tepeyi gerçekte ne kadar yükseltiyor.
+    pub bass_peaks: Option<BassPeaks>,
 }
 
 impl TrackLevels {
@@ -114,7 +125,41 @@ impl TrackLevels {
         let slot = &self.slots[index % SLOTS];
         slot.first_frame.store(first_frame, Ordering::Relaxed);
         slot.state.store(UNKNOWN, Ordering::Relaxed);
+        slot.bass_known.store(false, Ordering::Relaxed);
         self.count.store(index + 1, Ordering::Release);
+    }
+
+    /// `index`. şarkının bas tepeleri biliniyor mu?
+    pub fn has_bass_peaks(&self, index: usize) -> bool {
+        self.slot(index)
+            .is_some_and(|s| s.bass_known.load(Ordering::Acquire))
+    }
+
+    /// `index`. şarkının bas tepelerini yazar.
+    pub fn set_bass_peaks(&self, index: usize, peaks: &BassPeaks) {
+        let Some(slot) = self.slot(index) else {
+            return;
+        };
+        let values = peaks
+            .shelf_rise_db
+            .iter()
+            .chain(std::iter::once(&peaks.octave_band_db));
+        for (cell, value) in slot.bass.iter().zip(values) {
+            cell.store(value.to_bits(), Ordering::Relaxed);
+        }
+        slot.bass_known.store(true, Ordering::Release);
+    }
+
+    fn bass_peaks(&self, index: usize) -> Option<BassPeaks> {
+        let slot = self.slot(index)?;
+        if !slot.bass_known.load(Ordering::Acquire) {
+            return None;
+        }
+        let value = |i: usize| f64::from_bits(slot.bass[i].load(Ordering::Relaxed));
+        Some(BassPeaks {
+            shelf_rise_db: std::array::from_fn(value),
+            octave_band_db: value(BASS_VALUES - 1),
+        })
     }
 
     /// Oturumdaki şarkı sayısı.
@@ -157,6 +202,7 @@ impl TrackLevels {
                 SILENT => Some(None),
                 _ => None,
             });
+        let bass_peaks = self.bass_peaks(index);
         match measured {
             Some(Some(loudness)) => {
                 let gain_db = if normalize {
@@ -167,12 +213,14 @@ impl TrackLevels {
                 TrackLevel {
                     gain_db,
                     headroom_db: (-(loudness.true_peak_dbtp + gain_db)).max(0.0),
+                    bass_peaks,
                 }
             }
             // Sessiz şarkı: ne kazanç ne boşluk.
             Some(None) => TrackLevel {
                 gain_db: 0.0,
                 headroom_db: 0.0,
+                bass_peaks,
             },
             // Henüz ölçülmedi: tipik bir kayıt varsayılır, boşluğa güvenilmez.
             None => TrackLevel {
@@ -182,6 +230,7 @@ impl TrackLevels {
                     0.0
                 },
                 headroom_db: 0.0,
+                bass_peaks,
             },
         }
     }
@@ -225,6 +274,9 @@ pub struct Leveler {
     switching: bool,
     /// Çalan şarkının boşluğu (dB).
     headroom_db: f64,
+    /// Son bildirilen ekolayzer ve bas yükseltmesi (şarkı sınırında yeniden kullanılır).
+    eq_db: f64,
+    bass: BassBoost,
 }
 
 fn coefficient(seconds: f64, sample_rate: f64) -> f64 {
@@ -255,27 +307,39 @@ impl Leveler {
             release_coef: coefficient(PROTECT_RELEASE_SECONDS, rate),
             switching: false,
             headroom_db: level.headroom_db,
+            eq_db: 0.0,
+            bass: BassBoost::default(),
         }
     }
 
-    /// Her doldurma turunun başında: hedefleri günceller. `boost_db`: ekolayzerin
-    /// (o anki) en büyük yükseltmesi.
-    pub fn begin_block(&mut self, levels: &TrackLevels, normalize: bool, boost_db: f64) {
+    /// Her doldurma turunun başında: hedefleri günceller. `eq_db`: ekolayzerin (o anki) en
+    /// büyük yükseltmesi; `bass`: bas motorunun yükseltmesi (şarkının ölçülmüş bas
+    /// tepeleriyle gerçek artışa çevrilir).
+    pub fn begin_block(
+        &mut self,
+        levels: &TrackLevels,
+        normalize: bool,
+        eq_db: f64,
+        bass: BassBoost,
+    ) {
+        self.eq_db = eq_db;
+        self.bass = bass;
         self.next_start = levels.next_start(self.track);
         let level = levels.level(self.track, normalize);
         self.target = db_to_linear(level.gain_db);
         self.headroom_db = level.headroom_db;
+        let boost_db = eq_db + bass.rise_db(level.bass_peaks.as_ref());
         self.protect_target = db_to_linear(-(boost_db - self.headroom_db).max(0.0));
     }
 
     /// Bir kare için toplam kazanç (eşitleme × koruma); her kare bir kez çağrılır.
     #[inline]
-    pub fn next_gain(&mut self, levels: &TrackLevels, normalize: bool, boost_db: f64) -> Sample {
+    pub fn next_gain(&mut self, levels: &TrackLevels, normalize: bool) -> Sample {
         if self.next_start.is_some_and(|start| self.frame >= start) {
             // Boşluksuz geçiş: yeni şarkının ilk karesi.
             self.track += 1;
             self.switching = true;
-            self.begin_block(levels, normalize, boost_db);
+            self.begin_block(levels, normalize, self.eq_db, self.bass);
         }
         self.frame += 1;
 
@@ -318,6 +382,7 @@ fn approach(value: f64, target: f64, coef: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::bass::BassPeaks;
 
     const RATE: u32 = 48_000;
 
@@ -340,10 +405,10 @@ mod tests {
     }
 
     fn run(leveler: &mut Leveler, levels: &TrackLevels, frames: usize, boost: f64) -> f64 {
-        leveler.begin_block(levels, true, boost);
+        leveler.begin_block(levels, true, boost, BassBoost::default());
         let mut gain = 0.0;
         for _ in 0..frames {
-            gain = leveler.next_gain(levels, true, boost);
+            gain = leveler.next_gain(levels, true);
         }
         gain
     }
@@ -363,7 +428,8 @@ mod tests {
             levels.level(0, false),
             TrackLevel {
                 gain_db: 0.0,
-                headroom_db: 0.0
+                headroom_db: 0.0,
+                bass_peaks: None,
             }
         );
         // Ölçülmemiş şarkı: tipik kayıt varsayılır, boşluğa güvenilmez.
@@ -377,7 +443,7 @@ mod tests {
         let levels = TrackLevels::new();
         levels.set_loudness(0, Some(loud()));
         let mut leveler = Leveler::new(RATE, &levels, true);
-        let first = leveler.next_gain(&levels, true, 0.0);
+        let first = leveler.next_gain(&levels, true);
         assert!((to_db(first) + 6.0).abs() < 1e-9);
     }
 
@@ -404,10 +470,10 @@ mod tests {
         // 1. şarkı 1000. karede biter; 2. şarkı (sessiz kayıt) o karede başlar.
         levels.begin_track(1000);
         levels.set_loudness(1, Some(quiet()));
-        leveler.begin_block(&levels, true, 0.0);
+        leveler.begin_block(&levels, true, 0.0, BassBoost::default());
         let mut gains = Vec::new();
         for _ in 0..1000 + RATE as usize {
-            gains.push(to_db(leveler.next_gain(&levels, true, 0.0)));
+            gains.push(to_db(leveler.next_gain(&levels, true)));
         }
         assert!(
             gains[..1000].iter().all(|&g| (g + 6.0).abs() < 1e-9),
@@ -437,13 +503,52 @@ mod tests {
     }
 
     #[test]
+    fn olculen_bas_tepeleri_korumayi_gereksiz_kismaktan_kurtarir() {
+        let levels = TrackLevels::new();
+        levels.set_loudness(0, Some(loud())); // −6 dB eşitleme → 6 dB boşluk
+        let bass = BassBoost {
+            shelf_db: 12.0,
+            ..BassBoost::default()
+        };
+        let mut leveler = Leveler::new(RATE, &levels, true);
+        // Ölçüm yok: en kötü durum, rafın tamamı (12 − 6 = 6 dB kısılır).
+        leveler.begin_block(&levels, true, 0.0, bass);
+        let mut gain = 0.0;
+        for _ in 0..RATE {
+            gain = leveler.next_gain(&levels, true);
+        }
+        assert!((to_db(gain) + 12.0).abs() < 0.01, "{}", to_db(gain));
+        // Ölçüldü: bu şarkıda +12 dB bas tepeyi yalnızca 2,5 dB yükseltiyor; boşluk yetiyor.
+        levels.set_bass_peaks(
+            0,
+            &BassPeaks {
+                shelf_rise_db: [0.3, 0.8, 1.5, 2.5, 4.0, 6.0],
+                octave_band_db: -9.0,
+            },
+        );
+        assert!(levels.has_bass_peaks(0));
+        leveler.begin_block(&levels, true, 0.0, bass);
+        for _ in 0..RATE * 10 {
+            gain = leveler.next_gain(&levels, true);
+        }
+        assert!(
+            (to_db(gain) + 6.0).abs() < 0.01,
+            "yalnızca eşitleme: {}",
+            to_db(gain)
+        );
+        // Yeni şarkı başlayınca ölçümü yoktur.
+        levels.begin_track(1_000_000);
+        assert!(!levels.has_bass_peaks(1));
+    }
+
+    #[test]
     fn esitleme_kapali_ve_ekolayzer_duzken_kazanc_tam_bir() {
         let levels = TrackLevels::new();
         levels.set_loudness(0, Some(loud()));
         let mut leveler = Leveler::new(RATE, &levels, false);
-        leveler.begin_block(&levels, false, 0.0);
+        leveler.begin_block(&levels, false, 0.0, BassBoost::default());
         for _ in 0..1000 {
-            assert_eq!(leveler.next_gain(&levels, false, 0.0), 1.0);
+            assert_eq!(leveler.next_gain(&levels, false), 1.0);
         }
     }
 

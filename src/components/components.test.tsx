@@ -696,14 +696,86 @@ describe("ekolayzer", () => {
     await waitFor(() =>
       expect(backend.setEq).toHaveBeenLastCalledWith({
         enabled: true,
-        gainsDb: [4, 7, 6, 2.5, 0, 0, 0, 0, 0, 0],
+        gainsDb: [0, 4, 3, 1, 0, 0, 0, 0, 0, 0],
+        bassDb: 6,
+        smallSpeaker: false,
+        bassDepth: 0,
       }),
     );
-    expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "7");
+    expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "4");
+    // "Bas" hazır ayarı bas düğmesini de çevirir.
+    expect(screen.getByRole("slider", { name: "Bas" })).toHaveValue("6");
     expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
     expect(eqLight()).toHaveClass("is-on");
-    // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir.
-    expect(await screen.findByText(/Bozulma koruması: −7 dB/)).toBeInTheDocument();
+    // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir
+    // (bantların en büyüğü 4 + bas düğmesi 6).
+    expect(await screen.findByText(/Bozulma koruması: −10 dB/)).toBeInTheDocument();
+  });
+
+  it("bas kulüp bölgesine çıkar; derinlik ayarlanır, küçük hoparlörde kapanır", async () => {
+    await openEq();
+    const bass = screen.getByRole("slider", { name: "Bas" });
+    expect(bass).toHaveAttribute("max", "18");
+    expect(screen.queryByText("Kulüp", { selector: ".bass__badge" })).not.toBeInTheDocument();
+    await act(async () => fireEvent.change(bass, { target: { value: "15" } }));
+    expect(screen.getByText("Kulüp", { selector: ".bass__badge" })).toBeInTheDocument();
+    expect(screen.getByText(/Kulüp düzeyi: bas her şeyin önünde/)).toBeInTheDocument();
+
+    const depth = screen.getByRole("slider", { name: "Derinlik" });
+    await act(async () => fireEvent.change(depth, { target: { value: "0.6" } }));
+    expect(depth).toHaveAttribute("aria-valuetext", "%60");
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(
+        expect.objectContaining({ bassDb: 15, bassDepth: 0.6 }),
+      ),
+    );
+
+    // "Kulüp" hazır ayarı ikisini birlikte ayarlar.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kulüp" })));
+    expect(bass).toHaveValue("14");
+    expect(depth).toHaveValue("0.7");
+    expect(screen.getByRole("button", { name: "Kulüp" })).toHaveAttribute("aria-pressed", "true");
+
+    // Küçük hoparlörde alt oktav çalınamaz: derinlik kapanır.
+    await act(async () =>
+      fireEvent.click(screen.getByRole("switch", { name: "Küçük hoparlör bası" })),
+    );
+    expect(depth).toBeDisabled();
+    expect(screen.getByText(/Derinlik küçük hoparlörde kapalı/)).toBeInTheDocument();
+  });
+
+  it("bas düğmesi ve küçük hoparlör bası ayarlanır; hazır ayar 'özel'e döner", async () => {
+    await openEq();
+    const bass = screen.getByRole("slider", { name: "Bas" });
+    expect(bass).toHaveValue("0");
+    expect(eqLight()).not.toHaveClass("is-on");
+    await act(async () => fireEvent.change(bass, { target: { value: "8.5" } }));
+    expect(bass).toHaveValue("8.5");
+    expect(bass).toHaveAttribute("aria-valuetext", "+8,5 dB");
+    expect(screen.getByText("Özel ayar")).toBeInTheDocument();
+    expect(eqLight()).toHaveClass("is-on");
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(expect.objectContaining({ bassDb: 8.5 })),
+    );
+
+    const small = screen.getByRole("switch", { name: "Küçük hoparlör bası" });
+    expect(small).toHaveAttribute("aria-checked", "false");
+    await act(async () => fireEvent.click(small));
+    expect(small).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/çalınamayan alt bas süzülür/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(backend.setEq).toHaveBeenLastCalledWith(
+        expect.objectContaining({ bassDb: 8.5, smallSpeaker: true }),
+      ),
+    );
+
+    // "Küçük hoparlör" hazır ayarı ikisini birlikte ayarlar.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Küçük hoparlör" })));
+    expect(bass).toHaveValue("8");
+    expect(screen.getByRole("button", { name: "Küçük hoparlör" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("sürgü klavyeyle ayarlanır, ok tuşları şarkıyı sarmaz", async () => {
@@ -727,8 +799,8 @@ describe("ekolayzer", () => {
     expect(slider).toHaveAttribute("aria-valuenow", "0");
     await act(async () => fireEvent.keyDown(slider, { key: "Home" }));
     expect(slider).toHaveAttribute("aria-valuenow", "12");
-    await act(async () => fireEvent.click(screen.getByRole("switch")));
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Açık" })));
+    expect(screen.getByRole("switch", { name: "Kapalı" })).toHaveAttribute("aria-checked", "false");
     expect(slider).toHaveAttribute("aria-valuenow", "12");
     expect(eqLight()).not.toHaveClass("is-on");
     await waitFor(() =>

@@ -22,6 +22,7 @@ use super::beats::BeatGrid;
 use super::levels::VALUES_PER_FRAME;
 use super::spectrogram::{SavedAnalysis, BANDS};
 use super::structure::SongMap;
+use crate::audio::bass::BassPeaks;
 use crate::audio::loudness::Loudness;
 
 /// Analiz algoritmalarının sürümü. Spektrum, beat, ölçü, bölüm, drop ya da enerji
@@ -29,7 +30,7 @@ use crate::audio::loudness::Loudness;
 /// 2: kareler her örnekleme hızında tam 1/60 saniyede (22,05 / 32 kHz'te kayıyordu);
 /// vuruş gecikmesi örnekleme hızına göre düşülüyor.
 /// 3: ses yüksekliği (EBU R128) ve gerçek tepe ölçülüyor.
-pub const ANALYSIS_VERSION: i64 = 3;
+pub const ANALYSIS_VERSION: i64 = 4;
 
 /// Sıkıştırma düzeyi (0–10): 6 hız ve boyut arasında iyi bir denge.
 const COMPRESSION_LEVEL: u8 = 6;
@@ -114,7 +115,8 @@ impl AnalysisCache {
         let conn = self.lock()?;
         let row = conn
             .query_row(
-                "SELECT frames, levels, meters, onset, beats, song_map, loudness_lufs, true_peak_dbtp
+                "SELECT frames, levels, meters, onset, beats, song_map, loudness_lufs, true_peak_dbtp,
+                        bass_peaks
                  FROM analyses
                  WHERE path = ?1 AND file_size = ?2 AND modified = ?3 AND version = ?4",
                 params![
@@ -133,13 +135,14 @@ impl AnalysisCache {
                         r.get::<_, Option<String>>(5)?,
                         r.get::<_, Option<f64>>(6)?,
                         r.get::<_, Option<f64>>(7)?,
+                        r.get::<_, Option<String>>(8)?,
                     ))
                 },
             )
             .optional()?;
         drop(conn);
         Ok(row.and_then(
-            |(frames, levels, meters, onset, beats, song_map, lufs, peak)| {
+            |(frames, levels, meters, onset, beats, song_map, lufs, peak, bass_peaks)| {
                 let saved = SavedAnalysis {
                     levels: undelta(&inflate(&levels)?, BANDS),
                     meters: undelta(&inflate(&meters)?, VALUES_PER_FRAME),
@@ -155,6 +158,7 @@ impl AnalysisCache {
                             integrated_lufs,
                             true_peak_dbtp,
                         }),
+                    bass_peaks: bass_peaks.and_then(|j| serde_json::from_str::<BassPeaks>(&j).ok()),
                 };
                 (saved.is_consistent() && saved.frames() as i64 == frames).then_some(saved)
             },
@@ -177,6 +181,10 @@ impl AnalysisCache {
             .song_map
             .as_ref()
             .and_then(|m| serde_json::to_string(m).ok());
+        let bass_peaks = saved
+            .bass_peaks
+            .as_ref()
+            .and_then(|b| serde_json::to_string(b).ok());
         let row = params![
             path.to_string_lossy(),
             stamp.size as i64,
@@ -191,12 +199,13 @@ impl AnalysisCache {
             song_map,
             saved.loudness.map(|l| l.integrated_lufs),
             saved.loudness.map(|l| l.true_peak_dbtp),
+            bass_peaks,
         ];
         self.lock()?.execute(
             "INSERT OR REPLACE INTO analyses
                  (path, file_size, modified, version, frames, bpm, levels, meters, onset, beats,
-                  song_map, loudness_lufs, true_peak_dbtp)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                  song_map, loudness_lufs, true_peak_dbtp, bass_peaks)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             row,
         )?;
         Ok(())
@@ -300,6 +309,10 @@ mod tests {
                 integrated_lufs: -9.25,
                 true_peak_dbtp: 0.4,
             }),
+            bass_peaks: Some(BassPeaks {
+                shelf_rise_db: [0.2, 0.5, 1.25, 2.5, 4.0, 6.5],
+                octave_band_db: -7.5,
+            }),
         }
     }
 
@@ -363,6 +376,7 @@ mod tests {
             beats: None,
             song_map: None,
             loudness: None,
+            bass_peaks: None,
             ..sample(30)
         };
         cache.store(path, STAMP, &saved).unwrap();
