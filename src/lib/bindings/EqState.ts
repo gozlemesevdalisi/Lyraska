@@ -3,13 +3,14 @@
 /**
  * Arayüzün gösterdiği ekolayzer durumu: ayarlar ve gerçekten uygulanan eğri.
  */
-export type EqState = { enabled: boolean, gainsDb: Array<number>, bandsHz: Array<number>, maxGainDb: number, 
+export type EqState = { enabled: boolean, gainsDb: Array<number>, bassDb: number, smallSpeaker: boolean, maxBassDb: number, bandsHz: Array<number>, maxGainDb: number, 
 /**
  * Taşmayı önlemek için düşürülen kazanç (dB, ≤ 0): çalan şarkının boşluğunun
  * yetmediği kadar.
  */
 preampDb: number, 
 /**
- * Filtrelerin toplam tepkisi (ön kazanç hariç): frekanslar (Hz) ve kazançlar (dB).
+ * Filtrelerin (bas düğmesi dahil) toplam tepkisi, ön kazanç hariç: frekanslar (Hz)
+ * ve kazançlar (dB).
  */
 curveHz: Array<number>, curveDb: Array<number>, };

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use rtrb::Consumer;
 
+use super::bass::BassProcessor;
 use super::eq::{EqControl, EqProcessor};
 use super::limiter::Limiter;
 use super::normalize::{Leveler, LoudnessControl, TrackLevels};
@@ -65,6 +66,8 @@ pub struct Renderer {
     /// Her karede kazancın değiştiği miktar.
     fade_step: f64,
     eq: EqProcessor,
+    /// Bas düğmesi ve küçük hoparlör bası (ekolayzerin ayarlarından).
+    bass: BassProcessor,
     headphone: PeqProcessor,
     /// Ses yüksekliği eşitlemesi ve ekolayzerin taşma koruması.
     leveler: Leveler,
@@ -89,6 +92,7 @@ impl Renderer {
             channels,
             gain: 0.0,
             fade_step: 1.0 / fade_frames,
+            bass: BassProcessor::new(Arc::clone(&controls.eq), channels, sample_rate),
             eq: EqProcessor::new(controls.eq, channels, sample_rate),
             headphone: PeqProcessor::new(controls.headphone, channels, sample_rate),
             leveler,
@@ -129,6 +133,7 @@ impl Renderer {
         let target = if paused { 0.0 } else { 1.0 };
         let mut outcome = RenderOutcome::default();
         self.eq.begin_block();
+        self.bass.begin_block();
         self.headphone.begin_block();
         let normalize = self.loudness.enabled();
         if self.wait_frames > 0 {
@@ -148,7 +153,7 @@ impl Renderer {
             }
         }
         self.leveler
-            .begin_block(&self.levels, normalize, self.eq.boost_db());
+            .begin_block(&self.levels, normalize, self.boost_db());
 
         for frame in out.chunks_exact_mut(self.channels) {
             // Sessiz karelerde de taşma korumasının gecikme hattı ilerler: duraklatma
@@ -180,16 +185,19 @@ impl Renderer {
                     *value *= self.gain;
                 }
             } else {
-                // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → eşitleme ve
+                // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → bas → eşitleme ve
                 // ekolayzerin taşma koruması → ses geçişi → taşma koruması (sınırlayıcı).
                 self.headphone.process_frame(&mut self.frame);
                 self.eq.advance_frame();
-                let level = self
-                    .leveler
-                    .next_gain(&self.levels, normalize, self.eq.boost_db());
-                let gain = level * self.gain;
                 for (channel, value) in self.frame.iter_mut().enumerate() {
-                    *value = self.eq.process(channel, *value) * gain;
+                    *value = self.eq.process(channel, *value);
+                }
+                self.bass.process_frame(&mut self.frame);
+                let boost_db = self.boost_db();
+                let level = self.leveler.next_gain(&self.levels, normalize, boost_db);
+                let gain = level * self.gain;
+                for value in self.frame.iter_mut() {
+                    *value *= gain;
                 }
             }
             self.write_frame(frame);
@@ -209,6 +217,12 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// Ekolayzer ve bas motorunun birlikte en büyük yükseltmesi (dB): taşma koruması
+    /// bunun eşitlemenin açtığı boşluğa sığmayan kısmı kadar kısar.
+    fn boost_db(&self) -> f64 {
+        self.eq.boost_db() + self.bass.boost_db()
+    }
+
     /// Çalışma alanındaki kareyi taşma korumasından geçirip aygıt arabelleğine yazar.
     fn write_frame(&mut self, out: &mut [Sample]) {
         self.limiter.process_frame(&mut self.frame);
@@ -349,6 +363,7 @@ mod tests {
         let eq = Arc::new(EqControl::new(EqSettings {
             enabled: true,
             gains_db: [-12.0; BANDS],
+            ..EqSettings::default()
         }));
         let rate = 48_000;
         let controls = RenderControls {
@@ -380,6 +395,7 @@ mod tests {
         let eq = Arc::new(EqControl::new(EqSettings {
             enabled: true,
             gains_db: [6.0, 5.0, 3.0, 1.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0],
+            ..EqSettings::default()
         }));
         let headphone = Arc::new(PeqControl::default());
         let profile = HeadphoneProfile {
@@ -436,10 +452,14 @@ mod tests {
         let flat = EqSettings {
             enabled: true,
             gains_db: [0.0; BANDS],
+            ..EqSettings::default()
         };
+        // Bas düğmesi ve küçük hoparlör bası da ölçüme girsin.
         let boosted = EqSettings {
             enabled: true,
             gains_db: [12.0; BANDS],
+            bass_db: 12.0,
+            small_speaker: true,
         };
 
         let info = allocation_counter::measure(|| {
@@ -571,7 +591,8 @@ mod tests {
         use crate::audio::eq::{EqSettings, BANDS};
         use crate::audio::peq::{FilterKind, HeadphoneProfile, PeqFilter};
         use crate::audio::test_util::{fit, sine};
-        // Bütün işlemler açık: kulaklık düzeltmesi, "Bas" ayarı, eşitleme. Ses yolu doğrusal
+        // Bütün doğrusal işlemler açık: kulaklık düzeltmesi, "Bas" ayarı, bas düğmesi,
+        // eşitleme. (Küçük hoparlör bası bilerek harmonik ekler; kendi testinde.) Ses yolu doğrusal
         // olmalı: çıkışta tondan başka bir şey (bozulma, gürültü, cızırtı) olmamalı.
         let rate = 48_000u32;
         let mut gains = [0.0; BANDS];
@@ -613,6 +634,8 @@ mod tests {
                 eq: Arc::new(EqControl::new(EqSettings {
                     enabled: true,
                     gains_db: gains,
+                    bass_db: 6.0,
+                    ..EqSettings::default()
                 })),
                 headphone,
                 loudness: Arc::new(LoudnessControl::new(true)),
@@ -655,6 +678,7 @@ mod tests {
         let eq = Arc::new(EqControl::new(EqSettings {
             enabled: true,
             gains_db: [12.0; BANDS],
+            ..EqSettings::default()
         }));
         let levels = Arc::new(TrackLevels::new());
         let controls = RenderControls {

@@ -3,4 +3,12 @@
 /**
  * Kullanıcının ekolayzer ayarları. Ayarlar dosyasında da bu biçimde saklanır.
  */
-export type EqSettings = { enabled: boolean, gainsDb: Array<number>, };
+export type EqSettings = { enabled: boolean, gainsDb: Array<number>, 
+/**
+ * Bas düğmesi (0–12 dB, 100 Hz raf; bkz. [`super::bass`]).
+ */
+bassDb: number, 
+/**
+ * Küçük hoparlör bası: alt bas yerine harmonikleri (dizüstü ve küçük hoparlörler).
+ */
+smallSpeaker: boolean, };

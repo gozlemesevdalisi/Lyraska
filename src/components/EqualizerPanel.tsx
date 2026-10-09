@@ -1,7 +1,8 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { EqualizerControls } from "../hooks/useEqualizer";
 import type { HeadphoneControls } from "../hooks/useHeadphone";
 import {
+  BASS_MAX_DB,
   EQ_MAX_DB,
   EQ_PRESETS,
   EQ_STEP_DB,
@@ -210,7 +211,59 @@ function HeadphoneStrip({ headphone }: { headphone: HeadphoneControls }) {
   );
 }
 
-/** 10 bantlı ekolayzer: hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
+/**
+ * Bas: tek dokunuşla bas düğmesi (100 Hz raf) ve küçük hoparlör bası (alt bas yerine
+ * harmonikleri). Ekolayzerin en üstünde, büyük: "bas dedin mi bas hissedilsin".
+ */
+function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
+  const { bassDb, smallSpeaker, enabled } = equalizer.settings;
+  const ratio = bassDb / BASS_MAX_DB;
+  return (
+    <div className={`bass${enabled ? "" : " is-off"}`} role="group" aria-label="Bas">
+      <div className="bass__head">
+        <span className="bass__title">Bas</span>
+        <output className="bass__value" htmlFor="eq-bass">
+          {formatGain(bassDb)} dB
+        </output>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={smallSpeaker}
+          className={`switch${smallSpeaker ? " is-on" : ""}`}
+          onClick={() => equalizer.setSmallSpeaker(!smallSpeaker)}
+          title="Dizüstü ve küçük hoparlörler 100 Hz'in altını çalamaz. Açıkken o bas süzülür, harmonikleri eklenir: beyin eksik notayı tamamlar, bas hissedilir."
+        >
+          <span className="switch__knob" aria-hidden />
+          <span>Küçük hoparlör bası</span>
+        </button>
+      </div>
+      <input
+        id="eq-bass"
+        className="bass__slider"
+        type="range"
+        aria-label="Bas"
+        aria-valuetext={`${formatGain(bassDb)} dB`}
+        min={0}
+        max={BASS_MAX_DB}
+        step={EQ_STEP_DB}
+        value={bassDb}
+        style={{ "--fill": ratio } as CSSProperties}
+        onChange={(event) => equalizer.setBass(Number(event.target.value))}
+        onKeyDown={(event) => {
+          // Ok tuşları şarkıyı sarmasın.
+          if (event.key.startsWith("Arrow")) event.stopPropagation();
+        }}
+      />
+      <p className="bass__hint">
+        {smallSpeaker
+          ? "Küçük hoparlör: çalınamayan alt bas süzülür, harmonikleri eklenir; bas dizüstünde de hissedilir."
+          : "Davulun ve bas gitarın gövdesini (100 Hz altı) yükseltir; ses kısılmadan."}
+      </p>
+    </div>
+  );
+}
+
+/** 10 bantlı ekolayzer: bas, hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
 export function EqualizerPanel({ equalizer, headphone, bypassed = false }: EqualizerPanelProps) {
   const { settings, state, error } = equalizer;
   // Kulaklık düzeltmesinin biçimi (ön kazanç çıkarılmış: sıfır çizgisi etrafında).
@@ -225,7 +278,7 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
       )
     : "";
   const sliders = useRef<(HTMLDivElement | null)[]>([]);
-  const preset = matchPreset(settings.gainsDb);
+  const preset = matchPreset(settings);
   const enabled = settings.enabled;
   const path = curvePath(state.curveHz, state.curveDb, PLOT_WIDTH, PLOT_HEIGHT, PLOT_RANGE_DB);
   const zeroY = PLOT_HEIGHT / 2;
@@ -266,6 +319,8 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
         </p>
       )}
 
+      <BassStrip equalizer={equalizer} />
+
       {headphone && <HeadphoneStrip headphone={headphone} />}
 
       <div className="eq__presets" role="group" aria-label="Hazır ayarlar">
@@ -276,7 +331,7 @@ export function EqualizerPanel({ equalizer, headphone, bypassed = false }: Equal
             className={`chip chip--button${enabled && preset === p.name ? " is-selected" : ""}`}
             aria-pressed={enabled && preset === p.name}
             title={p.hint}
-            onClick={() => equalizer.applyGains(p.gains)}
+            onClick={() => equalizer.applyPreset(p)}
           >
             {p.name}
           </button>

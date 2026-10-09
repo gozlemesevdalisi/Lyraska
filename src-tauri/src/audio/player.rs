@@ -922,8 +922,9 @@ impl Player {
         self.analysis_for(&track.path)?.spectrogram.song_map()
     }
 
-    /// Ekolayzerin spektrum bantlarındaki toplam kazancı (dB): filtrelerin tepkisi ve ses
-    /// yolundaki gibi, şarkının boşluğunun yetmediği kadar taşma koruması kısması.
+    /// Ekolayzerin ve bas düğmesinin spektrum bantlarındaki toplam kazancı (dB): filtrelerin
+    /// tepkisi ve ses yolundaki gibi, şarkının boşluğunun yetmediği kadar taşma koruması
+    /// kısması. (Küçük hoparlörün harmonikleri doğrusal olmadığı için eklenmez.)
     /// Tepki, ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
     fn visual_eq_offsets(&mut self, rate: u32) -> [f64; BANDS] {
         let version = self.eq.version();
@@ -934,9 +935,15 @@ impl Player {
                 let (response, boost_db) = if settings.is_active() {
                     let rate_hz = f64::from(rate);
                     let design = Design::new(&settings.gains_db, rate_hz);
-                    let response = spectrogram::band_centers(rate_hz)
-                        .map(|hz| design.response_db(hz, rate_hz));
-                    (response, -design.preamp_db)
+                    let (bass_db, small_speaker) = settings.effective_bass();
+                    let response = spectrogram::band_centers(rate_hz).map(|hz| {
+                        design.response_db(hz, rate_hz)
+                            + super::bass::response_db(bass_db, small_speaker, hz, rate_hz)
+                    });
+                    (
+                        response,
+                        -design.preamp_db + super::bass::boost_db(bass_db, small_speaker),
+                    )
                 } else {
                     ([0.0; BANDS], 0.0)
                 };
@@ -1652,6 +1659,7 @@ mod tests {
         let applied = player.set_equalizer(EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         });
         assert_eq!(player.equalizer(), applied);
         let after = player.visual_now().unwrap().bands;
@@ -1695,6 +1703,7 @@ mod tests {
         player.set_equalizer(EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         });
         let change = change_db(&mut player);
         assert!(change.abs() < 1.0, "1 kHz değişimi {change:.1} dB");
@@ -1925,6 +1934,7 @@ mod tests {
             eq: Arc::new(EqControl::new(EqSettings {
                 enabled: true,
                 gains_db: [6.0; crate::audio::eq::BANDS],
+                ..EqSettings::default()
             })),
             loudness: Arc::new(LoudnessControl::new(true)),
             bit_perfect: true,

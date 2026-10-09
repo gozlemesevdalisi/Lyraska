@@ -235,7 +235,14 @@ export function searchLibrary(query: string): Promise<LibraryTrack[]> {
 
 /** Ekolayzer durumu. Tarayıcı önizlemesinde yaklaşık bir eğri hesaplanır. */
 export async function getEqualizer(): Promise<EqState> {
-  if (!isTauri()) return previewEqState({ enabled: true, gainsDb: Array(10).fill(0) });
+  if (!isTauri()) {
+    return previewEqState({
+      enabled: true,
+      gainsDb: Array(10).fill(0),
+      bassDb: 0,
+      smallSpeaker: false,
+    });
+  }
   return invoke<EqState>("equalizer_get");
 }
 

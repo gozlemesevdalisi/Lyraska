@@ -7,6 +7,7 @@ import {
   formatHz,
   frequencyToRatio,
   matchPreset,
+  snapBass,
   previewEqState,
   snapGain,
 } from "./eq";
@@ -46,9 +47,19 @@ describe("ekolayzer yardımcıları", () => {
 
   it("hazır ayarı tanır, değiştirilince 'özel' sayar", () => {
     const rock = EQ_PRESETS.find((p) => p.name === "Rock")!;
-    expect(matchPreset(rock.gains)).toBe("Rock");
-    expect(matchPreset(Array(10).fill(0))).toBe("Düz");
-    expect(matchPreset(rock.gains.map((g, i) => (i === 0 ? g + 0.5 : g)))).toBeNull();
+    const of = (gainsDb: number[], bassDb = 0, smallSpeaker = false) => ({
+      gainsDb,
+      bassDb,
+      smallSpeaker,
+    });
+    expect(matchPreset(of(rock.gains))).toBe("Rock");
+    expect(matchPreset(of(Array(10).fill(0)))).toBe("Düz");
+    expect(matchPreset(of(rock.gains.map((g, i) => (i === 0 ? g + 0.5 : g))))).toBeNull();
+    // Bas düğmesi ya da küçük hoparlör de hazır ayarın parçası.
+    expect(matchPreset(of(rock.gains, 2))).toBeNull();
+    expect(matchPreset(of(rock.gains, 0, true))).toBeNull();
+    const small = EQ_PRESETS.find((p) => p.name === "Küçük hoparlör")!;
+    expect(matchPreset(of(small.gains, small.bassDb, true))).toBe("Küçük hoparlör");
   });
 
   it("hazır ayarlar 10 bant, ±8 dB içinde ve adları farklı", () => {
@@ -57,23 +68,33 @@ describe("ekolayzer yardımcıları", () => {
     for (const preset of EQ_PRESETS) {
       expect(preset.gains).toHaveLength(10);
       expect(preset.gains.every((g) => Math.abs(g) <= 8 && snapGain(g) === g)).toBe(true);
+      expect(snapBass(preset.bassDb)).toBe(preset.bassDb);
     }
     expect(new Set(EQ_PRESETS.map((p) => p.name)).size).toBe(EQ_PRESETS.length);
   });
 
-  it("bas ayarları cihaza göre farklı frekansları yükseltir", () => {
-    const gains = (name: string) => EQ_PRESETS.find((p) => p.name === name)!.gains;
-    const [sub31, bass62, bass125, low250] = gains("Bas");
-    // "Bas": göğse vuran bölge (62–125 Hz) en yüksek.
-    expect(Math.max(bass62!, bass125!)).toBeGreaterThan(sub31!);
-    expect(bass62!).toBeGreaterThanOrEqual(6);
-    // "Derin bas": en çok 31 Hz.
-    expect(gains("Derin bas")[0]).toBe(Math.max(...gains("Derin bas")));
-    // "Küçük hoparlör": veremediği 31 Hz kısılır, 125–250 Hz yükseltilir.
-    const small = gains("Küçük hoparlör");
-    expect(small[0]!).toBeLessThan(0);
-    expect(Math.min(small[2]!, small[3]!)).toBeGreaterThan(3);
-    expect(low250).toBeGreaterThan(0);
+  it("bas ayarları cihaza göre farklı yollarla bas verir", () => {
+    const preset = (name: string) => EQ_PRESETS.find((p) => p.name === name)!;
+    const at = (name: string, hz: number) => {
+      const state = previewEqState({ enabled: true, ...pick(preset(name)) });
+      return state.curveDb[state.curveHz.findIndex((f) => f >= hz)]!;
+    };
+    const pick = (p: (typeof EQ_PRESETS)[number]) => ({
+      gainsDb: p.gains,
+      bassDb: p.bassDb,
+      smallSpeaker: p.smallSpeaker,
+    });
+    // "Bas": bas düğmesi ve 62–125 Hz birlikte; 62 Hz en az +8 dB.
+    expect(preset("Bas").bassDb).toBeGreaterThanOrEqual(6);
+    expect(at("Bas", 62)).toBeGreaterThanOrEqual(8);
+    // "Derin bas": en çok en altta.
+    expect(at("Derin bas", 31)).toBeGreaterThan(at("Derin bas", 125));
+    // "Küçük hoparlör": harmonik bas açık; veremediği alt bas süzülür, 125–250 Hz yükselir.
+    expect(preset("Küçük hoparlör").smallSpeaker).toBe(true);
+    expect(at("Küçük hoparlör", 31)).toBeLessThan(0);
+    expect(at("Küçük hoparlör", 200)).toBeGreaterThan(2);
+    // Diğerlerinde küçük hoparlör kapalı.
+    expect(EQ_PRESETS.filter((p) => p.smallSpeaker).map((p) => p.name)).toEqual(["Küçük hoparlör"]);
   });
 
   it("frekansları logaritmik eksene yerleştirir", () => {
@@ -90,13 +111,28 @@ describe("ekolayzer yardımcıları", () => {
 
   it("tarayıcı önizlemesinde yaklaşık eğri üretir", () => {
     const gains = [6, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    const state = previewEqState({ enabled: true, gainsDb: gains });
+    const flat = { bassDb: 0, smallSpeaker: false };
+    const state = previewEqState({ enabled: true, gainsDb: gains, ...flat });
     expect(state.preampDb).toBe(-6);
     const at31 = state.curveDb[state.curveHz.findIndex((f) => f >= 31.25)]!;
     expect(at31).toBeGreaterThan(5);
     expect(state.curveDb[state.curveDb.length - 1]).toBe(0);
-    const off = previewEqState({ enabled: false, gainsDb: gains });
+    const off = previewEqState({ enabled: false, gainsDb: gains, bassDb: 9, smallSpeaker: true });
     expect(off.curveDb.every((d) => d === 0)).toBe(true);
     expect(off.gainsDb[0]).toBe(6);
+    expect(off.bassDb).toBe(9);
+    // Bas düğmesi alt frekansları yükseltir, ortaya dokunmaz; koruma ona göre.
+    const bass = previewEqState({
+      enabled: true,
+      gainsDb: Array(10).fill(0),
+      bassDb: 9,
+      smallSpeaker: false,
+    });
+    expect(bass.curveDb[0]).toBeGreaterThan(8);
+    expect(Math.abs(bass.curveDb[bass.curveHz.findIndex((f) => f >= 2000)]!)).toBeLessThan(0.1);
+    expect(bass.preampDb).toBe(-9);
+    expect(snapBass(13)).toBe(12);
+    expect(snapBass(-1)).toBe(0);
+    expect(snapBass(4.3)).toBe(4.5);
   });
 });

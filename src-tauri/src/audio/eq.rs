@@ -36,6 +36,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use super::bass;
 use super::Sample;
 
 /// Bant sayısı.
@@ -99,6 +100,10 @@ pub struct EqSettings {
     pub enabled: bool,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub gains_db: [f64; BANDS],
+    /// Bas düğmesi (0–12 dB, 100 Hz raf; bkz. [`super::bass`]).
+    pub bass_db: f64,
+    /// Küçük hoparlör bası: alt bas yerine harmonikleri (dizüstü ve küçük hoparlörler).
+    pub small_speaker: bool,
 }
 
 impl Default for EqSettings {
@@ -106,6 +111,8 @@ impl Default for EqSettings {
         Self {
             enabled: true,
             gains_db: [0.0; BANDS],
+            bass_db: 0.0,
+            small_speaker: false,
         }
     }
 }
@@ -120,12 +127,29 @@ impl EqSettings {
                 0.0
             };
         }
+        self.bass_db = if self.bass_db.is_finite() {
+            self.bass_db.clamp(0.0, bass::MAX_BASS_DB)
+        } else {
+            0.0
+        };
         self
     }
 
-    /// Sesi gerçekten değiştiriyor mu? (Kapalı ya da bütün sürgüler 0'da ise hayır.)
+    /// Sesi gerçekten değiştiriyor mu? (Kapalı ya da bütün sürgüler ve bas 0'da ise hayır.)
     pub fn is_active(&self) -> bool {
-        self.enabled && self.gains_db.iter().any(|g| g.abs() > FLAT_DB)
+        self.enabled
+            && (self.gains_db.iter().any(|g| g.abs() > FLAT_DB)
+                || self.bass_db > FLAT_DB
+                || self.small_speaker)
+    }
+
+    /// Ses işlemede hedeflenen bas ayarı: kapalıyken düz.
+    pub fn effective_bass(&self) -> (f64, bool) {
+        if self.enabled {
+            (self.bass_db, self.small_speaker)
+        } else {
+            (0.0, false)
+        }
     }
 
     /// Ses işlemede hedeflenen kazançlar: kapalıyken düz.
@@ -146,13 +170,17 @@ pub struct EqState {
     pub enabled: bool,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub gains_db: [f64; BANDS],
+    pub bass_db: f64,
+    pub small_speaker: bool,
+    pub max_bass_db: f64,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub bands_hz: [f64; BANDS],
     pub max_gain_db: f64,
     /// Taşmayı önlemek için düşürülen kazanç (dB, ≤ 0): çalan şarkının boşluğunun
     /// yetmediği kadar.
     pub preamp_db: f64,
-    /// Filtrelerin toplam tepkisi (ön kazanç hariç): frekanslar (Hz) ve kazançlar (dB).
+    /// Filtrelerin (bas düğmesi dahil) toplam tepkisi, ön kazanç hariç: frekanslar (Hz)
+    /// ve kazançlar (dB).
     pub curve_hz: Vec<f64>,
     pub curve_db: Vec<f64>,
 }
@@ -164,16 +192,24 @@ impl EqState {
         let curve_hz: Vec<f64> = (0..CURVE_POINTS)
             .map(|i| 20.0 * 1000f64.powf(i as f64 / (CURVE_POINTS - 1) as f64))
             .collect();
+        let (bass_db, small_speaker) = settings.effective_bass();
         let curve_db = curve_hz
             .iter()
-            .map(|&hz| design.response_db(hz, DISPLAY_RATE))
+            .map(|&hz| {
+                design.response_db(hz, DISPLAY_RATE)
+                    + bass::response_db(bass_db, small_speaker, hz, DISPLAY_RATE)
+            })
             .collect();
+        let boost_db = -design.preamp_db + bass::boost_db(bass_db, small_speaker);
         Self {
             enabled: settings.enabled,
             gains_db: settings.gains_db,
+            bass_db: settings.bass_db,
+            small_speaker: settings.small_speaker,
+            max_bass_db: bass::MAX_BASS_DB,
             bands_hz: CENTERS_HZ,
             max_gain_db: MAX_GAIN_DB,
-            preamp_db: protection_db(-design.preamp_db, headroom_db),
+            preamp_db: protection_db(boost_db, headroom_db),
             curve_hz,
             curve_db,
         }
@@ -196,6 +232,8 @@ pub struct EqControl {
     version: AtomicU64,
     enabled: AtomicBool,
     gains: [AtomicU64; BANDS],
+    bass_db: AtomicU64,
+    small_speaker: AtomicBool,
 }
 
 impl Default for EqControl {
@@ -210,6 +248,8 @@ impl EqControl {
             version: AtomicU64::new(0),
             enabled: AtomicBool::new(false),
             gains: std::array::from_fn(|_| AtomicU64::new(0f64.to_bits())),
+            bass_db: AtomicU64::new(0f64.to_bits()),
+            small_speaker: AtomicBool::new(false),
         };
         control.set(settings);
         control
@@ -221,6 +261,10 @@ impl EqControl {
         for (slot, gain) in self.gains.iter().zip(settings.gains_db) {
             slot.store(gain.to_bits(), Ordering::Relaxed);
         }
+        self.bass_db
+            .store(settings.bass_db.to_bits(), Ordering::Relaxed);
+        self.small_speaker
+            .store(settings.small_speaker, Ordering::Relaxed);
         self.enabled.store(settings.enabled, Ordering::Relaxed);
         self.version.fetch_add(1, Ordering::Release);
         settings
@@ -232,6 +276,8 @@ impl EqControl {
             gains_db: std::array::from_fn(|i| {
                 f64::from_bits(self.gains[i].load(Ordering::Relaxed))
             }),
+            bass_db: f64::from_bits(self.bass_db.load(Ordering::Relaxed)),
+            small_speaker: self.small_speaker.load(Ordering::Relaxed),
         }
     }
 
@@ -768,6 +814,7 @@ mod tests {
         let fixed = EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         }
         .sanitized();
         assert_eq!(fixed.gains_db[0], 12.0);
@@ -804,6 +851,7 @@ mod tests {
         let control = Arc::new(EqControl::new(EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         }));
         let mut processor = EqProcessor::new(control, 1, rate);
         processor.begin_block();
@@ -828,6 +876,7 @@ mod tests {
         control.set(EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         });
         processor.begin_block();
         // 1 kHz bandı +12 dB'ye çıkar. Bu çıkış ani olmamalı.
@@ -859,6 +908,7 @@ mod tests {
         control.set(EqSettings {
             enabled: false,
             gains_db: gains,
+            ..EqSettings::default()
         });
         processor.begin_block();
         for _ in 0..rate {
@@ -877,10 +927,65 @@ mod tests {
         let applied = control.set(EqSettings {
             enabled: false,
             gains_db: gains,
+            ..EqSettings::default()
         });
         assert_eq!(applied.gains_db[3], 12.0);
         assert_eq!(control.settings(), applied);
         assert!(control.version() > before);
+    }
+
+    #[test]
+    fn bas_hazir_ayari_basi_gercekten_yukseltir() {
+        // Arayüzdeki "Bas" hazır ayarı (src/lib/eq.ts): bantlar + bas düğmesi.
+        let mut gains = [0.0; BANDS];
+        gains[1..4].copy_from_slice(&[4.0, 3.0, 1.0]);
+        let state = EqState::new(
+            EqSettings {
+                gains_db: gains,
+                bass_db: 6.0,
+                ..EqSettings::default()
+            },
+            6.0,
+        );
+        let at = |hz: f64| {
+            let i = state.curve_hz.iter().position(|&f| f >= hz).unwrap();
+            state.curve_db[i]
+        };
+        assert!(at(62.0) > 8.0, "62 Hz: {:.1}", at(62.0));
+        assert!(at(31.0) > 5.0, "31 Hz: {:.1}", at(31.0));
+        assert!(at(1000.0).abs() < 0.5, "1 kHz: {:.1}", at(1000.0));
+        // Boşluk 6 dB: 4 dB bant + 6 dB bas = 10 dB yükseltmenin 4'ü için kısılır.
+        assert!((state.preamp_db + 4.0).abs() < 1e-9, "{}", state.preamp_db);
+        assert_eq!(state.bass_db, 6.0);
+        assert_eq!(state.max_bass_db, crate::audio::bass::MAX_BASS_DB);
+    }
+
+    #[test]
+    fn bas_ayari_duzeltilir_ve_eski_dosyalar_okunur() {
+        let settings = EqSettings {
+            bass_db: 40.0,
+            ..EqSettings::default()
+        }
+        .sanitized();
+        assert_eq!(settings.bass_db, crate::audio::bass::MAX_BASS_DB);
+        let settings = EqSettings {
+            bass_db: f64::NAN,
+            ..EqSettings::default()
+        }
+        .sanitized();
+        assert_eq!(settings.bass_db, 0.0);
+        // Bas eklenmeden önce kaydedilmiş ayar: bas 0, küçük hoparlör kapalı.
+        let old: EqSettings =
+            serde_json::from_str(r#"{"enabled":true,"gainsDb":[1,0,0,0,0,0,0,0,0,0]}"#).unwrap();
+        assert_eq!(old.gains_db[0], 1.0);
+        assert_eq!(old.bass_db, 0.0);
+        assert!(!old.small_speaker);
+        assert!(old.is_active());
+        assert!(EqSettings {
+            small_speaker: true,
+            ..EqSettings::default()
+        }
+        .is_active());
     }
 
     #[test]
@@ -890,6 +995,7 @@ mod tests {
         let settings = EqSettings {
             enabled: true,
             gains_db: gains,
+            ..EqSettings::default()
         };
         let state = EqState::new(settings, 0.0);
         assert_eq!(
@@ -917,6 +1023,7 @@ mod tests {
             EqSettings {
                 enabled: false,
                 gains_db: gains,
+                ..EqSettings::default()
             },
             0.0,
         );
