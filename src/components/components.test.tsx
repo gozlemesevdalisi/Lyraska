@@ -1066,6 +1066,8 @@ describe("şarkı haritası ve bilgi kartları", () => {
     expect(screen.getByText("17 saniye sonra")).toBeInTheDocument();
     expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
     expect(screen.getByText("FLAC 44,1 → 48 kHz")).toBeInTheDocument();
+    // Arayüzün vurgu renkleri çalan bölümün temasında (83,4 sn: ikinci bölüm, etiket 1).
+    expect(container.querySelector("main")).toHaveAttribute("data-theme", "1");
   });
 
   it("analiz bitmeden şerit düz çubuktur, sayaç görünmez", async () => {
