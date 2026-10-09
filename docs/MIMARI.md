@@ -136,6 +136,7 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Ölçülen bas tepeleri gerçek artışı karşılar, gereksiz kısmaz | `audio::bass` testi `olculen_bas_tepeleri_…`                     |
 | Vuruş ilk anı güçlendirir; sürekli basa ve ortaya dokunmaz   | `audio::punch` testleri, `audio::bass` testi `vurus_…`           |
 | Sahne denetiminin sahte çekirdeği arayüzün tipleriyle aynı   | `src/lib/sceneCheck.test.ts` (üretilen tipe bağlı)               |
+| Bir panelin ya da sahnenin hatası pencereyi karartmaz        | `ErrorBoundary` testleri, bileşen testi "hata sınırları"         |
 | Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır         | `audio::resample` testleri                                       |
 | Windows'a özel kod (WASAPI) temiz                            | Clippy, `--target x86_64-pc-windows-gnu` (yerel) ve Windows CI   |
 | Kütüphane kodunda `unwrap`/`expect`/`panic!` yok             | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`      |
