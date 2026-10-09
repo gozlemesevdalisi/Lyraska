@@ -23,7 +23,7 @@ use serde::Serialize;
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{protection_db, Design, EqControl, EqSettings};
 use super::normalize::{LoudnessControl, TrackLevels};
-use super::output::{self, DeviceInfo, OutputSpec};
+use super::output::{self, DeviceInfo, OutputMode, OutputSpec};
 use super::peq::{HeadphoneSettings, PeqControl};
 use super::render::RenderControls;
 use super::resample::Converter;
@@ -211,6 +211,12 @@ pub struct SignalPath {
     /// Ses yüksekliği eşitlemesinin uyguladığı kazanç (dB); eşitleme kapalıysa ya da
     /// şarkı henüz ölçülmediyse `None`.
     pub normalization_db: Option<f64>,
+    /// Bit-perfect: aygıt özel modda, şarkının örnekleri değişmeden gidiyor.
+    pub bit_perfect: bool,
+    /// Özel modda aygıta giden örneğin anlamlı bit sayısı (16, 24, 32).
+    pub bit_depth: Option<u16>,
+    /// Bit-perfect istendiği hâlde açılamadıysa nedeni (ses normal yoldan çalar).
+    pub notice: Option<String>,
 }
 
 /// Şu an duyulan anın görsel verisi (önceden yapılmış analizden).
@@ -257,7 +263,10 @@ struct Session {
 impl Session {
     /// Oturumu başlatır. `start_secs` verilirse şarkının o noktasından başlar.
     /// `controls`: oynatıcının ayarları (oturumun şarkı seviyeleri burada kurulur);
-    /// `analysis`: ilk şarkının analizi (ses yüksekliği ölçümü buradan okunur).
+    /// `analysis`: ilk şarkının analizi (ses yüksekliği ölçümü buradan okunur);
+    /// `bit_perfect`: aygıtı özel modda, şarkının kendi hızında açmayı dene. Aygıt bu
+    /// biçimi desteklemiyorsa paylaşımlı modda açılır ve nedeni sinyal yolunda yazar;
+    /// destekliyor ama akış açılamıyorsa [`AudioError::Exclusive`] döner.
     fn start(
         path: &Path,
         autoplay: bool,
@@ -265,6 +274,7 @@ impl Session {
         next: Option<PathBuf>,
         controls: &RenderControls,
         analysis: Option<Arc<Spectrogram>>,
+        bit_perfect: bool,
     ) -> Result<Self, AudioError> {
         let mut decoder = Decoder::open(path)?;
         let start_frame = match start_secs {
@@ -272,11 +282,25 @@ impl Session {
             _ => 0,
         };
         let info = decoder.info().clone();
-        // Aygıtın kendi hızında çal: dönüştürmeyi Windows değil, biz yaparız.
         let device = output::device_info();
+        let channels = Converter::output_channels(info.channels);
+        let (mode, notice) = if bit_perfect {
+            match output::exclusive_format(info.sample_rate, channels) {
+                Ok(format) => (OutputMode::Exclusive(format), None),
+                Err(reason) => (OutputMode::Shared, Some(reason)),
+            }
+        } else {
+            (OutputMode::Shared, None)
+        };
         let spec = OutputSpec {
-            sample_rate: device.as_ref().map_or(info.sample_rate, |d| d.sample_rate),
-            channels: Converter::output_channels(info.channels),
+            sample_rate: match mode {
+                // Bit-perfect: şarkının kendi hızında, dönüştürme yok.
+                OutputMode::Exclusive(_) => info.sample_rate,
+                // Aygıtın kendi hızında çal: dönüştürmeyi Windows değil, biz yaparız.
+                OutputMode::Shared => device.as_ref().map_or(info.sample_rate, |d| d.sample_rate),
+            },
+            channels,
+            mode,
         };
         let converter = Converter::new(
             info.sample_rate,
@@ -284,7 +308,8 @@ impl Session {
             spec.sample_rate,
             spec.channels,
         )?;
-        let path = signal_path(device, &info, spec);
+        let mut path = signal_path(device, &info, spec);
+        path.notice = notice;
         let capacity = spec.sample_rate as usize * spec.channels * RING_SECONDS;
         let (producer, consumer) = RingBuffer::new(capacity);
         let first = Segment {
@@ -303,6 +328,7 @@ impl Session {
             first,
             RenderControls {
                 levels,
+                bit_perfect: matches!(mode, OutputMode::Exclusive(_)),
                 ..controls.clone()
             },
         ));
@@ -373,6 +399,12 @@ fn signal_path(device: Option<DeviceInfo>, info: &TrackInfo, spec: OutputSpec) -
         channels: spec.channels,
         resampled: spec.sample_rate != info.sample_rate,
         normalization_db: None,
+        bit_perfect: matches!(spec.mode, OutputMode::Exclusive(_)),
+        bit_depth: match spec.mode {
+            OutputMode::Exclusive(format) => Some(format.valid_bits),
+            OutputMode::Shared => None,
+        },
+        notice: None,
     }
 }
 
@@ -491,6 +523,8 @@ pub struct Player {
     headphone_control: Arc<PeqControl>,
     /// Ses yüksekliği eşitlemesi açık mı (ses çıkışı okur).
     loudness: Arc<LoudnessControl>,
+    /// Bit-perfect (özel mod) isteniyor mu? Yeni oturumlarda uygulanır.
+    bit_perfect: bool,
     headphone: HeadphoneSettings,
     /// Epilepsi güvenli modu: Görsel Yönetmen nabızları saniyede en fazla bire indirir.
     visual_safe: bool,
@@ -545,14 +579,28 @@ impl Player {
             .as_ref()
             .filter(|a| a.path == path)
             .map(|a| Arc::clone(&a.spectrogram));
-        match Session::start(
-            path,
-            autoplay,
-            start_secs,
-            self.next_path.clone(),
-            &self.render_controls(),
-            analysis,
-        ) {
+        let controls = self.render_controls();
+        let start = |bit_perfect: bool| {
+            Session::start(
+                path,
+                autoplay,
+                start_secs,
+                self.next_path.clone(),
+                &controls,
+                analysis.clone(),
+                bit_perfect,
+            )
+        };
+        let started = match start(self.bit_perfect) {
+            // Aygıt özel moda alınamadı (ör. başka program tutuyor): normal yoldan çal,
+            // nedeni sinyal yolunda göster.
+            Err(AudioError::Exclusive(reason)) => start(false).map(|mut session| {
+                session.path.notice = Some(reason);
+                session
+            }),
+            other => other,
+        };
+        match started {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
@@ -709,6 +757,8 @@ impl Player {
             headphone: Arc::clone(&self.headphone_control),
             loudness: Arc::clone(&self.loudness),
             levels: Arc::new(TrackLevels::new()),
+            // Oturum, aygıtı özel modda açabildiyse kendisi açar.
+            bit_perfect: false,
         }
     }
 
@@ -716,12 +766,35 @@ impl Player {
     pub fn playback_options(&self) -> super::PlaybackOptions {
         super::PlaybackOptions {
             normalize: self.loudness.enabled(),
+            bit_perfect: self.bit_perfect,
         }
     }
 
-    /// Çalma seçeneklerini uygular. Eşitleme değişince çalan şarkıda kazanç yumuşakça değişir.
-    pub fn set_playback_options(&mut self, options: super::PlaybackOptions) {
+    /// Çalma seçeneklerini uygular. Eşitleme değişince çalan şarkıda kazanç yumuşakça
+    /// değişir. Bit-perfect değişince aygıt yeniden açılır: çalan şarkı kaldığı yerden
+    /// (duraklatılmışsa duraklatılmış olarak) sürer.
+    pub fn set_playback_options(
+        &mut self,
+        options: super::PlaybackOptions,
+    ) -> Result<(), AudioError> {
         self.loudness.set(options.normalize);
+        if options.bit_perfect == self.bit_perfect {
+            return Ok(());
+        }
+        self.bit_perfect = options.bit_perfect;
+        let Some(session) = &self.session else {
+            return Ok(());
+        };
+        match session.state() {
+            PlaybackState::Playing | PlaybackState::Paused => {
+                let (track, position) = session.now_playing();
+                let resume = session.state() == PlaybackState::Playing;
+                self.restart(&track.path, resume, Some(position))
+                    .map(|_| ())
+            }
+            // Bitmiş ya da hatalı oturum: bir sonraki açılışta uygulanır.
+            PlaybackState::Ended | PlaybackState::Error | PlaybackState::Idle => Ok(()),
+        }
     }
 
     /// Analizi biten şarkıların ses yüksekliğini oturumun seviye tablosuna yazar
@@ -804,9 +877,13 @@ impl Player {
             energy: map.energy_at(seconds),
             section: map.section_at(seconds),
         });
-        let offsets = self.visual_eq_offsets(rate);
-        for (level, &db) in bands.iter_mut().zip(&offsets) {
-            *level = spectrogram::shift_level(*level, db);
+        // Bit-perfect oturumda ekolayzer sese uygulanmaz; görsellere de eklenmez.
+        let bit_perfect = self.session.as_ref().is_some_and(|s| s.path.bit_perfect);
+        if !bit_perfect {
+            let offsets = self.visual_eq_offsets(rate);
+            for (level, &db) in bands.iter_mut().zip(&offsets) {
+                *level = spectrogram::shift_level(*level, db);
+            }
         }
         Some(VisualData {
             seconds,
@@ -883,7 +960,7 @@ impl Player {
                 let mut output = session.path.clone();
                 output.resampled = output.sample_rate != track.sample_rate;
                 output.normalization_db = level
-                    .filter(|_| self.loudness.enabled())
+                    .filter(|_| self.loudness.enabled() && !output.bit_perfect)
                     .map(|level| level.gain_db);
                 PlaybackStatus {
                     state: session.state(),
@@ -1017,6 +1094,11 @@ fn open_next(
     if Converter::output_channels(info.channels) != spec.channels {
         return None;
     }
+    // Bit-perfect akış şarkının kendi hızında açıldı: hızı farklı şarkı dönüştürülmez,
+    // oturum biter ve sıradaki şarkı kendi hızında yeni bir akışla açılır.
+    if matches!(spec.mode, OutputMode::Exclusive(_)) && info.sample_rate != spec.sample_rate {
+        return None;
+    }
     let converter = Converter::new(
         info.sample_rate,
         info.channels,
@@ -1115,6 +1197,7 @@ mod tests {
         let spec = OutputSpec {
             sample_rate: 8_000,
             channels: 2,
+            mode: OutputMode::Shared,
         };
         let handle = std::thread::spawn(move || {
             decode_loop(decoder, converter, spec, producer, &thread_shared, None)
@@ -1158,6 +1241,7 @@ mod tests {
         let spec = OutputSpec {
             sample_rate: 8_000,
             channels: 2,
+            mode: OutputMode::Shared,
         };
         let handle = std::thread::spawn(move || {
             decode_loop(decoder, converter, spec, producer, &thread_shared, None)
@@ -1230,6 +1314,7 @@ mod tests {
         let spec = OutputSpec {
             sample_rate: 8_000,
             channels: 2,
+            mode: OutputMode::Shared,
         };
         let handle = std::thread::spawn(move || {
             decode_loop(decoder, converter, spec, producer, &thread_shared, None)
@@ -1616,7 +1701,12 @@ mod tests {
 
         // Eşitleme kapalıyken boşluk yalnızca şarkının tepesinden (6 dB): yükseltmenin
         // kalan 6 dB'si için ses kısılır, görsel de öyle.
-        player.set_playback_options(super::super::PlaybackOptions { normalize: false });
+        player
+            .set_playback_options(super::super::PlaybackOptions {
+                normalize: false,
+                ..Default::default()
+            })
+            .unwrap();
         let change = change_db(&mut player);
         assert!((change + 6.0).abs() < 1.0, "1 kHz değişimi {change:.1} dB");
         std::fs::remove_file(path).ok();
@@ -1665,13 +1755,198 @@ mod tests {
         ));
 
         // Kapatınca kazanç kalkar; boşluk yalnızca şarkının kendi tepesinden gelir.
-        player.set_playback_options(super::super::PlaybackOptions { normalize: false });
+        player
+            .set_playback_options(super::super::PlaybackOptions {
+                normalize: false,
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(player.status().output.unwrap().normalization_db, None);
         assert!(
             (player.headroom_db() - 6.02).abs() < 0.1,
             "{}",
             player.headroom_db()
         );
+        std::fs::remove_file(path).ok();
+    }
+
+    /// Sanal aygıt: paylaşımlı modda 48 kHz; özel modda verilen biçim.
+    fn exclusive_device(format: Option<output::IntFormat>, busy: bool) {
+        output::simulated::set_device_rate(Some(48_000));
+        output::simulated::set_exclusive(format, busy);
+    }
+
+    fn reset_device() {
+        output::simulated::set_device_rate(None);
+        output::simulated::set_exclusive(None, false);
+    }
+
+    fn bit_perfect(on: bool) -> super::super::PlaybackOptions {
+        super::super::PlaybackOptions {
+            bit_perfect: on,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn bit_perfect_aygiti_sarkinin_hizinda_ozel_modda_acar() {
+        exclusive_device(Some(output::IntFormat::new(32, 24)), false);
+        let path = temp_path("bit-perfect.wav");
+        write_wav(&path, 44_100, 2, 44_100 * 2, |frame, channel| {
+            0.3 * crate::audio::test_util::sine(440.0 + 110.0 * channel as f64, 44_100, frame)
+        });
+        let mut player = Player::new();
+        player.set_playback_options(bit_perfect(true)).unwrap();
+        assert!(player.playback_options().bit_perfect);
+        assert!(
+            player.playback_options().normalize,
+            "eşitleme ayarı korunur"
+        );
+        player.load(&path, false).unwrap();
+
+        let output = player.status().output.unwrap();
+        assert!(output.bit_perfect);
+        assert_eq!(
+            output.sample_rate, 44_100,
+            "aygıtın 48 kHz'i değil, şarkının hızı"
+        );
+        assert!(!output.resampled);
+        assert_eq!(output.bit_depth, Some(24));
+        assert_eq!(output.notice, None);
+        assert_eq!(output.normalization_db, None, "ses işlenmez");
+        let session = player.session.as_ref().unwrap();
+        assert!(session.shared.controls.bit_perfect);
+
+        // Kapatınca aygıt paylaşımlı modda yeniden açılır; şarkı kaldığı yerde bekler.
+        player.seek(1.0).unwrap();
+        player.set_playback_options(bit_perfect(false)).unwrap();
+        assert_eq!(player.state(), PlaybackState::Paused);
+        assert!((player.status().position_secs - 1.0).abs() < 1e-9);
+        let output = player.status().output.unwrap();
+        assert!(!output.bit_perfect);
+        assert_eq!(output.sample_rate, 48_000);
+        assert!(output.resampled);
+        assert_eq!(output.bit_depth, None);
+        assert!(!player.session.as_ref().unwrap().shared.controls.bit_perfect);
+        reset_device();
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn bit_perfect_acilamazsa_normal_yoldan_calar_ve_nedenini_soyler() {
+        let path = ramp_song("bit-perfect-yok.wav");
+        let mut player = Player::new();
+        player.set_playback_options(bit_perfect(true)).unwrap();
+
+        // Aygıt bu biçimi özel modda desteklemiyor.
+        exclusive_device(None, false);
+        player.load(&path, true).unwrap();
+        let output = player.status().output.unwrap();
+        assert!(!output.bit_perfect);
+        assert_eq!(output.sample_rate, 48_000, "Lyraska'nın dönüştürücüsüyle");
+        let notice = output.notice.unwrap();
+        assert!(notice.contains("desteklemiyor"), "{notice}");
+        assert!(!player.session.as_ref().unwrap().shared.controls.bit_perfect);
+
+        // Destekliyor ama aygıtı başka program tutuyor: akış açılamaz, yine çalar.
+        exclusive_device(Some(output::IntFormat::new(16, 16)), true);
+        player.load(&path, true).unwrap();
+        let output = player.status().output.unwrap();
+        assert!(!output.bit_perfect);
+        let notice = output.notice.unwrap();
+        assert!(notice.contains("başka bir program"), "{notice}");
+        assert!(matches!(
+            player.state(),
+            PlaybackState::Playing | PlaybackState::Ended
+        ));
+        reset_device();
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn bit_perfect_hizi_farkli_siradaki_sarkiya_bosluksuz_gecilmez() {
+        exclusive_device(Some(output::IntFormat::new(16, 16)), false);
+        // 3 saniyelik şarkılar: 2 saniyelik tampona sığmasınlar, sıradaki zamanında bilinsin.
+        let song = |name: &str, rate: u32| {
+            let path = temp_path(name);
+            write_wav(&path, rate, 1, rate as usize * 3, |_, _| 0.1);
+            path
+        };
+        let a = song("bp-a.wav", 8_000);
+        let same = song("bp-ayni.wav", 8_000);
+        let other = song("bp-farkli.wav", 16_000);
+        let mut player = Player::new();
+        player.set_playback_options(bit_perfect(true)).unwrap();
+
+        // Aynı hızdaki şarkıya akış kesilmeden geçilir.
+        player.load(&a, true).unwrap();
+        player.set_next(Some(same.clone()));
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        assert_eq!(player.status().track.unwrap().path, same);
+
+        // Hızı farklı şarkı dönüştürülmez: oturum biter, arayüz sıradakini kendi hızında açar.
+        player.load(&a, true).unwrap();
+        player.set_next(Some(other.clone()));
+        assert!(wait_until(|| player.state() == PlaybackState::Ended));
+        assert_eq!(player.status().track.unwrap().path, a);
+        player.load(&other, true).unwrap();
+        assert_eq!(player.status().output.unwrap().sample_rate, 16_000);
+        reset_device();
+        for path in [a, same, other] {
+            std::fs::remove_file(path).ok();
+        }
+    }
+
+    #[test]
+    fn bit_perfect_zinciri_dosyadaki_tamsayilari_aynen_aygita_verir() {
+        use crate::audio::render::Renderer;
+        // 16 bitlik stereo dosya; değerler tam ölçek dahil bütün aralığa yayılır.
+        let path = temp_path("bit-perfect-zincir.wav");
+        let (rate, frames) = (44_100u32, 6_000usize);
+        let value = |frame: usize, channel: usize| {
+            ((frame * 7_919 + channel * 104_729) % 65_535) as f64 / 32_767.0 - 1.0
+        };
+        write_wav(&path, rate, 2, frames, value);
+        // `write_wav`'ın yazdığı tamsayılar.
+        let expected: Vec<i16> = (0..frames)
+            .flat_map(|f| (0..2).map(move |c| (value(f, c) * 32_767.0).round() as i16))
+            .collect();
+
+        // Çözme → dönüştürücü (aynı hız: dokunmaz) → halka tampon → ses çıkışı → aygıt.
+        let mut decoder = Decoder::open(&path).unwrap();
+        let mut converter = Converter::new(rate, 2, rate, 2).unwrap();
+        let (mut producer, mut consumer) = RingBuffer::new(frames * 2);
+        while let Some(chunk) = decoder.next_chunk().unwrap() {
+            for &sample in converter.process(chunk).unwrap() {
+                producer.push(sample).unwrap();
+            }
+        }
+        let controls = RenderControls {
+            eq: Arc::new(EqControl::new(EqSettings {
+                enabled: true,
+                gains_db: [6.0; crate::audio::eq::BANDS],
+            })),
+            loudness: Arc::new(LoudnessControl::new(true)),
+            bit_perfect: true,
+            ..RenderControls::default()
+        };
+        let mut renderer = Renderer::new(2, rate, controls);
+        let latency = renderer.latency_frames();
+        let mut out = vec![0.0; (frames + latency) * 2];
+        renderer.render(&mut consumer, &mut out, false);
+
+        let format = output::IntFormat::new(32, 24);
+        let mut bytes = [0u8; 4];
+        // Açılış geçişinden (10 ms) sonrası taşma korumasının gecikmesi kadar kayık.
+        let fade = (rate as usize / 100 + 1) * 2;
+        for (i, &want) in expected.iter().enumerate().skip(fade) {
+            format.encode(out[latency * 2 + i], &mut bytes);
+            assert_eq!(
+                i32::from_le_bytes(bytes),
+                i32::from(want) << 16,
+                "{i}. örnek değişti"
+            );
+        }
         std::fs::remove_file(path).ok();
     }
 }

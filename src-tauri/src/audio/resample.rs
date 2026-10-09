@@ -187,6 +187,7 @@ fn map_channels(input: &[Sample], from: usize, to: usize, out: &mut Vec<Sample>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::test_util::fit;
     use std::f64::consts::PI;
 
     fn sine(freq: f64, rate: u32, frames: usize) -> Vec<Sample> {
@@ -202,37 +203,6 @@ mod tests {
         }
         out.extend_from_slice(converter.finish().unwrap());
         out
-    }
-
-    /// Bilinen frekanstaki sinüse en küçük kareler uydurma: genlik ve kalan (gürültü+bozulma) dB.
-    fn fit(signal: &[Sample], freq: f64, rate: u32) -> (f64, f64) {
-        let w = 2.0 * PI * freq / f64::from(rate);
-        let (mut ss, mut sc, mut cc, mut ys, mut yc) = (0.0, 0.0, 0.0, 0.0, 0.0);
-        for (i, &y) in signal.iter().enumerate() {
-            let (s, c) = (w * i as f64).sin_cos();
-            ss += s * s;
-            sc += s * c;
-            cc += c * c;
-            ys += y * s;
-            yc += y * c;
-        }
-        let det = ss * cc - sc * sc;
-        let a = (ys * cc - yc * sc) / det;
-        let b = (yc * ss - ys * sc) / det;
-        let residual: f64 = signal
-            .iter()
-            .enumerate()
-            .map(|(i, &y)| {
-                let (s, c) = (w * i as f64).sin_cos();
-                (y - a * s - b * c).powi(2)
-            })
-            .sum::<f64>()
-            / signal.len() as f64;
-        let amplitude = (a * a + b * b).sqrt();
-        (
-            amplitude,
-            10.0 * (residual / (amplitude * amplitude / 2.0)).log10(),
-        )
     }
 
     #[test]
@@ -282,6 +252,33 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn yeni_hizin_siniri_ustundeki_tonlar_bastirilir() {
+        // 48 kHz'teki 23 kHz ton, 44,1 kHz'e inerken (sınır 22,05 kHz) duyulabilir bir
+        // yansımaya (21,1 kHz) dönüşmemeli; sınırın altındaki 20 kHz ise yerinde kalmalı.
+        let (from, to) = (48_000u32, 44_100u32);
+        let rms_db = |signal: &[Sample]| {
+            let mean = signal.iter().map(|x| x * x).sum::<f64>() / signal.len() as f64;
+            10.0 * mean.log10()
+        };
+        let reference = rms_db(&sine(1000.0, from, from as usize));
+        for (freq, keep) in [(23_000.0, false), (20_000.0, true)] {
+            let input = sine(freq, from, from as usize * 2);
+            let mut converter = Converter::new(from, 1, to, 1).unwrap();
+            let out = convert_all(&mut converter, &input, 1000);
+            let middle = &out[to as usize / 4..out.len() - to as usize / 4];
+            let level = rms_db(middle) - reference;
+            if keep {
+                assert!(level.abs() < 0.1, "{freq} Hz: {level:.2} dB");
+            } else {
+                assert!(level < -MIN_ALIAS_REJECTION_DB, "{freq} Hz: {level:.1} dB");
+            }
+        }
+    }
+
+    /// Sınırın üstündeki tonların en az bu kadar bastırılması beklenir (dB).
+    const MIN_ALIAS_REJECTION_DB: f64 = 140.0;
 
     #[test]
     fn gecikme_telafi_edilir() {

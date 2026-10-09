@@ -57,13 +57,15 @@ export function PlayerScreen() {
   const headphone = useHeadphone();
   const visualSafe = useVisualSafe();
   const playbackOptions = usePlaybackOptions();
-  // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
-  const soundShaped = equalizer.active || headphone.active;
   const [scene, chooseScene] = useScene();
 
   const playback = usePlayback(info.supportedExtensions);
   const { player, playList, upcoming } = playback;
   const { status } = player;
+  // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
+  // Bit-perfect çalarken ikisi de sese uygulanmaz.
+  const bitPerfect = status.output?.bitPerfect ?? false;
+  const soundShaped = (equalizer.active || headphone.active) && !bitPerfect;
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
@@ -293,7 +295,7 @@ export function PlayerScreen() {
           aria-labelledby="drawer-tab-eq"
           hidden={drawer.panel !== "eq"}
         >
-          <EqualizerPanel equalizer={equalizer} headphone={headphone} />
+          <EqualizerPanel equalizer={equalizer} headphone={headphone} bypassed={bitPerfect} />
         </div>
         <div
           className="drawer__panel"

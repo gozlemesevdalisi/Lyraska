@@ -77,6 +77,9 @@ describe("signalPathText", () => {
       channels: 2,
       resampled: true,
       normalizationDb: null,
+      bitPerfect: false,
+      bitDepth: null,
+      notice: null,
     },
   };
 
@@ -96,12 +99,30 @@ describe("signalPathText", () => {
         channels: 2,
         resampled: false,
         normalizationDb: null,
+        bitPerfect: false,
+        bitDepth: null,
+        notice: null,
       },
     });
     expect(text).toContain("dönüştürmesiz → varsayılan ses aygıtı");
     expect(text).toContain("takılma: 3");
     expect(signalPathText({ ...status, output: null })).toBeNull();
     expect(signalPathText({ ...status, track: null })).toBeNull();
+  });
+
+  it("bit-perfect yolu anlatır, eşitleme ve taşma koruması yazmaz", () => {
+    const text = signalPathText({
+      ...status,
+      track: { ...track, codec: "flac" },
+      output: {
+        ...status.output!,
+        sampleRate: 44100,
+        resampled: false,
+        bitPerfect: true,
+        bitDepth: 24,
+      },
+    });
+    expect(text).toBe("FLAC 44,1 kHz → bit-perfect (özel mod, 24 bit) → Hoparlörler (Realtek)");
   });
 
   it("ses yüksekliği eşitlemesinin kazancını yazar", () => {
@@ -162,6 +183,9 @@ describe("ses biçimi etiketi", () => {
       channels: 2,
       resampled: true,
       normalizationDb: null,
+      bitPerfect: false,
+      bitDepth: null,
+      notice: null,
     };
     expect(formatLabel(track, output)).toBe("FLAC 44,1 → 48 kHz");
   });
@@ -173,9 +197,26 @@ describe("ses biçimi etiketi", () => {
       channels: 2,
       resampled: false,
       normalizationDb: null,
+      bitPerfect: false,
+      bitDepth: null,
+      notice: null,
     };
     expect(formatLabel(track, output)).toBe("FLAC 44,1 kHz");
     expect(formatLabel({ ...track, codec: "mp3", sampleRate: 48000 }, null)).toBe("MP3 48 kHz");
+  });
+
+  it("bit-perfect çalarken söyler", () => {
+    const output = {
+      deviceName: "",
+      sampleRate: 44100,
+      channels: 2,
+      resampled: false,
+      normalizationDb: null,
+      bitPerfect: true,
+      bitDepth: 16,
+      notice: null,
+    };
+    expect(formatLabel(track, output)).toBe("FLAC 44,1 kHz · bit-perfect");
   });
 });
 

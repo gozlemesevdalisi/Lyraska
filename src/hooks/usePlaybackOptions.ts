@@ -10,14 +10,17 @@ export interface PlaybackOptionsControls {
   options: PlaybackOptions;
   error: string | null;
   setNormalize: (on: boolean) => Promise<void>;
+  setBitPerfect: (on: boolean) => Promise<void>;
 }
 
 /**
- * Çalma seçenekleri. Ses yüksekliği eşitlemesi: bütün şarkılar aynı yükseklikte çalar,
- * ekolayzer sesi kısmadan yükseltebilir. Ayar kaydedilir; program her açılışta hatırlar.
+ * Çalma seçenekleri. Ayarlar kaydedilir; program her açılışta hatırlar.
+ * - Ses yüksekliği eşitlemesi: bütün şarkılar aynı yükseklikte çalar, ekolayzer sesi
+ *   kısmadan yükseltebilir.
+ * - Bit-perfect: ses aygıta hiç değişmeden gider (özel mod); çalan şarkı kaldığı yerden sürer.
  */
 export function usePlaybackOptions(): PlaybackOptionsControls {
-  const [options, setOptions] = useState<PlaybackOptions>({ normalize: true });
+  const [options, setOptions] = useState<PlaybackOptions>({ normalize: true, bitPerfect: false });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,19 +33,24 @@ export function usePlaybackOptions(): PlaybackOptionsControls {
     };
   }, []);
 
-  const setNormalize = useCallback(
-    async (normalize: boolean) => {
-      const next = { ...options, normalize };
+  const update = useCallback(
+    async (change: Partial<PlaybackOptions>) => {
+      const next = { ...options, ...change };
       setOptions(next); // düğme hemen tepki versin
       try {
         setOptions(await setPlaybackOptions(next));
         setError(null);
       } catch (e) {
+        // Ayar kaydedildi ama uygulanamadı (ör. aygıt yeniden açılamadı): düğme yeni
+        // durumda kalır, neden yazılır.
         setError(errorMessage(e));
       }
     },
     [options],
   );
 
-  return { options, error, setNormalize };
+  const setNormalize = useCallback((normalize: boolean) => update({ normalize }), [update]);
+  const setBitPerfect = useCallback((bitPerfect: boolean) => update({ bitPerfect }), [update]);
+
+  return { options, error, setNormalize, setBitPerfect };
 }

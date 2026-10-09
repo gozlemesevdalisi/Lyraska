@@ -53,3 +53,35 @@ pub fn write_wav(
         .write_all(&bytes)
         .unwrap();
 }
+
+/// Bilinen frekanstaki sinüse en küçük kareler uydurma: genlik ve kalanın (gürültü +
+/// bozulma, THD+N) sinüse göre seviyesi (dB).
+pub fn fit(signal: &[f64], freq: f64, rate: u32) -> (f64, f64) {
+    let w = 2.0 * std::f64::consts::PI * freq / f64::from(rate);
+    let (mut ss, mut sc, mut cc, mut ys, mut yc) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    for (i, &y) in signal.iter().enumerate() {
+        let (s, c) = (w * i as f64).sin_cos();
+        ss += s * s;
+        sc += s * c;
+        cc += c * c;
+        ys += y * s;
+        yc += y * c;
+    }
+    let det = ss * cc - sc * sc;
+    let a = (ys * cc - yc * sc) / det;
+    let b = (yc * ss - ys * sc) / det;
+    let residual: f64 = signal
+        .iter()
+        .enumerate()
+        .map(|(i, &y)| {
+            let (s, c) = (w * i as f64).sin_cos();
+            (y - a * s - b * c).powi(2)
+        })
+        .sum::<f64>()
+        / signal.len() as f64;
+    let amplitude = (a * a + b * b).sqrt();
+    (
+        amplitude,
+        10.0 * (residual / (amplitude * amplitude / 2.0)).log10(),
+    )
+}

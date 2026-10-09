@@ -30,6 +30,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [logError, setLogError] = useState<string | null>(null);
   const signalPath = signalPathText(status);
+  const notice = status.output?.notice ?? null;
 
   return (
     <section className="settings" aria-label="Ayarlar">
@@ -68,6 +69,29 @@ export function SettingsPanel({
           yükseltebilir: bas dediğinizde bas gerçekten artar. Diğer programlardan biraz kısık
           gelirse Windows sesini açın.
         </p>
+        <button
+          type="button"
+          className={`settings__toggle${playback.options.bitPerfect ? " is-on" : ""}`}
+          aria-pressed={playback.options.bitPerfect}
+          onClick={() => void playback.setBitPerfect(!playback.options.bitPerfect)}
+        >
+          <span className="settings__switch" aria-hidden />
+          Bit-perfect (özel mod): {playback.options.bitPerfect ? "Açık" : "Kapalı"}
+        </button>
+        <p className="settings__hint">
+          Şarkı ses aygıtına hiç değiştirilmeden, kendi hızında ve çözünürlüğünde gider; aygıt
+          yalnızca Lyraska'ya ayrılır. Açıkken ekolayzer, kulaklık düzeltmesi ve ses yüksekliği
+          eşitleme çalışmaz, diğer programların sesi duyulmaz.
+        </p>
+        <p className="settings__warn">
+          Dikkat: özel modda Windows ses düzeyi çoğu aygıtta etkisizdir ve ses tam yükseklikte
+          gelebilir. Açmadan önce kulaklığı çıkarın ya da aygıtın kendi ses düğmesini kısın.
+        </p>
+        {notice && (
+          <p className="settings__warn">
+            Bit-perfect açılamadı: {notice}. Ses normal yoldan çalıyor.
+          </p>
+        )}
         {playback.error && <p className="settings__warn">{playback.error}</p>}
       </div>
 

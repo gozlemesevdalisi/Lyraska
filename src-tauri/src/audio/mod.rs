@@ -13,11 +13,12 @@
 //! - [`render`]: halka tampondan aygıt arabelleğini doldurur; ekolayzeri uygular,
 //!   duraklatmada yumuşak geçiş yapar.
 //!   Gerçek zamanlı iş parçacığında çalışır: bellek ayırmaz, kilit beklemez.
-//! - [`output`]: Windows WASAPI paylaşımlı mod çıkışı.
+//! - [`output`]: Windows WASAPI çıkışı (paylaşımlı mod; ayarla özel mod, bit-perfect).
 //! - [`player`]: yukarıdakileri bir araya getiren, arayüzün kullandığı oynatıcı.
 //!
 //! Bütün iç işlem [`Sample`] türüyle (64-bit) yapılır; yalnızca çıkışta aygıtın
-//! biçimine (32-bit kayan nokta) dönüştürülür.
+//! biçimine (paylaşımlı modda 32-bit kayan nokta, özel modda aygıtın tamsayısı)
+//! dönüştürülür.
 
 pub mod decode;
 pub mod eq;
@@ -55,6 +56,9 @@ pub enum AudioError {
     NoOutputDevice,
     #[error("Ses aygıtı hatası: {0}")]
     Output(String),
+    /// Özel mod (bit-perfect) açılamadı; oynatıcı paylaşımlı moda geçer.
+    #[error("Bit-perfect açılamadı: {0}")]
+    Exclusive(String),
 }
 
 impl From<symphonia::core::errors::Error> for AudioError {
@@ -118,10 +122,17 @@ pub struct PlaybackOptions {
     /// Ses yüksekliği eşitlemesi (EBU R128): bütün şarkılar aynı yükseklikte çalar,
     /// ekolayzere yer açılır. Proje sahibinin kararıyla varsayılan açık.
     pub normalize: bool,
+    /// Bit-perfect: aygıt özel modda, şarkının kendi hızında açılır; ses hiç işlenmez
+    /// (ekolayzer, kulaklık düzeltmesi, eşitleme devre dışı). Proje sahibinin kararıyla
+    /// varsayılan kapalı.
+    pub bit_perfect: bool,
 }
 
 impl Default for PlaybackOptions {
     fn default() -> Self {
-        Self { normalize: true }
+        Self {
+            normalize: true,
+            bit_perfect: false,
+        }
     }
 }

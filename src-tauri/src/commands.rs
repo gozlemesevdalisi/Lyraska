@@ -87,7 +87,8 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         player.set_headphone(settings.headphone);
         player.set_visual_safe(settings.visual_safe);
         player.set_audio_delay_ms(settings.audio_delay_ms);
-        player.set_playback_options(settings.playback);
+        // Açılışta çalan şarkı yok: aygıt açılmaz, hata olamaz.
+        let _ = player.set_playback_options(settings.playback);
     }
 }
 
@@ -362,17 +363,19 @@ pub async fn playback_options_get(
     Ok(player.lock()?.playback_options())
 }
 
-/// Çalma seçeneklerini uygular (çalan sese hemen yansır) ve kaydeder.
+/// Çalma seçeneklerini uygular (çalan sese hemen yansır) ve kaydeder. Bit-perfect
+/// değişince ses aygıtı yeniden açılır; açılamazsa seçenek yine kaydedilir, hata döner.
 #[tauri::command]
 pub async fn playback_options_set(
     options: PlaybackOptions,
     player: State<'_, PlayerState>,
     store: State<'_, SettingsStore>,
 ) -> Result<PlaybackOptions, String> {
-    player.lock()?.set_playback_options(options);
+    let applied = player.lock()?.set_playback_options(options);
     store
         .update(|s| s.playback = options)
         .map_err(|e| reported(format!("Çalma seçenekleri kaydedilemedi: {e}")))?;
+    applied.map_err(reported)?;
     Ok(options)
 }
 

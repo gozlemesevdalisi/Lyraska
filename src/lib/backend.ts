@@ -257,9 +257,9 @@ export async function setVisualSafe(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("visual_safe_set", { enabled });
 }
 
-/** Çalma seçenekleri (ses yüksekliği eşitlemesi). Tarayıcı önizlemesinde varsayılanlar. */
+/** Çalma seçenekleri (ses yüksekliği eşitlemesi, bit-perfect). Tarayıcı önizlemesinde varsayılanlar. */
 export async function getPlaybackOptions(): Promise<PlaybackOptions> {
-  if (!isTauri()) return { normalize: true };
+  if (!isTauri()) return { normalize: true, bitPerfect: false };
   return invoke<PlaybackOptions>("playback_options_get");
 }
 

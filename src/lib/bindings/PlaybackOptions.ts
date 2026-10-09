@@ -9,4 +9,10 @@ export type PlaybackOptions = {
  * Ses yüksekliği eşitlemesi (EBU R128): bütün şarkılar aynı yükseklikte çalar,
  * ekolayzere yer açılır. Proje sahibinin kararıyla varsayılan açık.
  */
-normalize: boolean, };
+normalize: boolean, 
+/**
+ * Bit-perfect: aygıt özel modda, şarkının kendi hızında açılır; ses hiç işlenmez
+ * (ekolayzer, kulaklık düzeltmesi, eşitleme devre dışı). Proje sahibinin kararıyla
+ * varsayılan kapalı.
+ */
+bitPerfect: boolean, };
