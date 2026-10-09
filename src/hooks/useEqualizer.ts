@@ -11,6 +11,7 @@ import {
   previewEqState,
   snapBass,
   snapDepth,
+  snapPunch,
   snapGain,
   type EqPreset,
 } from "../lib/eq";
@@ -31,6 +32,8 @@ export interface EqualizerControls {
   setSmallSpeaker: (on: boolean) => void;
   /** Derinlik (0–1): alt oktav. */
   setDepth: (depth: number) => void;
+  /** Vuruş (0–1): davul vuruşlarının ilk anı. */
+  setPunch: (punch: number) => void;
   /** Hazır ayarı (bantlar ve bas) uygular ve ekolayzeri açar. */
   applyPreset: (preset: EqPreset) => void;
 }
@@ -41,6 +44,7 @@ const INITIAL: EqSettings = {
   bassDb: 0,
   smallSpeaker: false,
   bassDepth: 0,
+  bassPunch: 0,
 };
 
 /**
@@ -69,6 +73,7 @@ export function useEqualizer(): EqualizerControls {
           bassDb: loaded.bassDb,
           smallSpeaker: loaded.smallSpeaker,
           bassDepth: loaded.bassDepth,
+          bassPunch: loaded.bassPunch,
         };
         settingsRef.current = next;
         setSettings(next);
@@ -142,6 +147,11 @@ export function useEqualizer(): EqualizerControls {
     [update],
   );
 
+  const setPunch = useCallback(
+    (punch: number) => update((current) => ({ ...current, bassPunch: snapPunch(punch) })),
+    [update],
+  );
+
   const applyPreset = useCallback(
     (preset: EqPreset) =>
       update(() => ({
@@ -150,6 +160,7 @@ export function useEqualizer(): EqualizerControls {
         bassDb: snapBass(preset.bassDb),
         smallSpeaker: preset.smallSpeaker,
         bassDepth: snapDepth(preset.bassDepth),
+        bassPunch: snapPunch(preset.bassPunch),
       })),
     [update],
   );
@@ -159,6 +170,7 @@ export function useEqualizer(): EqualizerControls {
     (settings.gainsDb.some((g) => g !== 0) ||
       settings.bassDb > 0 ||
       settings.bassDepth > 0 ||
+      settings.bassPunch > 0 ||
       settings.smallSpeaker);
   return {
     settings,
@@ -170,6 +182,7 @@ export function useEqualizer(): EqualizerControls {
     setBass,
     setSmallSpeaker,
     setDepth,
+    setPunch,
     applyPreset,
   };
 }

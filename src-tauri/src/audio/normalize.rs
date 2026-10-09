@@ -522,7 +522,7 @@ mod tests {
         levels.set_bass_peaks(
             0,
             &BassPeaks {
-                shelf_rise_db: [0.3, 0.8, 1.5, 2.5, 4.0, 6.0],
+                shelf_rise_db: [0.3, 0.8, 1.5, 2.5, 4.0, 6.0, 8.0, 10.5, 13.0],
                 octave_band_db: -9.0,
             },
         );

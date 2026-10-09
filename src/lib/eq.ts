@@ -20,18 +20,22 @@ export interface EqPreset {
   smallSpeaker: boolean;
   /** Derinlik (0–1): bas notalarının bir oktav altı. */
   bassDepth: number;
+  /** Vuruş (0–1): davul vuruşlarının ilk anı güçlenir. */
+  bassPunch: number;
 }
 
 /** Bas düğmesinin üst sınırı (dB); Rust tarafındaki `MAX_BASS_DB` ile aynı. */
 export const BASS_MAX_DB = 18;
 /** Bunun üstü "kulüp bölgesi" (Rust: `CLUB_BASS_DB`). */
 export const BASS_CLUB_DB = 12;
-/** Derinlik sürgüsünün adımı. */
+/** Derinlik ve vuruş sürgülerinin adımı. */
 export const DEPTH_STEP = 0.05;
+/** Vuruşun en büyük raf kazancı (dB, %100'de); Rust tarafındaki `PUNCH_MAX_DB` ile aynı. */
+export const PUNCH_MAX_DB = 8;
 
 /** Yalnızca bantları ayarlayan hazır ayar (bas düğmesi 0). */
 function bands(name: string, hint: string, gains: number[]): EqPreset {
-  return { name, hint, gains, bassDb: 0, smallSpeaker: false, bassDepth: 0 };
+  return { name, hint, gains, bassDb: 0, smallSpeaker: false, bassDepth: 0, bassPunch: 0 };
 }
 
 /**
@@ -43,6 +47,8 @@ function bands(name: string, hint: string, gains: number[]): EqPreset {
  * - Küçük hoparlör: dizüstü hoparlörü 100 Hz'in altını veremez; orayı yükseltmek yalnızca
  *   bozulma yaratır. Küçük hoparlör bası alt bası süzüp harmoniklerini ekler (beyin eksik
  *   notayı tamamlar); hoparlörün verebildiği 125–250 Hz de yükseltilir.
+ * Vuruş davul vuruşlarının ilk anını güçlendirir (bas şişmez): kulüp, elektronik ve rock'ta
+ * belirgin, küçük hoparlörde de vuruşu hissettirir.
  */
 export const EQ_PRESETS: EqPreset[] = [
   bands("Düz", "Ses olduğu gibi", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
@@ -53,6 +59,7 @@ export const EQ_PRESETS: EqPreset[] = [
     bassDb: 6,
     smallSpeaker: false,
     bassDepth: 0,
+    bassPunch: 0.3,
   },
   {
     name: "Derin bas",
@@ -61,14 +68,16 @@ export const EQ_PRESETS: EqPreset[] = [
     bassDb: 9,
     smallSpeaker: false,
     bassDepth: 0.5,
+    bassPunch: 0.2,
   },
   {
     name: "Kulüp",
-    hint: "Kulüp düzeyinde bas ve göğüste hissedilen gümbürtü (kulaklık ve harici hoparlör)",
+    hint: "Kulüp düzeyinde bas, göğse çarpan vuruş ve gümbürtü (kulaklık ve harici hoparlör)",
     gains: [0, 2, 1, 0, -1, 0, 0, 1, 2, 2],
     bassDb: 14,
     smallSpeaker: false,
     bassDepth: 0.7,
+    bassPunch: 0.7,
   },
   {
     name: "Küçük hoparlör",
@@ -77,6 +86,7 @@ export const EQ_PRESETS: EqPreset[] = [
     bassDb: 8,
     smallSpeaker: true,
     bassDepth: 0,
+    bassPunch: 0.5,
   },
   bands("Tiz", "Parlak, net tizler", [0, 0, 0, 0, 0, 0.5, 2, 4, 5.5, 6]),
   bands("Vokal", "Sesler önde", [-2, -2, -1, 0.5, 2, 3.5, 3.5, 2, 0, -1]),
@@ -88,21 +98,31 @@ export const EQ_PRESETS: EqPreset[] = [
     bassDb: 4,
     smallSpeaker: false,
     bassDepth: 0.3,
+    bassPunch: 0.5,
   },
-  bands("Rock", "Vurucu davul ve gitar", [4, 4.5, 2.5, 0, -1, -1, 1, 2.5, 3.5, 4]),
+  {
+    name: "Rock",
+    hint: "Vurucu davul ve gitar",
+    gains: [4, 4.5, 2.5, 0, -1, -1, 1, 2.5, 3.5, 4],
+    bassDb: 0,
+    smallSpeaker: false,
+    bassDepth: 0,
+    bassPunch: 0.4,
+  },
   bands("Gece", "Kısık seste dolgun ses", [4.5, 4, 2, 0, -0.5, 0, 0, 1, 2.5, 3]),
   bands("Konuşma", "Podcast ve sesli kitap", [-6, -4, -1.5, 1, 3, 4, 3, 1.5, 0, -2]),
 ];
 
-/** Ayar (bantlar, bas düğmesi, küçük hoparlör) bir hazır ayarla aynıysa onun adı, değilse `null`. */
+/** Ayar (bantlar ve bas motoru) bir hazır ayarla aynıysa onun adı, değilse `null`. */
 export function matchPreset(
-  settings: Pick<EqSettings, "gainsDb" | "bassDb" | "smallSpeaker" | "bassDepth">,
+  settings: Pick<EqSettings, "gainsDb" | "bassDb" | "smallSpeaker" | "bassDepth" | "bassPunch">,
 ): string | null {
   const found = EQ_PRESETS.find(
     (preset) =>
       preset.gains.every((g, i) => Math.abs(g - (settings.gainsDb[i] ?? 0)) < 1e-6) &&
       Math.abs(preset.bassDb - settings.bassDb) < 1e-6 &&
       Math.abs(preset.bassDepth - settings.bassDepth) < 1e-6 &&
+      Math.abs(preset.bassPunch - settings.bassPunch) < 1e-6 &&
       preset.smallSpeaker === settings.smallSpeaker,
   );
   return found?.name ?? null;
@@ -116,7 +136,10 @@ export function snapDepth(depth: number): number {
   return Math.round(Math.min(1, Math.max(0, depth)) * steps) / steps + 0;
 }
 
-/** Bas düğmesinin değerini aralığa (0–12) ve 0,5 dB adımına oturtur. */
+/** Vuruşu 0–1 aralığına ve %5 adımına oturtur (derinlik gibi). */
+export const snapPunch = snapDepth;
+
+/** Bas düğmesinin değerini aralığa (0–18) ve 0,5 dB adımına oturtur. */
 export function snapBass(db: number): number {
   if (!Number.isFinite(db)) return 0;
   return Math.round(Math.min(BASS_MAX_DB, Math.max(0, db)) / EQ_STEP_DB) * EQ_STEP_DB + 0;
@@ -208,19 +231,22 @@ export function previewEqState(settings: EqSettings): EqState {
   // Rust'taki gibi: küçük hoparlörde alt bas süzüldüğü için rafın tamamı değil, süzgeçlerin
   // en büyük artışı ve harmonikler için 3 dB.
   const depth = settings.enabled && !small ? snapDepth(settings.bassDepth) : 0;
+  // Vuruşun en yüksek anı bas düğmesinin rafına eklenir (Rust: aynı köşede iki raf).
+  const shelf = bass + (settings.enabled ? snapPunch(settings.bassPunch) * PUNCH_MAX_DB : 0);
   const bassBoost = small
     ? Math.max(
         0,
-        ...curveHz.filter((f) => f >= 30 && f <= 300).map((f) => previewBassDb(bass, true, f)),
+        ...curveHz.filter((f) => f >= 30 && f <= 300).map((f) => previewBassDb(shelf, true, f)),
       ) + 3
     : // Ölçüm yokken en kötü durum (Rust: `BassBoost::rise_db`): raf + alt oktav.
-      20 * Math.log10(10 ** (bass / 20) + depth * 1.1);
+      20 * Math.log10(10 ** (shelf / 20) + depth * 1.1);
   return {
     enabled: settings.enabled,
     gainsDb: gains,
     bassDb: snapBass(settings.bassDb),
     smallSpeaker: settings.smallSpeaker,
     bassDepth: snapDepth(settings.bassDepth),
+    bassPunch: snapPunch(settings.bassPunch),
     maxBassDb: BASS_MAX_DB,
     bandsHz: EQ_BANDS_HZ,
     maxGainDb: EQ_MAX_DB,

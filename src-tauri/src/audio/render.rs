@@ -451,13 +451,14 @@ mod tests {
             gains_db: [0.0; BANDS],
             ..EqSettings::default()
         };
-        // Bas düğmesi, derinlik (alt oktav) ve küçük hoparlör bası da ölçüme girsin.
+        // Bas düğmesi, derinlik (alt oktav), vuruş ve küçük hoparlör bası da ölçüme girsin.
         let boosted = EqSettings {
             enabled: true,
             gains_db: [12.0; BANDS],
             bass_db: 18.0,
             small_speaker: false,
             bass_depth: 1.0,
+            bass_punch: 1.0,
         };
         let small = EqSettings {
             small_speaker: true,
@@ -481,7 +482,7 @@ mod tests {
                     75 => levels.set_bass_peaks(
                         1,
                         &crate::audio::bass::BassPeaks {
-                            shelf_rise_db: [0.5, 1.0, 2.0, 3.0, 4.5, 6.0],
+                            shelf_rise_db: [0.5, 1.0, 2.0, 3.0, 4.5, 6.0, 8.0, 10.0, 12.5],
                             octave_band_db: -6.0,
                         },
                     ),

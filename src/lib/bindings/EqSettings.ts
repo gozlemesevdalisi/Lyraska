@@ -15,4 +15,8 @@ smallSpeaker: boolean,
 /**
  * Derinlik (0–1): bas notalarının bir oktav altı eklenir.
  */
-bassDepth: number, };
+bassDepth: number, 
+/**
+ * Vuruş (0–1): davul vuruşlarının ilk anı güçlenir (bkz. [`super::punch`]).
+ */
+bassPunch: number, };

@@ -106,6 +106,8 @@ pub struct EqSettings {
     pub small_speaker: bool,
     /// Derinlik (0–1): bas notalarının bir oktav altı eklenir.
     pub bass_depth: f64,
+    /// Vuruş (0–1): davul vuruşlarının ilk anı güçlenir (bkz. [`super::punch`]).
+    pub bass_punch: f64,
 }
 
 impl Default for EqSettings {
@@ -116,6 +118,7 @@ impl Default for EqSettings {
             bass_db: 0.0,
             small_speaker: false,
             bass_depth: 0.0,
+            bass_punch: 0.0,
         }
     }
 }
@@ -140,6 +143,11 @@ impl EqSettings {
         } else {
             0.0
         };
+        self.bass_punch = if self.bass_punch.is_finite() {
+            self.bass_punch.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         self
     }
 
@@ -149,6 +157,7 @@ impl EqSettings {
             && (self.gains_db.iter().any(|g| g.abs() > FLAT_DB)
                 || self.bass_db > FLAT_DB
                 || self.bass_depth > 0.0
+                || self.bass_punch > 0.0
                 || self.small_speaker)
     }
 
@@ -164,7 +173,12 @@ impl EqSettings {
     /// Bas motorunun taşma korumasına bildireceği yükseltme (kapalıyken yok).
     pub fn bass_boost(&self) -> BassBoost {
         if self.enabled {
-            bass::settings_boost(self.bass_db, self.bass_depth, self.small_speaker)
+            bass::settings_boost(
+                self.bass_db,
+                self.bass_depth,
+                self.bass_punch,
+                self.small_speaker,
+            )
         } else {
             BassBoost::default()
         }
@@ -191,6 +205,7 @@ pub struct EqState {
     pub bass_db: f64,
     pub small_speaker: bool,
     pub bass_depth: f64,
+    pub bass_punch: f64,
     pub max_bass_db: f64,
     #[cfg_attr(test, ts(type = "Array<number>"))]
     pub bands_hz: [f64; BANDS],
@@ -227,6 +242,7 @@ impl EqState {
             bass_db: settings.bass_db,
             small_speaker: settings.small_speaker,
             bass_depth: settings.bass_depth,
+            bass_punch: settings.bass_punch,
             max_bass_db: bass::MAX_BASS_DB,
             bands_hz: CENTERS_HZ,
             max_gain_db: MAX_GAIN_DB,
@@ -256,6 +272,7 @@ pub struct EqControl {
     bass_db: AtomicU64,
     small_speaker: AtomicBool,
     bass_depth: AtomicU64,
+    bass_punch: AtomicU64,
 }
 
 impl Default for EqControl {
@@ -273,6 +290,7 @@ impl EqControl {
             bass_db: AtomicU64::new(0f64.to_bits()),
             small_speaker: AtomicBool::new(false),
             bass_depth: AtomicU64::new(0f64.to_bits()),
+            bass_punch: AtomicU64::new(0f64.to_bits()),
         };
         control.set(settings);
         control
@@ -290,6 +308,8 @@ impl EqControl {
             .store(settings.small_speaker, Ordering::Relaxed);
         self.bass_depth
             .store(settings.bass_depth.to_bits(), Ordering::Relaxed);
+        self.bass_punch
+            .store(settings.bass_punch.to_bits(), Ordering::Relaxed);
         self.enabled.store(settings.enabled, Ordering::Relaxed);
         self.version.fetch_add(1, Ordering::Release);
         settings
@@ -304,6 +324,7 @@ impl EqControl {
             bass_db: f64::from_bits(self.bass_db.load(Ordering::Relaxed)),
             small_speaker: self.small_speaker.load(Ordering::Relaxed),
             bass_depth: f64::from_bits(self.bass_depth.load(Ordering::Relaxed)),
+            bass_punch: f64::from_bits(self.bass_punch.load(Ordering::Relaxed)),
         }
     }
 
@@ -1001,12 +1022,26 @@ mod tests {
         }
         .sanitized();
         assert_eq!(settings.bass_db, 0.0);
-        // Bas eklenmeden önce kaydedilmiş ayar: bas 0, küçük hoparlör kapalı.
+        for (punch, expected) in [(3.0, 1.0), (-1.0, 0.0), (f64::NAN, 0.0), (0.4, 0.4)] {
+            let settings = EqSettings {
+                bass_punch: punch,
+                ..EqSettings::default()
+            }
+            .sanitized();
+            assert_eq!(settings.bass_punch, expected, "vuruş {punch}");
+        }
+        // Bas eklenmeden önce kaydedilmiş ayar: bas 0, küçük hoparlör kapalı, vuruş yok.
         let old: EqSettings =
             serde_json::from_str(r#"{"enabled":true,"gainsDb":[1,0,0,0,0,0,0,0,0,0]}"#).unwrap();
         assert_eq!(old.gains_db[0], 1.0);
         assert_eq!(old.bass_db, 0.0);
+        assert_eq!(old.bass_punch, 0.0);
         assert!(!old.small_speaker);
+        assert!(EqSettings {
+            bass_punch: 0.5,
+            ..EqSettings::default()
+        }
+        .is_active());
         assert!(old.is_active());
         assert!(EqSettings {
             small_speaker: true,
