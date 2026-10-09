@@ -59,6 +59,37 @@ export interface DirectorInput {
   release: number;
 }
 
+/** Gece göğünün görünümü: perdelerin hangi manzarada görüldüğü. */
+export type SkyLook = "lake" | "corona" | "snow";
+
+/** Ayarlar'daki sırayla. */
+export const SKY_LOOKS: { id: SkyLook; name: string; hint: string }[] = [
+  { id: "lake", name: "Göl", hint: "Dağların ardında perdeler, durgun gölde yansımaları." },
+  { id: "corona", name: "Korona", hint: "Işıklar tam tepede; ışınlar gökte bir noktaya toplanır." },
+  { id: "snow", name: "Karlı vadi", hint: "Çam ağaçları; kar perdelerin ışığıyla renklenir." },
+];
+
+const LOOK_STORAGE_KEY = "lyraska.skyLook";
+const DEFAULT_LOOK: SkyLook = "lake";
+
+/** Son seçilen görünüm. Kayıt yoksa ya da okunamazsa göl. */
+export function loadSkyLook(): SkyLook {
+  try {
+    const saved = window.localStorage.getItem(LOOK_STORAGE_KEY);
+    return SKY_LOOKS.some((l) => l.id === saved) ? (saved as SkyLook) : DEFAULT_LOOK;
+  } catch {
+    return DEFAULT_LOOK;
+  }
+}
+
+export function saveSkyLook(look: SkyLook): void {
+  try {
+    window.localStorage.setItem(LOOK_STORAGE_KEY, look);
+  } catch {
+    /* Kaydedilemezse bir sonraki açılışta göl görünümüyle başlar. */
+  }
+}
+
 /** Tema renk paleti sayısı (`--sky-theme-N-*` değişkenleri). */
 export const SKY_THEMES = 4;
 /** Tema geçişi süresi (saniye). */
@@ -85,14 +116,16 @@ const REDUCED_MOTION_SPEED = 0.25;
 
 /**
  * Perdenin ekrana katabileceği bağıl parlaklık için güvenli üst sınır (parlama
- * testinde kullanılır). Chromium'da ölçüldü: perdeler sönükten en parlağa
- * çıkınca, WCAG'nin parlama alanı büyüklüğündeki en parlak bölgede bağıl
- * parlaklık yalnızca ~0,02 artıyor (parlama eşiği 0,10). Bu sınır ölçülenin
- * çok üstünde seçildi: renkler ya da gölgelendirici değişse de test korur.
+ * testinde kullanılır). Gerçek tarayıcıda `npm run check:scenes` ölçer: sessizden
+ * tam sese geçişte WCAG'nin parlama alanı büyüklüğündeki en kötü pencerede fark
+ * her manzara ve temada ≤ 0,065 (parlama eşiği 0,10).
  */
 export const AURORA_MAX_LUMINANCE = 0.35;
-/** Enerji sıfırken perdenin parlaklık payı (tamamen sönmez). */
-export const AURORA_BASE = 0.25;
+/**
+ * Enerji sıfırken perdenin parlaklık payı: perdeler hiç sönmez. Müzik parlaklıktan çok
+ * akışa, katlanmaya ve perdelerin yükselip alçalmasına yansır.
+ */
+export const AURORA_BASE = 0.5;
 
 /** Spektrum bant seviyelerini (bastan tize, 0..1) üç perde enerjisine çevirir. */
 export function bandEnergies(bands: readonly number[]): Energies {

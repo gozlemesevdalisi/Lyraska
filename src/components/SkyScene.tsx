@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { VisualFrame } from "../lib/backend";
-import { SKY_AT_REST, bandEnergies, stepSky, type DirectorInput, type SkyState } from "../lib/sky";
+import {
+  SKY_AT_REST,
+  bandEnergies,
+  stepSky,
+  type DirectorInput,
+  type SkyLook,
+  type SkyState,
+} from "../lib/sky";
 import { createSkyFallback } from "../lib/skyFallback";
 import { createSkyRenderer, type SkyRenderer } from "../lib/skyRenderer";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
@@ -10,18 +17,20 @@ export interface SkySceneProps {
   playing: boolean;
   /** Epilepsi güvenli modu: parlaklık yarı hızla değişir. */
   safe?: boolean;
+  /** Manzara: göl, korona ya da karlı vadi. */
+  look?: SkyLook;
 }
 
 /**
- * "Gece göğü" sahnesi: uzak tepelerin üstünde kuzey ışıkları ve yıldızlar,
- * köşede Lyra takımyıldızı. Bas, orta ve tiz üç ayrı ışık perdesini yavaşça
+ * "Gece göğü" sahnesi: dağların üstünde kuzey ışıkları ve yıldızlar, köşede Lyra
+ * takımyıldızı; manzara göl, korona ya da karlı vadi (Ayarlar). Bas, orta ve tiz üç ayrı ışık perdesini yavaşça
  * güçlendirir; vuruşlar ışıkların akışını hızlandırır. Görsel Yönetmen şarkıyı
  * önceden bildiği için perdelerin rengini bölüme göre seçer, droptan önce
  * ışıkları toplar ve drop anında açar. Ekran kartında (WebGL2) çizilir; WebGL2
  * açılamazsa (neden hata günlüğüne yazılır) aynı gök 2D yedek çizimle görünür,
  * o da olmazsa durgun bir gök.
  */
-export function SkyScene({ playing, safe = false }: SkySceneProps) {
+export function SkyScene({ playing, safe = false, look = "lake" }: SkySceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fallbackRef = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<Pick<SkyRenderer, "draw"> | null>(null);
@@ -31,9 +40,11 @@ export function SkyScene({ playing, safe = false }: SkySceneProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const created = createSkyRenderer(canvas);
+    const created = createSkyRenderer(canvas, look);
     canvas.dataset.webgl = created ? "on" : "off";
     renderer.current = created;
+    // Görünüm değişince yeni manzara hemen görünsün (duraklatılmışken de).
+    created?.draw(sky.current);
     // Ekran kartı çizimi açılamadıysa: ayrı bir tuvalde 2D yedek çizim (WebGL bağlamı
     // alınmış bir tuvalde 2D çizilemez).
     const spare = fallbackRef.current;
@@ -51,7 +62,7 @@ export function SkyScene({ playing, safe = false }: SkySceneProps) {
       created?.dispose();
       renderer.current = null;
     };
-  }, []);
+  }, [look]);
 
   // Her ekran karesinde gök ilerletilip doğrudan çizilir; React yeniden çizim yapmaz.
   const onTick = useCallback(

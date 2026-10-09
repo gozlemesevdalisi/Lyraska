@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { errorMessage, openLog, type AppInfo, type PlaybackStatus } from "../lib/backend";
 import { signalPathText } from "../lib/format";
+import { SKY_LOOKS } from "../lib/sky";
 import type { PlaybackOptionsControls } from "../hooks/usePlaybackOptions";
+import type { SkyLookControls } from "../hooks/useSkyLook";
 import type { VisualSafeControls } from "../hooks/useVisualSafe";
 
 export interface SettingsPanelProps {
@@ -10,6 +12,7 @@ export interface SettingsPanelProps {
   available: boolean;
   visualSafe: VisualSafeControls;
   playback: PlaybackOptionsControls;
+  skyLook: SkyLookControls;
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -20,13 +23,14 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Paneli kapat"],
 ];
 
-/** Ayarlar: görsel güvenlik, sesin yolu, kısayollar, program bilgisi ve hata günlüğü. */
+/** Ayarlar: gece göğünün görünümü, görsel güvenlik, ses, sesin yolu, kısayollar, program bilgisi ve hata günlüğü. */
 export function SettingsPanel({
   info,
   status,
   available,
   visualSafe,
   playback,
+  skyLook,
 }: SettingsPanelProps) {
   const [logError, setLogError] = useState<string | null>(null);
   const signalPath = signalPathText(status);
@@ -34,6 +38,28 @@ export function SettingsPanel({
 
   return (
     <section className="settings" aria-label="Ayarlar">
+      <div className="settings__group">
+        <h2 className="settings__title">Gece göğü</h2>
+        <div className="settings__looks" role="group" aria-label="Gece göğünün görünümü">
+          {SKY_LOOKS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={`settings__look${skyLook.look === option.id ? " is-on" : ""}`}
+              aria-pressed={skyLook.look === option.id}
+              aria-label={option.name}
+              aria-describedby={`sky-look-${option.id}`}
+              onClick={() => skyLook.setLook(option.id)}
+            >
+              <span className="settings__look-name">{option.name}</span>
+              <span className="settings__look-hint" id={`sky-look-${option.id}`}>
+                {option.hint}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="settings__group">
         <h2 className="settings__title">Görsel güvenlik</h2>
         <button

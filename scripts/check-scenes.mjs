@@ -5,6 +5,9 @@
 // - Konsolda hata var mı?
 // - Görüntü gerçekten çiziliyor mu (düz/karanlık değil) ve zamanla değişiyor mu?
 // - Gece göğünde sağ üstteki Lyra takımyıldızının yıldızları görünüyor mu?
+// - Parlama sınırı: sessizden tam sese geçişte ekrandaki en büyük parlaklık farkı. Gece göğünün
+//   her manzarası (göl, korona, karlı vadi) ölçülür; renkleri bölüm temasına göre değişen
+//   sahneler her temada (göğün varsayılan dışındaki manzaraları en parlak iki temada).
 //
 // CI'da Windows'ta Microsoft Edge ile çalışır: programın kullandığı WebView2 de Edge
 // motorudur ve gölgelendiriciler Windows'ta (ANGLE → Direct3D) Linux'takinden farklı
@@ -17,18 +20,19 @@
 //   SCENE_EXPECT           "webgl" (varsayılan) ya da "fallback": WebGL kapalı bir
 //                          tarayıcıda gece göğünün 2D yedek çizimle (Lyra dahil) göründüğü denetlenir
 
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { preview } from "vite";
 
 const PORT = 4179;
 const EXPECT_FALLBACK = process.env.SCENE_EXPECT === "fallback";
-const URL = `http://localhost:${PORT}`;
+const APP_URL = `http://localhost:${PORT}`;
 
 /**
  * Tarayıcıda Tauri yerine geçen sahte çekirdek: 128 BPM'lik bir şarkı çalıyor. `level` verilirse bütün bantlar ve
- * VU seviyeleri sabit o düzeyde (parlama sınırı ölçümü için: 0 = sessiz, 1 = tam).
+ * VU seviyeleri sabit o düzeyde (parlama sınırı ölçümü için: 0 = sessiz, 1 = tam). `theme`: bölümün renk teması.
  */
-const fakeCore = (level = null) => `
+const fakeCore = (level = null, theme = 1) => `
   const LEVEL = ${level === null ? "null" : level};
   window.isTauri = true;
   const started = performance.now();
@@ -62,7 +66,7 @@ const fakeCore = (level = null) => `
         vuReferenceDb: -14, energy: 0.8, section: 1,
         beat: { bpm: 128, index: Math.floor(beats), phase: beats % 1, barBeat: 1 + (Math.floor(beats) % 4), meter: 4 },
         director: {
-          atmosphere: { section: 1, theme: 1, mood: 0.9, warmth: 0.6 },
+          atmosphere: { section: 1, theme: ${theme}, mood: 0.9, warmth: 0.6 },
           rhythm: { pulse: 0.5, accent: 0.2, beatPhase: beats % 1, barPhase: (beats / 4) % 1,
             anticipation: 0, release: 0.4 },
           texture: { detail: 0.6, motion: 0.6 },
@@ -72,6 +76,12 @@ const fakeCore = (level = null) => `
     }
   }};
 `;
+
+/** Sayfa açılmadan çalışan betik: sahne ve gök manzarası seçili, sahte çekirdek kurulu. */
+const initScript = (sceneId, { look = null, level = null, theme = 1 } = {}) =>
+  `try { localStorage.setItem("lyraska.scene", "${sceneId}");` +
+  (look ? ` localStorage.setItem("lyraska.skyLook", "${look}");` : "") +
+  ` } catch {}\n${fakeCore(level, theme)}`;
 
 /** Tuvalin görüntüsünü çözüp parlaklık ölçer (bağıl parlaklık, 0..1). */
 function measure(png) {
@@ -148,11 +158,75 @@ async function hideChrome(page) {
  */
 const SLOW = 180_000;
 
-/** Sahne denetimi için yeni sayfa: bütün işlemler yavaş çizime göre beklenir. */
+/**
+ * Sahneler pencere düzeni aynı kalarak yarı çözünürlükte çizilir (cihaz piksel oranı 0,5):
+ * dört kat az piksel, yazılımsal çizimde dört kat hızlı. Gölgelendiriciler aynı derlenir;
+ * parlama penceresi de aynı oranda küçülür (ekranın aynı payı), ölçümün anlamı değişmez.
+ */
+const SCALE = 0.5;
+
+/**
+ * Sahnelerin sanal zamanı: ekran kareleri gerçek zamanda döner (ekran görüntüleri bekletmez),
+ * ama sahnelere verilen zaman damgası sanaldır. Her kare en fazla `STEP_MS` ilerler ve yalnızca
+ * denetimin izin verdiği kadar kare ilerler; sonra sahne aynı anda durur. Böylece her sayfa,
+ * makinenin hızından bağımsız olarak tam aynı sanal süreyi yaşar. Gerçek zamanla, ekran kartsız
+ * makinede iki sayfa farklı sayıda kare çiziyor, perdeler farklı yerde yakalanıyordu: parlama
+ * ölçümü müziğin etkisi yerine iki ayrı anı karşılaştırıyordu.
+ */
+const STEP_MS = 250;
+const VIRTUAL_TIME = `
+  (() => {
+    const realFrame = window.requestAnimationFrame.bind(window);
+    const time = { allowed: 0, done: 0, now: 0, lastFrame: -1 };
+    window.__sceneTime = time;
+    window.requestAnimationFrame = (callback) =>
+      realFrame((frame) => {
+        if (frame !== time.lastFrame) {
+          time.lastFrame = frame;
+          if (time.done < time.allowed) {
+            time.done += 1;
+            time.now += ${STEP_MS};
+          }
+        }
+        callback(time.now);
+      });
+  })();
+`;
+
+/** Sahneyi `ms` kadar (sanal) ilerletir ve sahnenin o kareleri işlemesini bekler. */
+async function advance(page, ms) {
+  await page.evaluate(
+    (frames) => {
+      window.__sceneTime.allowed += frames;
+    },
+    Math.round(ms / STEP_MS),
+  );
+  await page.waitForFunction(() => window.__sceneTime.done >= window.__sceneTime.allowed, null, {
+    polling: 50,
+  });
+  // Son karenin de çizilip ekrana gelmesi için bir kare daha (sanal saat ilerlemez).
+  await page.waitForTimeout(50);
+}
+
+/** Sahne denetimi için yeni sayfa: sanal zamanlı; bütün işlemler yavaş çizime göre beklenir. */
 async function openPage(browser) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 860 },
+    deviceScaleFactor: SCALE,
+  });
   page.setDefaultTimeout(SLOW);
+  await page.addInitScript(VIRTUAL_TIME);
   return page;
+}
+
+/** Programı açar ve çalmaya başlatır; sahne `ms` kadar (sanal) ilerler. */
+async function startPlaying(page, ms) {
+  await page.goto(APP_URL);
+  await advance(page, STEP_MS);
+  await page.mouse.click(5, 5);
+  await page.keyboard.press("Space"); // çal
+  await page.waitForTimeout(100);
+  await advance(page, ms);
 }
 
 /**
@@ -178,9 +252,9 @@ async function capture(page, locator) {
 
 /**
  * İki görüntü arasındaki en büyük ortalama parlaklık farkı, WCAG'nin parlama alanı
- * büyüklüğündeki (1024×768 ekranda 341×256 piksel) en kötü pencerede.
+ * büyüklüğündeki (1024×768 ekranda 341×256 piksel; görüntünün ölçeğiyle) en kötü pencerede.
  */
-async function worstWindowDifference([before, after]) {
+async function worstWindowDifference([before, after, scale]) {
   const load = async (data) => {
     const img = new Image();
     img.src = "data:image/png;base64," + data;
@@ -213,8 +287,8 @@ async function worstWindowDifference([before, after]) {
         sum[y * (W + 1) + x];
     }
   }
-  const bw = Math.min(341, W);
-  const bh = Math.min(256, H);
+  const bw = Math.min(Math.round(341 * scale), W);
+  const bh = Math.min(Math.round(256 * scale), H);
   let worst = 0;
   for (let y = 0; y + bh <= H; y += 4) {
     for (let x = 0; x + bw <= W; x += 4) {
@@ -237,51 +311,87 @@ const FLASH_DELTA = 0.1;
  * ekrandaki parlaklık farkı parlama eşiğinin altındaysa, hangi ritimde olursa olsun
  * parlama üretemez. (Gece göğü ve otoyolda ayrıca değişim hızı da sınırlıdır.)
  */
-async function checkFlashBound(browser, scene) {
+async function checkFlashBound(browser, scene, variant, theme) {
+  const name = theme === null ? variant.label : `${variant.label} (tema ${theme})`;
   const shots = [];
   for (const level of [0, 1]) {
     const page = await openPage(browser);
     const errors = [];
     page.on("pageerror", (e) => errors.push(`sayfa hatası: ${e}`));
     await page.addInitScript(
-      `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${fakeCore(level)}`,
+      initScript(scene.id, { look: variant.look, level, theme: theme ?? 1 }),
     );
-    await page.goto(URL);
-    await page.waitForTimeout(800);
-    await page.mouse.click(5, 5);
-    await page.keyboard.press("Space");
-    await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
+    // Hız sınırlı değerler yerine otursun: enerjiler ~1,2 sn'de, renk teması 2 sn'de.
+    await startPlaying(page, 2500);
     await hideChrome(page);
     const stage = page.locator(".stage");
     const problem = await renderProblem(page, stage, errors);
     if (problem) {
       await page.close();
-      return [`${scene.name}: ${problem}`];
+      return [`${name}: ${problem}`];
     }
     shots.push(await capture(page, stage));
     await page.close();
   }
   const page = await browser.newPage();
-  const worst = await page.evaluate(worstWindowDifference, shots);
+  const worst = await page.evaluate(worstWindowDifference, [...shots, SCALE]);
   await page.close();
-  console.log(`${scene.name}: sessiz → tam ses en büyük parlaklık farkı ${worst.toFixed(4)}`);
+  console.log(`${name}: sessiz → tam ses en büyük parlaklık farkı ${worst.toFixed(4)}`);
   return worst < FLASH_DELTA
     ? []
-    : [`${scene.name}: parlaklık farkı ${worst.toFixed(3)} ≥ ${FLASH_DELTA} (parlama riski)`];
+    : [`${name}: parlaklık farkı ${worst.toFixed(3)} ≥ ${FLASH_DELTA} (parlama riski)`];
 }
+
+/** Gece göğünün manzaraları (`SKY_LOOKS`, src/lib/sky.ts); ilki varsayılan. */
+const SKY_LOOKS = [
+  { id: "lake", name: "Göl" },
+  { id: "corona", name: "Korona" },
+  { id: "snow", name: "Karlı vadi" },
+];
 
 const SCENES = [
   {
     id: "sky",
     name: "Gece göğü",
+    looks: SKY_LOOKS,
     // Lyra'nın yıldızları: sağ üstte parlak noktalar (Vega en parlak).
     extra: (m) =>
       m.topRight.max > 0.35
         ? null
         : `Lyra yıldızları görünmüyor (en parlak ${m.topRight.max.toFixed(3)})`,
+    themed: true,
   },
-  { id: "highway", name: "Gece otoyolu", extra: () => null },
+  { id: "highway", name: "Gece otoyolu", extra: () => null, themed: true },
 ];
+
+/**
+ * Bölüm renk temaları (`SKY_THEMES`, src/lib/sky.ts). Temaya göre renklenen sahnelerin parlama
+ * sınırı her temada ölçülür: renklerin parlaklığı temadan temaya %25'e kadar değişiyor.
+ */
+const THEMES = [0, 1, 2, 3];
+
+/**
+ * Perde rengi (`--sky-theme-N-low`) en parlak olan temalar, src/styles/global.css'ten. Varsayılan
+ * manzara her temada, diğerleri yalnızca bunlarda ölçülür (denetim süresi).
+ */
+function brightestThemes(count) {
+  const css = readFileSync(new URL("../src/styles/global.css", import.meta.url), "utf8");
+  const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const luminance = (theme) => {
+    const hex = css.match(new RegExp(`--sky-theme-${theme}-low:\\s*#([0-9a-f]{6})`, "i"))?.[1];
+    if (!hex) throw new Error(`--sky-theme-${theme}-low okunamadı`);
+    const [r, g, b] = [0, 2, 4].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  return [...THEMES].sort((a, b) => luminance(b) - luminance(a)).slice(0, count);
+}
+
+/** Sahnenin denetlenen biçimleri: gece göğünde her manzara, diğerlerinde tek. */
+function variants(scene) {
+  return scene.looks
+    ? scene.looks.map((look) => ({ label: `${scene.name} · ${look.name}`, look: look.id }))
+    : [{ label: scene.name, look: null }];
+}
 
 /** Parlama sınırı ölçülen sahneler (hepsi). */
 const ALL_SCENES = [
@@ -290,7 +400,7 @@ const ALL_SCENES = [
   ...SCENES,
 ];
 
-async function checkScene(browser, scene) {
+async function checkScene(browser, scene, variant) {
   const page = await openPage(browser);
   const problems = [];
   page.on("console", (m) => {
@@ -299,21 +409,15 @@ async function checkScene(browser, scene) {
     if (m.type() === "error" && !expected) problems.push(`konsol: ${m.text()}`);
   });
   page.on("pageerror", (e) => problems.push(`sayfa hatası: ${e}`));
-  await page.addInitScript(
-    `try { localStorage.setItem("lyraska.scene", "${scene.id}"); } catch {}\n${fakeCore()}`,
-  );
-  await page.goto(URL);
-  await page.waitForTimeout(800);
-  await page.mouse.click(5, 5);
-  await page.keyboard.press("Space"); // çal
-  await page.waitForTimeout(2500);
+  await page.addInitScript(initScript(scene.id, { look: variant.look }));
+  await startPlaying(page, 1500);
   await hideChrome(page);
 
   const canvas = page.locator("canvas:not([hidden])").first();
   const problem = await renderProblem(page, canvas, problems);
   if (problem) {
     await page.close();
-    return [`${scene.name}: ${problem}`];
+    return [`${variant.label}: ${problem}`];
   }
   const state = await canvas.evaluate((c) => ({
     webgl: c.dataset.webgl,
@@ -322,7 +426,7 @@ async function checkScene(browser, scene) {
     gpu: c.dataset.gpu ?? null,
   }));
   const first = await page.evaluate(measure, await capture(page, canvas));
-  await page.waitForTimeout(600);
+  await advance(page, 750);
   const second = await page.evaluate(measure, await capture(page, canvas));
   // Hareket: örneklenen noktaların ne kadarı belirgin biçimde değişti (şerit çizgileri,
   // ışık perdeleri; gökyüzünün büyük kısmı durgundur).
@@ -345,13 +449,13 @@ async function checkScene(browser, scene) {
   if (extra) problems.push(extra);
 
   console.log(
-    `${scene.name}: WebGL ${state.webgl}${state.fallback ? ` (yedek: ${state.fallback})` : ""} · ekran kartı: ${state.gpu ?? "-"} · ${first.width}×${first.height} · ` +
+    `${variant.label}: WebGL ${state.webgl}${state.fallback ? ` (yedek: ${state.fallback})` : ""} · ekran kartı: ${state.gpu ?? "-"} · ${first.width}×${first.height} · ` +
       `ortalama ${first.mean.toFixed(4)} · sapma ${first.spread.toFixed(4)} · ` +
       `sağ üst en parlak ${first.topRight.max.toFixed(3)} · orta ${first.middle.mean.toFixed(4)} · ` +
       `değişen nokta %${(change * 100).toFixed(1)}`,
   );
   await page.close();
-  return problems.map((p) => `${scene.name}: ${p}`);
+  return problems.map((p) => `${variant.label}: ${p}`);
 }
 
 const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: "warn" });
@@ -362,12 +466,25 @@ const browser = await chromium.launch({ channel, executablePath, args });
 console.log(`Tarayıcı: ${browser.version()} ${args.length ? `(${args.join(" ")})` : ""}`);
 let problems = [];
 try {
-  // Yedek çizim yalnızca gece göğünde var (Lyra orada).
-  const scenes = EXPECT_FALLBACK ? SCENES.filter((s) => s.id === "sky") : SCENES;
-  for (const scene of scenes) problems = problems.concat(await checkScene(browser, scene));
-  if (!EXPECT_FALLBACK) {
-    for (const scene of ALL_SCENES)
-      problems = problems.concat(await checkFlashBound(browser, scene));
+  if (EXPECT_FALLBACK) {
+    // Yedek çizim yalnızca gece göğünde var (Lyra orada); manzarası tek.
+    const sky = SCENES.find((s) => s.id === "sky");
+    problems = await checkScene(browser, sky, variants(sky)[0]);
+  } else {
+    for (const scene of SCENES) {
+      for (const variant of variants(scene)) {
+        problems = problems.concat(await checkScene(browser, scene, variant));
+      }
+    }
+    const bright = brightestThemes(2);
+    for (const scene of ALL_SCENES) {
+      for (const [i, variant] of variants(scene).entries()) {
+        const themes = !scene.themed ? [null] : i === 0 ? THEMES : bright;
+        for (const theme of themes) {
+          problems = problems.concat(await checkFlashBound(browser, scene, variant, theme));
+        }
+      }
+    }
   }
 } finally {
   await browser.close();

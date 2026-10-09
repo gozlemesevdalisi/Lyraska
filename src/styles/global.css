@@ -1029,6 +1029,54 @@ kbd {
   transform: translateX(16px);
 }
 
+.settings__looks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.settings__look {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.settings__look:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings__look:focus-visible {
+  outline: 2px solid var(--aurora);
+  outline-offset: 2px;
+}
+
+.settings__look.is-on {
+  border-color: var(--aurora);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.settings__look-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings__look-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
 .settings__keys {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));

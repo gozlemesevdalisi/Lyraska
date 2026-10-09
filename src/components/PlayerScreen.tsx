@@ -22,6 +22,7 @@ import { useIdle } from "../hooks/useIdle";
 import { usePlayback } from "../hooks/usePlayback";
 import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
+import { useSkyLook } from "../hooks/useSkyLook";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
@@ -58,6 +59,7 @@ export function PlayerScreen() {
   const visualSafe = useVisualSafe();
   const playbackOptions = usePlaybackOptions();
   const [scene, chooseScene] = useScene();
+  const skyLook = useSkyLook();
 
   const playback = usePlayback(info.supportedExtensions);
   const { player, playList, upcoming } = playback;
@@ -177,7 +179,13 @@ export function PlayerScreen() {
         status.state === "error" || player.error ? " is-error" : ""
       }`}
     >
-      <SceneStage scene={scene} playing={playing} hasTrack={hasTrack} safe={visualSafe.safe} />
+      <SceneStage
+        scene={scene}
+        playing={playing}
+        hasTrack={hasTrack}
+        safe={visualSafe.safe}
+        skyLook={skyLook.look}
+      />
       <div className="stage__shade" aria-hidden />
 
       <header className="topbar chrome">
@@ -333,6 +341,7 @@ export function PlayerScreen() {
             available={player.available}
             visualSafe={visualSafe}
             playback={playbackOptions}
+            skyLook={skyLook}
           />
         </div>
       </aside>

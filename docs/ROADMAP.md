@@ -32,7 +32,9 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       0.0.22: sahneler CI'da Windows Edge ile denetlenir; WebGL2 açılamazsa neden hata günlüğüne yazılır ve gece
       göğü 2D yedek çizimle (Lyra dahil) görünür. Proje sahibinde ışıklar görünüyor (#24 kapandı)
 - [ ] Kuzey ışıklarını göz kamaştırıcı ve estetik yapmak (proje sahibinin isteği; parlamasız, epilepsi sınırı
-      içinde) ([#30](https://github.com/gozlemesevdalisi/Lyraska/issues/30))
+      içinde) ([#30](https://github.com/gozlemesevdalisi/Lyraska/issues/30)). 0.0.30: perdeler yeniden çizildi
+      (katlanma, ince ışınlar, alttan yeşil üstte mor, dört derinlik, Vega'nın ışık çizgileri); üç manzara
+      (göl, korona, karlı vadi) Ayarlar'da. Proje sahibinin seçimi ve onayı bekleniyor
 - [ ] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29))
 - [ ] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
       ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27))
