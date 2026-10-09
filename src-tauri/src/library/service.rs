@@ -42,11 +42,24 @@ pub struct DropOutcome {
     pub problems: Vec<String>,
 }
 
+/// Bekleyen tarama isteği: bütün kaynaklar ya da yalnızca yeni eklenenler.
+#[derive(Debug, Default)]
+struct ScanRequest {
+    all: bool,
+    folders: Vec<i64>,
+}
+
+impl ScanRequest {
+    fn is_empty(&self) -> bool {
+        !self.all && self.folders.is_empty()
+    }
+}
+
 pub struct LibraryService {
     library: Arc<Mutex<Library>>,
     scan: Arc<ScanState>,
     /// Tarama sürerken gelen yeni tarama isteği.
-    pending: Arc<AtomicBool>,
+    pending: Arc<Mutex<ScanRequest>>,
     worker_running: Arc<AtomicBool>,
     problems: Arc<Mutex<Vec<String>>>,
 }
@@ -60,7 +73,7 @@ impl LibraryService {
         Self {
             library: Arc::new(Mutex::new(library)),
             scan: Arc::new(ScanState::default()),
-            pending: Arc::new(AtomicBool::new(false)),
+            pending: Arc::new(Mutex::new(ScanRequest::default())),
             worker_running: Arc::new(AtomicBool::new(false)),
             problems: Arc::new(Mutex::new(Vec::new())),
         }
@@ -121,7 +134,9 @@ impl LibraryService {
             }
             lib.add_folder(&text)?
         };
-        self.request_scan();
+        // Yalnızca yeni kaynak taranır: büyük kütüphanede tek bir şarkı eklemek bütün
+        // diskleri yeniden dolaşmasın, şarkı listede hemen görünsün.
+        self.request(|r| r.folders.push(folder.id));
         Ok(folder)
     }
 
@@ -174,7 +189,14 @@ impl LibraryService {
     /// Bütün klasörleri arka planda yeniden tarar. Tarama sürüyorsa bittikten
     /// sonra bir kez daha tarar (aradaki değişiklikler kaçmasın).
     pub fn request_scan(&self) {
-        self.pending.store(true, Ordering::Release);
+        self.request(|r| r.all = true);
+    }
+
+    /// Tarama isteğini bekleyenlere ekler ve gerekirse tarayıcıyı başlatır.
+    fn request(&self, add: impl FnOnce(&mut ScanRequest)) {
+        if let Ok(mut pending) = self.pending.lock() {
+            add(&mut pending);
+        }
         if self.worker_running.swap(true, Ordering::AcqRel) {
             return; // çalışan tarayıcı isteği görecek
         }
@@ -188,16 +210,27 @@ impl LibraryService {
         let spawned = std::thread::Builder::new()
             .name("lyraska-kutuphane-tarama".to_owned())
             .spawn(move || {
+                let take = || pending.lock().map(|mut p| std::mem::take(&mut *p)).ok();
                 loop {
-                    while pending.swap(false, Ordering::AcqRel) {
-                        let found = run_scan(&library, &scan);
+                    while let Some(request) = take().filter(|r| !r.is_empty()) {
+                        let found = run_scan(&library, &scan, &request);
                         if let Ok(mut p) = problems.lock() {
-                            *p = found;
+                            if request.all {
+                                *p = found;
+                            } else {
+                                // Yeni kaynağın sorunları öncekilere eklenir.
+                                for problem in found {
+                                    if !p.contains(&problem) {
+                                        p.push(problem);
+                                    }
+                                }
+                            }
                         }
                     }
                     running.store(false, Ordering::Release);
                     // Bayrağı bıraktıktan hemen sonra gelen isteği kaçırma.
-                    if !pending.load(Ordering::Acquire) || running.swap(true, Ordering::AcqRel) {
+                    let waiting = pending.lock().is_ok_and(|p| !p.is_empty());
+                    if !waiting || running.swap(true, Ordering::AcqRel) {
                         break;
                     }
                 }
@@ -218,8 +251,8 @@ impl LibraryService {
     }
 }
 
-/// Bütün klasörleri tarar; bir klasördeki sorun diğerlerini durdurmaz.
-fn run_scan(library: &Mutex<Library>, scan: &ScanState) -> Vec<String> {
+/// İstenen klasörleri (ya da hepsini) tarar; bir klasördeki sorun diğerlerini durdurmaz.
+fn run_scan(library: &Mutex<Library>, scan: &ScanState, request: &ScanRequest) -> Vec<String> {
     let folders = match library.lock() {
         Ok(lib) => match lib.folders() {
             Ok(folders) => folders,
@@ -229,6 +262,7 @@ fn run_scan(library: &Mutex<Library>, scan: &ScanState) -> Vec<String> {
     };
     folders
         .iter()
+        .filter(|folder| request.all || request.folders.contains(&folder.id))
         .filter_map(|folder| scan::scan_folders(library, std::slice::from_ref(folder), scan).err())
         .map(|e| e.to_string())
         .collect()
@@ -280,6 +314,9 @@ mod tests {
             .add_folder("/olmayan/klasor")
             .unwrap();
         service.add_folder(&folder_with_songs()).unwrap();
+        wait_idle(&service);
+        // Programın açılışındaki (ya da "Yeniden tara") tam tarama.
+        service.request_scan();
         wait_idle(&service);
         let status = service.status().unwrap();
         assert_eq!(status.track_count, 2);
@@ -411,6 +448,33 @@ mod tests {
         assert_eq!(status.folders.len(), 1);
         assert_eq!(status.folders[0].path, dir.to_string_lossy());
         assert_eq!(status.track_count, 2);
+    }
+
+    #[test]
+    fn yeni_kaynak_eklenince_yalnizca_o_taranir() {
+        // Büyük kütüphanede tek şarkı eklemek (ya da pencereye bırakmak) bütün kaynakları
+        // yeniden taramamalı.
+        let service = LibraryService::new(Library::open_in_memory().unwrap());
+        let first = folder_with_songs();
+        service.add_folder(&first).unwrap();
+        wait_idle(&service);
+        assert_eq!(service.status().unwrap().track_count, 2);
+
+        // İlk klasörden bir dosya silinir; o klasör yeniden taranırsa şarkı listeden çıkar.
+        std::fs::remove_file(first.join("uc-uc-ton.flac")).unwrap();
+        let second = folder_with_songs();
+        service.add_folder(&second.join("uc-uc-ton.mp3")).unwrap();
+        wait_idle(&service);
+        assert_eq!(
+            service.status().unwrap().track_count,
+            3,
+            "ilk klasör taranmadı, yeni şarkı eklendi"
+        );
+
+        // "Yeniden tara" yine her şeyi tarar.
+        service.request_scan();
+        wait_idle(&service);
+        assert_eq!(service.status().unwrap().track_count, 2);
     }
 
     #[test]
