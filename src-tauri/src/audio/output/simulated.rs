@@ -49,12 +49,8 @@ pub fn spawn(
     std::thread::Builder::new()
         .name("lyraska-sanal-cikis".to_owned())
         .spawn(move || {
-            let mut renderer = Renderer::new(
-                spec.channels,
-                spec.sample_rate,
-                Arc::clone(&shared.eq),
-                Arc::clone(&shared.headphone),
-            );
+            let mut renderer =
+                Renderer::new(spec.channels, spec.sample_rate, shared.controls.clone());
             let mut out = vec![0.0f32; frames_per_step * spec.channels];
             let mut consumed = 0u64;
             let mut fade = FadeWatch::default();

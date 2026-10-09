@@ -51,11 +51,29 @@ describe("ekolayzer yardımcıları", () => {
     expect(matchPreset(rock.gains.map((g, i) => (i === 0 ? g + 0.5 : g)))).toBeNull();
   });
 
-  it("hazır ayarlar 10 bant ve ±6 dB içinde", () => {
+  it("hazır ayarlar 10 bant, ±8 dB içinde ve adları farklı", () => {
+    // Bas ayarları +8 dB'ye kadar çıkar: eşitleme açıkken yükseltme sesi kısmadan yapılır
+    // ve bas gerçekten hissedilir. Daha fazlası kulağı yorar.
     for (const preset of EQ_PRESETS) {
       expect(preset.gains).toHaveLength(10);
-      expect(preset.gains.every((g) => Math.abs(g) <= 6 && snapGain(g) === g)).toBe(true);
+      expect(preset.gains.every((g) => Math.abs(g) <= 8 && snapGain(g) === g)).toBe(true);
     }
+    expect(new Set(EQ_PRESETS.map((p) => p.name)).size).toBe(EQ_PRESETS.length);
+  });
+
+  it("bas ayarları cihaza göre farklı frekansları yükseltir", () => {
+    const gains = (name: string) => EQ_PRESETS.find((p) => p.name === name)!.gains;
+    const [sub31, bass62, bass125, low250] = gains("Bas");
+    // "Bas": göğse vuran bölge (62–125 Hz) en yüksek.
+    expect(Math.max(bass62!, bass125!)).toBeGreaterThan(sub31!);
+    expect(bass62!).toBeGreaterThanOrEqual(6);
+    // "Derin bas": en çok 31 Hz.
+    expect(gains("Derin bas")[0]).toBe(Math.max(...gains("Derin bas")));
+    // "Küçük hoparlör": veremediği 31 Hz kısılır, 125–250 Hz yükseltilir.
+    const small = gains("Küçük hoparlör");
+    expect(small[0]!).toBeLessThan(0);
+    expect(Math.min(small[2]!, small[3]!)).toBeGreaterThan(3);
+    expect(low250).toBeGreaterThan(0);
   });
 
   it("frekansları logaritmik eksene yerleştirir", () => {

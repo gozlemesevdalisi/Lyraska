@@ -90,7 +90,7 @@ impl Biquad {
 fn k_weighting(sample_rate: f64) -> [Biquad; 2] {
     // 1. aşama: ~1,7 kHz üstünü +4 dB yükselten raf (başın akustik etkisi).
     let (f0, gain_db, q) = (
-        1681.974_450_955_533,
+        1_681.974_450_955_533,
         3.999_843_853_973_347,
         0.707_175_236_955_419_6,
     );

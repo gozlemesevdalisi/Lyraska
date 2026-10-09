@@ -1,6 +1,7 @@
 import {
   fileStem,
   formatBpm,
+  formatDb,
   formatLabel,
   formatTime,
   progress,
@@ -75,6 +76,7 @@ describe("signalPathText", () => {
       sampleRate: 48000,
       channels: 2,
       resampled: true,
+      normalizationDb: null,
     },
   };
 
@@ -88,12 +90,36 @@ describe("signalPathText", () => {
     const text = signalPathText({
       ...status,
       underruns: 3,
-      output: { deviceName: "", sampleRate: 44100, channels: 2, resampled: false },
+      output: {
+        deviceName: "",
+        sampleRate: 44100,
+        channels: 2,
+        resampled: false,
+        normalizationDb: null,
+      },
     });
     expect(text).toContain("dönüştürmesiz → varsayılan ses aygıtı");
     expect(text).toContain("takılma: 3");
     expect(signalPathText({ ...status, output: null })).toBeNull();
     expect(signalPathText({ ...status, track: null })).toBeNull();
+  });
+
+  it("ses yüksekliği eşitlemesinin kazancını yazar", () => {
+    const text = signalPathText({
+      ...status,
+      output: { ...status.output!, normalizationDb: -5.24 },
+    });
+    expect(text).toBe(
+      "MP3 44,1 kHz → 48 kHz (yüksek kalite) → Hoparlörler (Realtek) · eşitleme −5,2 dB · taşma koruması",
+    );
+  });
+});
+
+describe("formatDb", () => {
+  it("desibeli işaretli ve Türkçe ondalıkla yazar", () => {
+    expect(formatDb(-5.24)).toBe("−5,2 dB");
+    expect(formatDb(2)).toBe("+2 dB");
+    expect(formatDb(0.04)).toBe("0 dB");
   });
 });
 
@@ -130,12 +156,24 @@ describe("büyük başlık", () => {
 
 describe("ses biçimi etiketi", () => {
   it("dönüştürme varsa iki hızı da yazar", () => {
-    const output = { deviceName: "", sampleRate: 48000, channels: 2, resampled: true };
+    const output = {
+      deviceName: "",
+      sampleRate: 48000,
+      channels: 2,
+      resampled: true,
+      normalizationDb: null,
+    };
     expect(formatLabel(track, output)).toBe("FLAC 44,1 → 48 kHz");
   });
 
   it("dönüştürme yoksa ya da çıkış bilinmiyorsa yalnızca şarkının hızını yazar", () => {
-    const output = { deviceName: "", sampleRate: 44100, channels: 2, resampled: false };
+    const output = {
+      deviceName: "",
+      sampleRate: 44100,
+      channels: 2,
+      resampled: false,
+      normalizationDb: null,
+    };
     expect(formatLabel(track, output)).toBe("FLAC 44,1 kHz");
     expect(formatLabel({ ...track, codec: "mp3", sampleRate: 48000 }, null)).toBe("MP3 48 kHz");
   });

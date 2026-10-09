@@ -9,11 +9,38 @@ use rtrb::Consumer;
 
 use super::eq::{EqControl, EqProcessor};
 use super::limiter::Limiter;
+use super::normalize::{Leveler, LoudnessControl, TrackLevels};
 use super::peq::{PeqControl, PeqProcessor};
 use super::Sample;
 
+/// Ses işlemenin ayarları: oynatıcı boyunca aynı olanlar (ekolayzer, kulaklık düzeltmesi,
+/// eşitleme ayarı) ve oturuma ait şarkı seviyeleri. Hepsi kilitsiz okunur.
+#[derive(Debug, Clone)]
+pub struct RenderControls {
+    pub eq: Arc<EqControl>,
+    pub headphone: Arc<PeqControl>,
+    pub loudness: Arc<LoudnessControl>,
+    pub levels: Arc<TrackLevels>,
+}
+
+impl Default for RenderControls {
+    /// Sesi hiç değiştirmeyen ayarlar (ekolayzer düz, düzeltme ve eşitleme kapalı).
+    fn default() -> Self {
+        Self {
+            eq: Arc::default(),
+            headphone: Arc::default(),
+            loudness: Arc::new(LoudnessControl::new(false)),
+            levels: Arc::new(TrackLevels::new()),
+        }
+    }
+}
+
 /// Duraklat/devam geçişinin süresi. Ani kesilme "tık" sesine yol açar.
 pub const FADE_SECONDS: f64 = 0.010;
+/// Eşitleme açıkken ilk ses, şarkının ses yüksekliği ölçümü gelene kadar en fazla bu kadar
+/// bekletilir: seviye ilk örnekten doğru olsun. Önbellekteki şarkılarda ve sarmada ölçüm
+/// zaten hazırdır, hiç beklenmez; yeni bir şarkıda hızlı ölçüm genellikle yetişir.
+const LOUDNESS_WAIT_SECONDS: f64 = 0.6;
 
 /// Bir doldurma turunun sonucu.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,26 +61,34 @@ pub struct Renderer {
     fade_step: f64,
     eq: EqProcessor,
     headphone: PeqProcessor,
+    /// Ses yüksekliği eşitlemesi ve ekolayzerin taşma koruması.
+    leveler: Leveler,
+    levels: Arc<TrackLevels>,
+    loudness: Arc<LoudnessControl>,
+    sample_rate: u32,
+    /// İlk sesten önce ölçüm için daha ne kadar beklenebilir (kare); 0: çalıyor.
+    wait_frames: usize,
     limiter: Limiter,
     /// Bir karelik çalışma alanı (bellek bir kez ayrılır).
     frame: Vec<Sample>,
 }
 
 impl Renderer {
-    pub fn new(
-        channels: usize,
-        sample_rate: u32,
-        eq: Arc<EqControl>,
-        headphone: Arc<PeqControl>,
-    ) -> Self {
+    pub fn new(channels: usize, sample_rate: u32, controls: RenderControls) -> Self {
         let fade_frames = (FADE_SECONDS * f64::from(sample_rate)).max(1.0);
         let channels = channels.max(1);
+        let leveler = Leveler::new(sample_rate, &controls.levels, controls.loudness.enabled());
         Self {
             channels,
             gain: 0.0,
             fade_step: 1.0 / fade_frames,
-            eq: EqProcessor::new(eq, channels, sample_rate),
-            headphone: PeqProcessor::new(headphone, channels, sample_rate),
+            eq: EqProcessor::new(controls.eq, channels, sample_rate),
+            headphone: PeqProcessor::new(controls.headphone, channels, sample_rate),
+            leveler,
+            levels: controls.levels,
+            loudness: controls.loudness,
+            sample_rate,
+            wait_frames: (LOUDNESS_WAIT_SECONDS * f64::from(sample_rate)) as usize,
             limiter: Limiter::new(channels, sample_rate),
             frame: vec![0.0; channels],
         }
@@ -83,6 +118,25 @@ impl Renderer {
         let mut outcome = RenderOutcome::default();
         self.eq.begin_block();
         self.headphone.begin_block();
+        let normalize = self.loudness.enabled();
+        if self.wait_frames > 0 {
+            if !normalize || self.levels.is_known(0) {
+                // Ölçüm geldi: kazanç tahminden değil, ilk örnekten doğru başlar.
+                self.wait_frames = 0;
+                self.leveler = Leveler::new(self.sample_rate, &self.levels, normalize);
+            } else if !paused {
+                // Ölçüm bekleniyor: sessizlik yazılır, şarkı yerinde bekler.
+                let frames = out.len() / self.channels;
+                self.wait_frames = self.wait_frames.saturating_sub(frames);
+                for frame in out.chunks_exact_mut(self.channels) {
+                    self.frame.fill(0.0);
+                    self.write_frame(frame);
+                }
+                return outcome;
+            }
+        }
+        self.leveler
+            .begin_block(&self.levels, normalize, self.eq.boost_db());
 
         for frame in out.chunks_exact_mut(self.channels) {
             // Sessiz karelerde de taşma korumasının gecikme hattı ilerler: duraklatma
@@ -108,11 +162,16 @@ impl Renderer {
             for value in self.frame.iter_mut() {
                 *value = source.pop().unwrap_or(0.0);
             }
-            // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → ses geçişi → taşma koruması.
+            // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → eşitleme ve ekolayzerin
+            // taşma koruması → ses geçişi → taşma koruması (sınırlayıcı).
             self.headphone.process_frame(&mut self.frame);
             self.eq.advance_frame();
+            let level = self
+                .leveler
+                .next_gain(&self.levels, normalize, self.eq.boost_db());
+            let gain = level * self.gain;
             for (channel, value) in self.frame.iter_mut().enumerate() {
-                *value = self.eq.process(channel, *value) * self.gain;
+                *value = self.eq.process(channel, *value) * gain;
             }
             self.write_frame(frame);
             outcome.frames_consumed += 1;
@@ -159,10 +218,6 @@ mod tests {
     /// 1000 Hz örnekleme: geçiş 10 kare sürer, hesaplar kolay olur.
     const RATE: u32 = 1000;
 
-    fn flat() -> Arc<EqControl> {
-        Arc::new(EqControl::default())
-    }
-
     fn filled(samples: &[Sample]) -> Consumer<Sample> {
         let (mut producer, consumer) = RingBuffer::new(samples.len().max(1));
         for &s in samples {
@@ -181,7 +236,7 @@ mod tests {
 
     #[test]
     fn baslangicta_sesi_yumusakca_acar() {
-        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
+        let mut renderer = Renderer::new(1, RATE, RenderControls::default());
         let mut source = filled(&[0.8; 20]);
         let mut out = [0.0f32; 20];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -199,7 +254,7 @@ mod tests {
 
     #[test]
     fn duraklatinca_yumusakca_susar_ve_veri_tuketmez() {
-        let mut renderer = Renderer::new(2, RATE, flat(), Arc::default());
+        let mut renderer = Renderer::new(2, RATE, RenderControls::default());
         let mut source = filled(&[0.5; 200]);
         let mut out = [0.0f32; 40];
         renderer.render(&mut source, &mut out, false); // tam sese ulaş
@@ -224,7 +279,7 @@ mod tests {
     #[test]
     fn devam_edince_kaldigi_yerden_surer() {
         let samples: Vec<Sample> = (0..100).map(|i| f64::from(i) / 100.0).collect();
-        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
+        let mut renderer = Renderer::new(1, RATE, RenderControls::default());
         let mut source = filled(&samples);
         let mut out = [0.0f32; 30];
         renderer.render(&mut source, &mut out, false);
@@ -243,7 +298,7 @@ mod tests {
 
     #[test]
     fn duraklatilmisken_veri_yoksa_gecis_bitmis_sayilir() {
-        let mut renderer = Renderer::new(1, RATE, flat(), Arc::default());
+        let mut renderer = Renderer::new(1, RATE, RenderControls::default());
         let mut source = filled(&[0.5; 40]);
         let mut out = [0.0f32; 40];
         renderer.render(&mut source, &mut out, false); // tam ses, tampon boşaldı
@@ -254,7 +309,7 @@ mod tests {
 
     #[test]
     fn veri_yetismezse_sessizlik_yazar_ve_sayar() {
-        let mut renderer = Renderer::new(2, RATE, flat(), Arc::default());
+        let mut renderer = Renderer::new(2, RATE, RenderControls::default());
         let mut source = filled(&[0.3; 5]); // 2,5 kare: son yarım kare okunmamalı
         let mut out = [9.0f32; 8];
         let outcome = renderer.render(&mut source, &mut out, false);
@@ -277,7 +332,11 @@ mod tests {
             gains_db: [-12.0; BANDS],
         }));
         let rate = 48_000;
-        let mut renderer = Renderer::new(1, rate, eq, Arc::default());
+        let controls = RenderControls {
+            eq,
+            ..RenderControls::default()
+        };
+        let mut renderer = Renderer::new(1, rate, controls);
         let w = 2.0 * std::f64::consts::PI * 1000.0 / f64::from(rate);
         let samples: Vec<Sample> = (0..rate).map(|i| (w * f64::from(i)).sin()).collect();
         let mut source = filled(&samples);
@@ -335,7 +394,15 @@ mod tests {
             .map(|i| 0.9 * (w * f64::from(i / 2)).sin())
             .collect();
         let mut source = filled(&samples);
-        let mut renderer = Renderer::new(2, rate, eq.clone(), headphone.clone());
+        let loudness = Arc::new(LoudnessControl::new(true));
+        let levels = Arc::new(TrackLevels::new());
+        let controls = RenderControls {
+            eq: eq.clone(),
+            headphone: headphone.clone(),
+            loudness: loudness.clone(),
+            levels: levels.clone(),
+        };
+        let mut renderer = Renderer::new(2, rate, controls);
         let mut out = vec![0.0f32; 2 * 480]; // 10 ms
         let flat = EqSettings {
             enabled: true,
@@ -352,7 +419,16 @@ mod tests {
                     40 => {
                         eq.set(boosted);
                     }
+                    60 => levels.set_loudness(
+                        0,
+                        Some(crate::audio::loudness::Loudness {
+                            integrated_lufs: -8.0,
+                            true_peak_dbtp: 0.0,
+                        }),
+                    ),
+                    70 => levels.begin_track(70 * 480),
                     80 => headphone.set(Some(&profile), false),
+                    90 => loudness.set(false),
                     100 => {
                         eq.set(flat);
                     }
@@ -369,6 +445,106 @@ mod tests {
             "ses yolu {} kez bellek ayırdı ({} bayt)",
             info.count_total, info.bytes_total
         );
+    }
+
+    fn normalizing(levels: &Arc<TrackLevels>) -> RenderControls {
+        RenderControls {
+            loudness: Arc::new(LoudnessControl::new(true)),
+            levels: Arc::clone(levels),
+            ..RenderControls::default()
+        }
+    }
+
+    fn loud() -> crate::audio::loudness::Loudness {
+        // −8 LUFS'lik şarkı: eşitleme −6 dB.
+        crate::audio::loudness::Loudness {
+            integrated_lufs: -8.0,
+            true_peak_dbtp: 0.0,
+        }
+    }
+
+    #[test]
+    fn ilk_ses_olcumu_bekler_ve_dogru_seviyeden_baslar() {
+        let levels = Arc::new(TrackLevels::new());
+        let mut renderer = Renderer::new(1, RATE, normalizing(&levels));
+        let mut source = filled(&[0.5; 400]);
+        let mut out = [9.0f32; 100];
+        let outcome = renderer.render(&mut source, &mut out, false);
+        assert_eq!(
+            outcome.frames_consumed, 0,
+            "ölçüm yokken şarkı yerinde bekler"
+        );
+        assert_eq!(outcome.frames_missing, 0, "bekleme takılma sayılmaz");
+        assert!(out.iter().all(|&s| s == 0.0));
+        assert_eq!(source.slots(), 400);
+
+        levels.set_loudness(0, Some(loud()));
+        let mut out = [0.0f32; 200];
+        let outcome = renderer.render(&mut source, &mut out, false);
+        assert_eq!(outcome.frames_consumed, 200);
+        // Açılış geçişinden sonra tam −6 dB'de: tahminden düzelme (yavaş kayma) yok.
+        let expected = 0.5 * 10f64.powf(-6.0 / 20.0);
+        assert!(
+            (f64::from(out[199]) - expected).abs() < 1e-6,
+            "{}",
+            out[199]
+        );
+        assert!(
+            (f64::from(out[100]) - expected).abs() < 1e-6,
+            "{}",
+            out[100]
+        );
+    }
+
+    #[test]
+    fn olcum_yetismezse_tahmini_seviyeyle_baslar() {
+        let levels = Arc::new(TrackLevels::new());
+        let mut renderer = Renderer::new(1, RATE, normalizing(&levels));
+        let mut source = filled(&[0.5; 1000]);
+        let mut out = [0.0f32; 100];
+        for _ in 0..6 {
+            // 0,6 sn (600 kare) beklenir.
+            assert_eq!(
+                renderer
+                    .render(&mut source, &mut out, false)
+                    .frames_consumed,
+                0
+            );
+        }
+        let mut out = [0.0f32; 200];
+        assert_eq!(
+            renderer
+                .render(&mut source, &mut out, false)
+                .frames_consumed,
+            200
+        );
+        // Tipik kayıt varsayılır (−10 LUFS → −4 dB).
+        let expected = 0.5 * 10f64.powf(-4.0 / 20.0);
+        assert!(
+            (f64::from(out[199]) - expected).abs() < 1e-6,
+            "{}",
+            out[199]
+        );
+    }
+
+    #[test]
+    fn esitleme_kapaliyken_beklemez_ve_ses_aynen_gecer() {
+        let levels = Arc::new(TrackLevels::new());
+        let controls = RenderControls {
+            levels: Arc::clone(&levels),
+            ..RenderControls::default()
+        };
+        let mut renderer = Renderer::new(1, RATE, controls);
+        let mut source = filled(&[0.5; 100]);
+        let mut out = [0.0f32; 100];
+        assert_eq!(
+            renderer
+                .render(&mut source, &mut out, false)
+                .frames_consumed,
+            100
+        );
+        assert_eq!(out[99], 0.5, "kazanç tam 1: bit bit aynı");
+        assert!(!levels.is_known(0));
     }
 
     #[test]

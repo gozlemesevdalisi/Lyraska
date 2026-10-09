@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::eq::EqSettings;
 use crate::audio::peq::HeadphoneSettings;
+use crate::audio::PlaybackOptions;
 
 /// Kalıcı ayarlar. Yeni alanlar eklendiğinde eski dosyalar varsayılanla tamamlanır.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub struct Settings {
     pub visual_safe: bool,
     /// Ses aygıtının ek gecikmesi (ms; ör. Bluetooth): görseller bu kadar geriden okunur.
     pub audio_delay_ms: i32,
+    /// Çalma seçenekleri (ses yüksekliği eşitlemesi vb.).
+    pub playback: PlaybackOptions,
 }
 
 /// Ayarları bellekte tutar ve her değişiklikte diske yazar.
@@ -47,6 +50,7 @@ impl SettingsStore {
                 headphone: settings.headphone.sanitized(),
                 visual_safe: settings.visual_safe,
                 audio_delay_ms: crate::visual_bridge::clamp_audio_delay_ms(settings.audio_delay_ms),
+                playback: settings.playback,
             }),
         }
     }

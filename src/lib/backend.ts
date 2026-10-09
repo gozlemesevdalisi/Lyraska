@@ -16,6 +16,7 @@ import type { HeadphoneState } from "./bindings/HeadphoneState";
 import type { LibraryFolder } from "./bindings/LibraryFolder";
 import type { LibraryStatus } from "./bindings/LibraryStatus";
 import type { LibraryTrack } from "./bindings/LibraryTrack";
+import type { PlaybackOptions } from "./bindings/PlaybackOptions";
 import type { PlaybackState } from "./bindings/PlaybackState";
 import type { PlaybackStatus } from "./bindings/PlaybackStatus";
 import type { ScanProgress } from "./bindings/ScanProgress";
@@ -42,6 +43,7 @@ export type {
   LibraryFolder,
   LibraryStatus,
   LibraryTrack,
+  PlaybackOptions,
   PlaybackState,
   PlaybackStatus,
   ScanProgress,
@@ -253,6 +255,18 @@ export async function getVisualSafe(): Promise<boolean> {
 export async function setVisualSafe(enabled: boolean): Promise<boolean> {
   if (!isTauri()) return enabled;
   return invoke<boolean>("visual_safe_set", { enabled });
+}
+
+/** Çalma seçenekleri (ses yüksekliği eşitlemesi). Tarayıcı önizlemesinde varsayılanlar. */
+export async function getPlaybackOptions(): Promise<PlaybackOptions> {
+  if (!isTauri()) return { normalize: true };
+  return invoke<PlaybackOptions>("playback_options_get");
+}
+
+/** Çalma seçeneklerini uygular ve kaydeder; uygulananı döndürür. */
+export async function setPlaybackOptions(options: PlaybackOptions): Promise<PlaybackOptions> {
+  if (!isTauri()) return options;
+  return invoke<PlaybackOptions>("playback_options_set", { options });
 }
 
 /** Ses aygıtının ek gecikmesi (ms). Tarayıcı önizlemesinde 0. */

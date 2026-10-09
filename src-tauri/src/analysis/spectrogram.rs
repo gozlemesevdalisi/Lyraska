@@ -51,8 +51,10 @@ pub struct Spectrogram {
     song_map: RwLock<Option<Arc<SongMap>>>,
     /// Analiz bitince kurulan koreografi (Görsel Yönetmen).
     choreography: RwLock<Option<Arc<Choreography>>>,
-    /// Analiz bitince ölçülen ses yüksekliği ve gerçek tepe (sessiz şarkıda `None`).
+    /// Ölçülen ses yüksekliği ve gerçek tepe (sessiz şarkıda `None`). Hızlı ölçüm
+    /// geçişiyle analiz bitmeden de gelebilir ([`Spectrogram::set_measured_loudness`]).
     loudness: RwLock<Option<Loudness>>,
+    loudness_ready: AtomicBool,
     /// Hazır kare sayısı.
     ready: AtomicUsize,
     done: AtomicBool,
@@ -70,6 +72,7 @@ impl Spectrogram {
             song_map: RwLock::new(None),
             choreography: RwLock::new(None),
             loudness: RwLock::new(None),
+            loudness_ready: AtomicBool::new(false),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -164,9 +167,24 @@ impl Spectrogram {
         self.song_map.read().ok().and_then(|m| m.clone())
     }
 
-    /// Şarkının ses yüksekliği ve gerçek tepesi; analiz bitene kadar ya da sessizse `None`.
+    /// Şarkının ses yüksekliği ve gerçek tepesi; ölçülmediyse ya da sessizse `None`.
     pub fn loudness(&self) -> Option<Loudness> {
         self.loudness.read().ok().and_then(|l| *l)
+    }
+
+    /// Ölçüm bittiyse sonucu (`Some(None)`: sessiz şarkı); bitmediyse `None`.
+    pub fn measured_loudness(&self) -> Option<Option<Loudness>> {
+        self.loudness_ready
+            .load(Ordering::Acquire)
+            .then(|| self.loudness())
+    }
+
+    /// Ses yüksekliği ölçümünü yayımlar (hızlı ölçüm geçişi ya da analizin sonu).
+    pub fn set_measured_loudness(&self, loudness: Option<Loudness>) {
+        if let Ok(mut stored) = self.loudness.write() {
+            *stored = loudness;
+        }
+        self.loudness_ready.store(true, Ordering::Release);
     }
 
     /// Şarkının vuruş ızgarası; analiz bitene kadar ya da ritim yoksa `None`.
@@ -212,9 +230,7 @@ impl Spectrogram {
 
     /// Analizi tamamlar: VU referansı ve koreografi hesaplanır, sonuçlar yayımlanır.
     fn complete(&self, grid: Option<BeatGrid>, map: Option<SongMap>, loudness: Option<Loudness>) {
-        if let Ok(mut stored) = self.loudness.write() {
-            *stored = loudness;
-        }
+        self.set_measured_loudness(loudness);
         let reference = self
             .meters
             .read()
@@ -274,6 +290,33 @@ impl SavedAnalysis {
         self.levels.len() == frames * BANDS
             && self.meters.len() == frames * VALUES_PER_FRAME
             && self.onset.len() == frames
+    }
+}
+
+/// Yalnızca ses yüksekliğini ölçen hızlı geçiş: şarkı açılınca, tam analiz bitmeden
+/// eşitleme kazancı bilinsin diye (çözme + süzgeç; FFT yok). Analiz iptal edilir ya da
+/// biterse durur; sonucu [`Spectrogram::set_measured_loudness`] ile yayımlar.
+pub fn measure_loudness(mut decoder: Decoder, target: &Spectrogram) {
+    let info = decoder.info().clone();
+    let channels = info.channels.max(1);
+    let mut meter = LoudnessMeter::new(info.sample_rate, channels);
+    loop {
+        if target.is_cancelled() || target.measured_loudness().is_some() {
+            return;
+        }
+        match decoder.next_chunk() {
+            Ok(Some(chunk)) => {
+                for frame in chunk.chunks_exact(channels) {
+                    meter.add(frame);
+                }
+            }
+            Ok(None) => break,
+            // Çözülemeyen yerde durulur; tam analiz de aynı yerde durur, sonuç aynıdır.
+            Err(_) => break,
+        }
+    }
+    if target.measured_loudness().is_none() {
+        target.set_measured_loudness(meter.finish());
     }
 }
 
@@ -346,7 +389,10 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         }
     }
     target.push(&batch, &meter_batch, &onset_batch);
-    target.finish(beats::onset_latency(info.sample_rate, FFT_SIZE), loudness.finish());
+    target.finish(
+        beats::onset_latency(info.sample_rate, FFT_SIZE),
+        loudness.finish(),
+    );
 }
 
 /// `k`. karenin bittiği örnek (hariç): (k + 1) / 60 saniyeye en yakın örnek.
@@ -662,5 +708,39 @@ mod tests {
         assert!(!spectrogram.is_done());
         assert_eq!(spectrogram.ready_frames(), 0);
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn hizli_olcum_tam_analizle_ayni_ses_yuksekligini_verir() {
+        let path = temp_path("spektrum-olcum.wav");
+        let rate = 44_100;
+        write_wav(&path, rate, 2, rate as usize * 3, |f, ch| {
+            let gain = if ch == 0 { 0.5 } else { 0.25 };
+            gain * sine(1000.0, rate, f)
+        });
+        let quick = Spectrogram::new();
+        assert_eq!(
+            quick.measured_loudness(),
+            None,
+            "ölçülmeden önce bilinmiyor"
+        );
+        measure_loudness(Decoder::open(&path).unwrap(), &quick);
+        let full = analyze_file(&path);
+        let measured = quick.measured_loudness().flatten().unwrap();
+        assert_eq!(Some(measured), full.loudness());
+        assert!(!quick.is_done(), "yalnızca ses yüksekliği ölçüldü");
+
+        // Tam analiz önce bitmişse hızlı ölçüm hiç çözmeden çıkar, sonucu değiştirmez.
+        measure_loudness(Decoder::open(&path).unwrap(), &full);
+        assert_eq!(full.loudness(), Some(measured));
+
+        // Sessiz şarkı: ölçüm bitti ama ses yüksekliği yok (kazanç uygulanmaz).
+        let silent_path = temp_path("spektrum-olcum-sessiz.wav");
+        write_wav(&silent_path, 8_000, 1, 8_000, |_, _| 0.0);
+        let silent = Spectrogram::new();
+        measure_loudness(Decoder::open(&silent_path).unwrap(), &silent);
+        assert_eq!(silent.measured_loudness(), Some(None));
+        std::fs::remove_file(path).ok();
+        std::fs::remove_file(silent_path).ok();
     }
 }

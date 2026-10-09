@@ -5,7 +5,8 @@
  */
 export type EqState = { enabled: boolean, gainsDb: Array<number>, bandsHz: Array<number>, maxGainDb: number, 
 /**
- * Kırpılmayı önlemek için düşürülen kazanç (dB, ≤ 0).
+ * Taşmayı önlemek için düşürülen kazanç (dB, ≤ 0): çalan şarkının boşluğunun
+ * yetmediği kadar.
  */
 preampDb: number, 
 /**

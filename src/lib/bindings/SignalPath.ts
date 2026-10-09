@@ -15,4 +15,9 @@ sampleRate: number, channels: number,
 /**
  * Şarkı aygıtın hızına Lyraska'nın yüksek kaliteli dönüştürücüsüyle çevriliyor mu?
  */
-resampled: boolean, };
+resampled: boolean, 
+/**
+ * Ses yüksekliği eşitlemesinin uyguladığı kazanç (dB); eşitleme kapalıysa ya da
+ * şarkı henüz ölçülmediyse `None`.
+ */
+normalizationDb: number | null, };

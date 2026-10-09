@@ -138,8 +138,8 @@ impl AnalysisCache {
             )
             .optional()?;
         drop(conn);
-        Ok(
-            row.and_then(|(frames, levels, meters, onset, beats, song_map, lufs, peak)| {
+        Ok(row.and_then(
+            |(frames, levels, meters, onset, beats, song_map, lufs, peak)| {
                 let saved = SavedAnalysis {
                     levels: undelta(&inflate(&levels)?, BANDS),
                     meters: undelta(&inflate(&meters)?, VALUES_PER_FRAME),
@@ -149,14 +149,16 @@ impl AnalysisCache {
                         .collect(),
                     beats: beats.and_then(|j| serde_json::from_str::<BeatGrid>(&j).ok()),
                     song_map: song_map.and_then(|j| serde_json::from_str::<SongMap>(&j).ok()),
-                    loudness: lufs.zip(peak).map(|(integrated_lufs, true_peak_dbtp)| Loudness {
-                        integrated_lufs,
-                        true_peak_dbtp,
-                    }),
+                    loudness: lufs
+                        .zip(peak)
+                        .map(|(integrated_lufs, true_peak_dbtp)| Loudness {
+                            integrated_lufs,
+                            true_peak_dbtp,
+                        }),
                 };
                 (saved.is_consistent() && saved.frames() as i64 == frames).then_some(saved)
-            }),
-        )
+            },
+        ))
     }
 
     /// Analiz sonucunu saklar (aynı yolun eski kaydının yerini alır).

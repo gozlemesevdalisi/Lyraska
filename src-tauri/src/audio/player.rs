@@ -22,8 +22,10 @@ use serde::Serialize;
 
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{Design, EqControl, EqSettings};
+use super::normalize::{LoudnessControl, TrackLevels};
 use super::output::{self, DeviceInfo, OutputSpec};
 use super::peq::{HeadphoneSettings, PeqControl};
+use super::render::RenderControls;
 use super::resample::Converter;
 use super::{AudioError, Sample};
 use crate::analysis::background::ForegroundGuard;
@@ -72,18 +74,16 @@ pub struct SharedState {
     next_path: Mutex<Option<PathBuf>>,
     /// Çalma sırasında veri yetişmediği tur sayısı (hedef: her zaman 0).
     pub underruns: AtomicU64,
-    /// Ekolayzer ayarları (oynatıcı boyunca aynı; her oturum paylaşır).
-    pub eq: Arc<EqControl>,
-    /// Kulaklık düzeltmesi (oynatıcı boyunca aynı; her oturum paylaşır).
-    pub headphone: Arc<PeqControl>,
+    /// Ses işlemenin ayarları: ekolayzer, kulaklık düzeltmesi, eşitleme (oynatıcı boyunca
+    /// aynı; her oturum paylaşır) ve bu oturumdaki şarkıların ses yükseklikleri.
+    pub controls: RenderControls,
     error: Mutex<Option<String>>,
 }
 
 impl SharedState {
-    fn new(paused: bool, first: Segment, eq: Arc<EqControl>, headphone: Arc<PeqControl>) -> Self {
+    fn new(paused: bool, first: Segment, controls: RenderControls) -> Self {
         let state = Self {
-            eq,
-            headphone,
+            controls,
             segments: Mutex::new(vec![first]),
             ..Self::default()
         };
@@ -107,6 +107,18 @@ impl SharedState {
             seconds = seconds.min(duration);
         }
         Some((segment.info.clone(), seconds))
+    }
+
+    /// Şu an duyulan şarkının oturumdaki sırası.
+    fn now_playing_index(&self) -> Option<usize> {
+        let heard = self.output_heard.load(Ordering::Acquire);
+        let segments = self.segments.lock().ok()?;
+        Some(
+            segments
+                .iter()
+                .rposition(|s| s.first_output_frame <= heard)
+                .unwrap_or(0),
+        )
     }
 
     fn set_next(&self, path: Option<PathBuf>) {
@@ -196,6 +208,9 @@ pub struct SignalPath {
     pub channels: usize,
     /// Şarkı aygıtın hızına Lyraska'nın yüksek kaliteli dönüştürücüsüyle çevriliyor mu?
     pub resampled: bool,
+    /// Ses yüksekliği eşitlemesinin uyguladığı kazanç (dB); eşitleme kapalıysa ya da
+    /// şarkı henüz ölçülmediyse `None`.
+    pub normalization_db: Option<f64>,
 }
 
 /// Şu an duyulan anın görsel verisi (önceden yapılmış analizden).
@@ -241,13 +256,15 @@ struct Session {
 
 impl Session {
     /// Oturumu başlatır. `start_secs` verilirse şarkının o noktasından başlar.
+    /// `controls`: oynatıcının ayarları (oturumun şarkı seviyeleri burada kurulur);
+    /// `analysis`: ilk şarkının analizi (ses yüksekliği ölçümü buradan okunur).
     fn start(
         path: &Path,
         autoplay: bool,
         start_secs: Option<f64>,
         next: Option<PathBuf>,
-        eq: &Arc<EqControl>,
-        headphone: &Arc<PeqControl>,
+        controls: &RenderControls,
+        analysis: Option<Arc<Spectrogram>>,
     ) -> Result<Self, AudioError> {
         let mut decoder = Decoder::open(path)?;
         let start_frame = match start_secs {
@@ -276,18 +293,27 @@ impl Session {
             start_frame,
             rate_ratio: f64::from(info.sample_rate) / f64::from(spec.sample_rate),
         };
+        let levels = Arc::new(TrackLevels::new());
+        // Ölçüm hazırsa (önbellek, sarma) ilk örnekten uygulanır.
+        if let Some(measured) = analysis.as_ref().and_then(|a| a.measured_loudness()) {
+            levels.set_loudness(0, measured);
+        }
         let shared = Arc::new(SharedState::new(
             !autoplay,
             first,
-            Arc::clone(eq),
-            Arc::clone(headphone),
+            RenderControls {
+                levels,
+                ..controls.clone()
+            },
         ));
         shared.set_next(next);
 
         let decode_shared = Arc::clone(&shared);
         let decode = std::thread::Builder::new()
             .name("lyraska-cozme".to_owned())
-            .spawn(move || decode_loop(decoder, converter, spec, producer, &decode_shared))
+            .spawn(move || {
+                decode_loop(decoder, converter, spec, producer, &decode_shared, analysis)
+            })
             .map_err(|e| AudioError::Decode(e.to_string()))?;
 
         wait_for_prefill(&shared, PREFILL_TIMEOUT);
@@ -346,6 +372,7 @@ fn signal_path(device: Option<DeviceInfo>, info: &TrackInfo, spec: OutputSpec) -
         sample_rate: spec.sample_rate,
         channels: spec.channels,
         resampled: spec.sample_rate != info.sample_rate,
+        normalization_db: None,
     }
 }
 
@@ -401,6 +428,14 @@ impl Analysis {
         }
         let decoder = Decoder::open(path).ok()?;
         let spectrogram = Spectrogram::new();
+        // Ses yüksekliği ayrı, hızlı bir geçişle ölçülür: eşitleme kazancı çoğu zaman
+        // ilk sesten önce bilinir (tam analiz birkaç saniye sürer).
+        if let Ok(quick) = Decoder::open(path) {
+            let target = Arc::clone(&spectrogram);
+            let _ = std::thread::Builder::new()
+                .name("lyraska-olcum".to_owned())
+                .spawn(move || spectrogram::measure_loudness(quick, &target));
+        }
         let target = Arc::clone(&spectrogram);
         let busy = ForegroundGuard::new(&context.foreground);
         let cache = context.cache.clone();
@@ -454,6 +489,8 @@ pub struct Player {
     eq: Arc<EqControl>,
     /// Kulaklık düzeltmesi: ses çıkışının okuduğu kanal ve son ayar.
     headphone_control: Arc<PeqControl>,
+    /// Ses yüksekliği eşitlemesi açık mı (ses çıkışı okur).
+    loudness: Arc<LoudnessControl>,
     headphone: HeadphoneSettings,
     /// Epilepsi güvenli modu: Görsel Yönetmen nabızları saniyede en fazla bire indirir.
     visual_safe: bool,
@@ -501,18 +538,24 @@ impl Player {
         if self.next_path.as_deref() == Some(path) {
             self.next_path = None;
         }
+        // Analiz önce kurulur: ses yüksekliği ölçümü hazırsa ilk örnekten uygulanır.
+        self.adopt_analysis(path);
+        let analysis = self
+            .analysis
+            .as_ref()
+            .filter(|a| a.path == path)
+            .map(|a| Arc::clone(&a.spectrogram));
         match Session::start(
             path,
             autoplay,
             start_secs,
             self.next_path.clone(),
-            &self.eq,
-            &self.headphone_control,
+            &self.render_controls(),
+            analysis,
         ) {
             Ok(session) => {
                 let info = session.info.clone();
                 self.session = Some(session);
-                self.adopt_analysis(path);
                 Ok(info)
             }
             Err(error) => {
@@ -659,6 +702,69 @@ impl Player {
         settings
     }
 
+    /// Oturumların ses işlemesinin ayarları (şarkı seviyeleri her oturumda yeniden kurulur).
+    fn render_controls(&self) -> RenderControls {
+        RenderControls {
+            eq: Arc::clone(&self.eq),
+            headphone: Arc::clone(&self.headphone_control),
+            loudness: Arc::clone(&self.loudness),
+            levels: Arc::new(TrackLevels::new()),
+        }
+    }
+
+    /// Çalma seçenekleri.
+    pub fn playback_options(&self) -> super::PlaybackOptions {
+        super::PlaybackOptions {
+            normalize: self.loudness.enabled(),
+        }
+    }
+
+    /// Çalma seçeneklerini uygular. Eşitleme değişince çalan şarkıda kazanç yumuşakça değişir.
+    pub fn set_playback_options(&mut self, options: super::PlaybackOptions) {
+        self.loudness.set(options.normalize);
+    }
+
+    /// Analizi biten şarkıların ses yüksekliğini oturumun seviye tablosuna yazar
+    /// (boşluksuz geçişle eklenen şarkılar dahil). Durum sorgusunda ve her görsel
+    /// karede çağrılır; ses iş parçacığı yeni kazancı şarkının sınırından itibaren uygular.
+    fn sync_levels(&self) {
+        let Some(session) = &self.session else {
+            return;
+        };
+        let levels = &session.shared.controls.levels;
+        let Ok(segments) = session.shared.segments.lock() else {
+            return;
+        };
+        for (index, segment) in segments.iter().enumerate() {
+            if levels.is_known(index) {
+                continue;
+            }
+            if let Some(measured) = self
+                .analysis_for(&segment.info.path)
+                .and_then(|a| a.spectrogram.measured_loudness())
+            {
+                levels.set_loudness(index, measured);
+            }
+        }
+    }
+
+    /// Çalan şarkının eşitlemeden sonra tepesine kalan boşluk (dB): ekolayzer bu kadar
+    /// yükseltirken sesi kısmaz. Şarkı yoksa ya da ölçülmediyse 0.
+    pub fn headroom_db(&self) -> f64 {
+        self.current_level().map_or(0.0, |level| level.headroom_db)
+    }
+
+    /// Çalan şarkının eşitleme kazancı ve boşluğu.
+    fn current_level(&self) -> Option<super::normalize::TrackLevel> {
+        let session = self.session.as_ref()?;
+        self.sync_levels();
+        let index = session.shared.now_playing_index()?;
+        let levels = &session.shared.controls.levels;
+        levels
+            .is_known(index)
+            .then(|| levels.level(index, self.loudness.enabled()))
+    }
+
     /// Ekolayzer ayarları.
     pub fn equalizer(&self) -> EqSettings {
         self.eq.settings()
@@ -674,6 +780,8 @@ impl Player {
     /// Spektrum ekolayzerden önce çıkarıldığı için ekolayzerin etkisi burada eklenir:
     /// görseller duyulanı gösterir.
     pub fn visual_now(&mut self) -> Option<VisualData> {
+        // Boşluksuz geçişle gelen şarkının ölçümü de vaktinde ses yoluna yazılsın.
+        self.sync_levels();
         let (track, heard) = self.session.as_ref()?.now_playing();
         // Gecikme telafisi: ekranda görüneceği an ve ses aygıtının ek gecikmesi.
         let seconds = crate::visual_bridge::visual_time(heard, self.audio_delay_ms);
@@ -760,6 +868,7 @@ impl Player {
     }
 
     pub fn status(&self) -> PlaybackStatus {
+        let level = self.current_level();
         match &self.session {
             Some(session) => {
                 let (track, position_secs) = session.now_playing();
@@ -769,6 +878,9 @@ impl Player {
                     .map(|grid| grid.bpm);
                 let mut output = session.path.clone();
                 output.resampled = output.sample_rate != track.sample_rate;
+                output.normalization_db = level
+                    .filter(|_| self.loudness.enabled())
+                    .map(|level| level.gain_db);
                 PlaybackStatus {
                     state: session.state(),
                     track: Some(track),
@@ -802,8 +914,10 @@ fn decode_loop(
     spec: OutputSpec,
     mut producer: Producer<Sample>,
     shared: &SharedState,
+    analysis: Option<Arc<Spectrogram>>,
 ) {
     let channels = spec.channels;
+    let levels = &shared.controls.levels;
     let prefill_target = ((f64::from(spec.sample_rate) * PREFILL_SECONDS) as usize * channels)
         .min(producer.buffer().capacity() / 2);
     let mut pending: Vec<Sample> = Vec::new();
@@ -816,6 +930,13 @@ fn decode_loop(
     loop {
         if shared.stop.load(Ordering::Acquire) {
             return;
+        }
+        // İlk şarkının ölçümü gelince hemen ses yoluna yazılır: ses çıkışı ilk sesi bunu
+        // bekleyerek başlatır (sonraki şarkılarınkini oynatıcı yazar).
+        if !levels.is_known(0) {
+            if let Some(measured) = analysis.as_ref().and_then(|a| a.measured_loudness()) {
+                levels.set_loudness(0, measured);
+            }
         }
         if pos == pending.len() {
             if finished {
@@ -905,6 +1026,8 @@ fn open_next(
         first_output_frame,
         start_frame: 0,
     });
+    // Eşitleme kazancı tam bu karede yeni şarkınınkine geçer (ölçümünü oynatıcı yazar).
+    shared.controls.levels.begin_track(first_output_frame);
     Some((decoder, converter))
 }
 
@@ -981,8 +1104,7 @@ mod tests {
         let shared = Arc::new(SharedState::new(
             false,
             test_segment(),
-            Arc::default(),
-            Arc::default(),
+            RenderControls::default(),
         ));
         let thread_shared = Arc::clone(&shared);
         let converter = Converter::new(8_000, 2, 8_000, 2).unwrap();
@@ -991,7 +1113,7 @@ mod tests {
             channels: 2,
         };
         let handle = std::thread::spawn(move || {
-            decode_loop(decoder, converter, spec, producer, &thread_shared)
+            decode_loop(decoder, converter, spec, producer, &thread_shared, None)
         });
 
         let mut received = Vec::with_capacity(frames * 2);
@@ -1025,8 +1147,7 @@ mod tests {
         let shared = Arc::new(SharedState::new(
             false,
             test_segment(),
-            Arc::default(),
-            Arc::default(),
+            RenderControls::default(),
         ));
         let thread_shared = Arc::clone(&shared);
         let converter = Converter::new(8_000, 1, 8_000, 2).unwrap();
@@ -1035,7 +1156,7 @@ mod tests {
             channels: 2,
         };
         let handle = std::thread::spawn(move || {
-            decode_loop(decoder, converter, spec, producer, &thread_shared)
+            decode_loop(decoder, converter, spec, producer, &thread_shared, None)
         });
 
         wait_for_prefill(&shared, Duration::from_secs(5));
@@ -1097,8 +1218,7 @@ mod tests {
         let shared = Arc::new(SharedState::new(
             false,
             test_segment(),
-            Arc::default(),
-            Arc::default(),
+            RenderControls::default(),
         ));
         shared.set_next(Some(b.clone()));
         let thread_shared = Arc::clone(&shared);
@@ -1108,7 +1228,7 @@ mod tests {
             channels: 2,
         };
         let handle = std::thread::spawn(move || {
-            decode_loop(decoder, converter, spec, producer, &thread_shared)
+            decode_loop(decoder, converter, spec, producer, &thread_shared, None)
         });
         let mut received = Vec::new();
         while !(shared.decode_done.load(Ordering::Acquire) && consumer.is_empty()) {
@@ -1452,8 +1572,61 @@ mod tests {
         // Sarma yeni bir oturum açar; ekolayzer ayarı yine aynıdır.
         player.seek(0.5).unwrap();
         let session = player.session.as_ref().unwrap();
-        assert!(Arc::ptr_eq(&session.shared.eq, &player.eq));
-        assert_eq!(session.shared.eq.settings().gains_db[5], -12.0);
+        assert!(Arc::ptr_eq(&session.shared.controls.eq, &player.eq));
+        assert_eq!(session.shared.controls.eq.settings().gains_db[5], -12.0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn esitleme_calan_sarkiyi_olcer_ve_kapatinca_kalkar() {
+        use crate::audio::loudness::TARGET_LUFS;
+        // Yarım genlikte 1 kHz sinüs: −6 LUFS, tepe −6 dBTP.
+        let path = temp_path("esitleme.wav");
+        write_wav(&path, 44_100, 1, 44_100 * 3, |frame, _| {
+            0.5 * crate::audio::test_util::sine(1000.0, 44_100, frame)
+        });
+        let mut player = Player::new();
+        assert!(player.playback_options().normalize, "varsayılan açık");
+        player.load(&path, false).unwrap();
+        let analysis = Arc::clone(&player.analysis.as_ref().unwrap().spectrogram);
+        assert!(wait_until(|| analysis.measured_loudness().is_some()));
+        let loudness = analysis.loudness().unwrap();
+        assert!(
+            (loudness.integrated_lufs + 6.02).abs() < 0.1,
+            "{loudness:?}"
+        );
+
+        // Çalan şarkı −14 LUFS'e kısılır; ekolayzer için tepeye 14 dB boşluk kalır.
+        let gain = player.status().output.unwrap().normalization_db.unwrap();
+        assert!((gain - (TARGET_LUFS - loudness.integrated_lufs)).abs() < 1e-9);
+        assert!(
+            (player.headroom_db() - 14.0).abs() < 0.1,
+            "{}",
+            player.headroom_db()
+        );
+        let session = player.session.as_ref().unwrap();
+        assert!(
+            session.shared.controls.levels.is_known(0),
+            "ses yoluna yazıldı"
+        );
+
+        // Sarma yeni oturum açar: ölçüm baştan bilinir, ilk ses beklemez.
+        player.seek(1.0).unwrap();
+        let session = player.session.as_ref().unwrap();
+        assert!(session.shared.controls.levels.is_known(0));
+        assert!(Arc::ptr_eq(
+            &session.shared.controls.loudness,
+            &player.loudness
+        ));
+
+        // Kapatınca kazanç kalkar; boşluk yalnızca şarkının kendi tepesinden gelir.
+        player.set_playback_options(super::super::PlaybackOptions { normalize: false });
+        assert_eq!(player.status().output.unwrap().normalization_db, None);
+        assert!(
+            (player.headroom_db() - 6.02).abs() < 0.1,
+            "{}",
+            player.headroom_db()
+        );
         std::fs::remove_file(path).ok();
     }
 }

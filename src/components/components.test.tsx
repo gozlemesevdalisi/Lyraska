@@ -696,13 +696,14 @@ describe("ekolayzer", () => {
     await waitFor(() =>
       expect(backend.setEq).toHaveBeenLastCalledWith({
         enabled: true,
-        gainsDb: [6, 5.5, 4.5, 2.5, 0.5, 0, 0, 0, 0, 0],
+        gainsDb: [4, 7, 6, 2.5, 0, 0, 0, 0, 0, 0],
       }),
     );
-    expect(screen.getByRole("slider", { name: "31 Hz" })).toHaveAttribute("aria-valuenow", "6");
+    expect(screen.getByRole("slider", { name: "62 Hz" })).toHaveAttribute("aria-valuenow", "7");
     expect(screen.getByRole("button", { name: "Bas" })).toHaveAttribute("aria-pressed", "true");
     expect(eqLight()).toHaveClass("is-on");
-    expect(await screen.findByText(/Bozulma koruması: −6 dB/)).toBeInTheDocument();
+    // Tarayıcı önizlemesinde şarkının boşluğu bilinmez: en kötü durum gösterilir.
+    expect(await screen.findByText(/Bozulma koruması: −7 dB/)).toBeInTheDocument();
   });
 
   it("sürgü klavyeyle ayarlanır, ok tuşları şarkıyı sarmaz", async () => {
@@ -924,7 +925,13 @@ describe("şarkı haritası ve bilgi kartları", () => {
       ...playing,
       state: "paused",
       bpm: 128,
-      output: { deviceName: "Hoparlörler", sampleRate: 48000, channels: 2, resampled: true },
+      output: {
+        deviceName: "Hoparlörler",
+        sampleRate: 48000,
+        channels: 2,
+        resampled: true,
+        normalizationDb: null,
+      },
     };
     backend.songMap = {
       meter: 4,

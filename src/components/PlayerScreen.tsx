@@ -20,6 +20,7 @@ import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
 import { usePlayback } from "../hooks/usePlayback";
+import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
@@ -55,6 +56,7 @@ export function PlayerScreen() {
   const equalizer = useEqualizer();
   const headphone = useHeadphone();
   const visualSafe = useVisualSafe();
+  const playbackOptions = usePlaybackOptions();
   // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
   const soundShaped = equalizer.active || headphone.active;
   const [scene, chooseScene] = useScene();
@@ -328,6 +330,7 @@ export function PlayerScreen() {
             status={status}
             available={player.available}
             visualSafe={visualSafe}
+            playback={playbackOptions}
           />
         </div>
       </aside>

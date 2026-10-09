@@ -129,6 +129,8 @@ pub fn run() {
             commands::headphone_clear,
             commands::visual_safe_get,
             commands::visual_safe_set,
+            commands::playback_options_get,
+            commands::playback_options_set,
             commands::audio_delay_get,
             commands::audio_delay_set,
             commands::calibration_track,

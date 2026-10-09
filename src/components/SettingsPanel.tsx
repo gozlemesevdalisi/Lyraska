@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { errorMessage, openLog, type AppInfo, type PlaybackStatus } from "../lib/backend";
 import { signalPathText } from "../lib/format";
+import type { PlaybackOptionsControls } from "../hooks/usePlaybackOptions";
 import type { VisualSafeControls } from "../hooks/useVisualSafe";
 
 export interface SettingsPanelProps {
@@ -8,6 +9,7 @@ export interface SettingsPanelProps {
   status: PlaybackStatus;
   available: boolean;
   visualSafe: VisualSafeControls;
+  playback: PlaybackOptionsControls;
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -19,7 +21,13 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 /** Ayarlar: görsel güvenlik, sesin yolu, kısayollar, program bilgisi ve hata günlüğü. */
-export function SettingsPanel({ info, status, available, visualSafe }: SettingsPanelProps) {
+export function SettingsPanel({
+  info,
+  status,
+  available,
+  visualSafe,
+  playback,
+}: SettingsPanelProps) {
   const [logError, setLogError] = useState<string | null>(null);
   const signalPath = signalPathText(status);
 
@@ -41,6 +49,26 @@ export function SettingsPanel({ info, status, available, visualSafe }: SettingsP
           değişir. Kapalıyken de hiçbir sahne saniyede üçten fazla parlamaz.
         </p>
         {visualSafe.error && <p className="settings__warn">{visualSafe.error}</p>}
+      </div>
+
+      <div className="settings__group">
+        <h2 className="settings__title">Ses</h2>
+        <button
+          type="button"
+          className={`settings__toggle${playback.options.normalize ? " is-on" : ""}`}
+          aria-pressed={playback.options.normalize}
+          onClick={() => void playback.setNormalize(!playback.options.normalize)}
+        >
+          <span className="settings__switch" aria-hidden />
+          Ses yüksekliği eşitleme: {playback.options.normalize ? "Açık" : "Kapalı"}
+        </button>
+        <p className="settings__hint">
+          Bütün şarkılar aynı yükseklikte çalar (EBU R128, −14 LUFS); yüksek kaydedilmiş şarkılar
+          kısılır, sessiz kaydedilmişler bozulmadan yükseltilir. Ekolayzer de sesi kısmadan
+          yükseltebilir: bas dediğinizde bas gerçekten artar. Diğer programlardan biraz kısık
+          gelirse Windows sesini açın.
+        </p>
+        {playback.error && <p className="settings__warn">{playback.error}</p>}
       </div>
 
       <div className="settings__group">

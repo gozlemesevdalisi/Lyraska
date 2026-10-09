@@ -40,8 +40,18 @@ export function signalPathText(status: PlaybackStatus): string | null {
     ? `${KHZ.format(output.sampleRate / 1000)} kHz (yüksek kalite)`
     : "dönüştürmesiz";
   const parts = [source, conversion, output.deviceName || "varsayılan ses aygıtı"];
+  const leveling =
+    output.normalizationDb !== null ? ` · eşitleme ${formatDb(output.normalizationDb)}` : "";
   const problems = status.underruns > 0 ? ` · takılma: ${status.underruns}` : "";
-  return `${parts.join(" → ")} · taşma koruması${problems}`;
+  return `${parts.join(" → ")}${leveling} · taşma koruması${problems}`;
+}
+
+/** Desibel: "−5,2 dB", "+1 dB", "0 dB" (Türkçe ondalık virgül, gerçek eksi işareti). */
+export function formatDb(db: number): string {
+  const rounded = Math.round(db * 10) / 10;
+  if (rounded === 0) return "0 dB";
+  const sign = rounded < 0 ? "−" : "+";
+  return `${sign}${KHZ.format(Math.abs(rounded))} dB`;
 }
 
 /** Tempo: "128 BPM", kesirliyse "105,5 BPM". */
