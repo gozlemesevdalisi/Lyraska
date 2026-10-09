@@ -4,6 +4,19 @@
  * Düzen: görsel sahne tüm pencereyi kaplar; yazılar ve düğmeler üstünde cam katmanlardadır.
  */
 
+/* Vurgu renkleri renk olarak kayıtlı: bölüm teması değişince yumuşakça geçebilsinler. */
+@property --aurora {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #46f0a6;
+}
+
+@property --violet {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7c5cff;
+}
+
 :root {
   --bg: #02040b;
   --text-muted: rgba(244, 247, 251, 0.5);
@@ -125,6 +138,26 @@ kbd {
   position: relative;
   height: 100%;
   overflow: hidden;
+  /* Vurgu renkleri çalan bölümün temasına (gökyüzüyle aynı renkler) yavaşça geçer: yalnızca
+     renk tonu değişir, ani parlama yok. */
+  transition:
+    --aurora 2.5s ease,
+    --violet 2.5s ease;
+}
+
+.app[data-theme="1"] {
+  --aurora: var(--sky-theme-1-low);
+  --violet: var(--sky-theme-1-high);
+}
+
+.app[data-theme="2"] {
+  --aurora: var(--sky-theme-2-low);
+  --violet: var(--sky-theme-2-high);
+}
+
+.app[data-theme="3"] {
+  --aurora: var(--sky-theme-3-low);
+  --violet: var(--sky-theme-3-high);
 }
 
 /* Sahne: tüm pencere. Sahne değişince yavaşça belirir (ani parlama yok). */

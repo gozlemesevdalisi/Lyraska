@@ -14,6 +14,7 @@ import { CloseIcon, LibraryIcon, LyraMark, SettingsIcon, SlidersIcon } from "./i
 import { BROWSER_FALLBACK, getAppInfo, type AppInfo, type LibraryTrack } from "../lib/backend";
 import { SCENES } from "../lib/scene";
 import { fileStem, trackTitle } from "../lib/format";
+import { themeAt } from "../lib/songMap";
 import { timelineLayout } from "../lib/timeline";
 import { useDrawer, type Panel } from "../hooks/useDrawer";
 import { useDropToLibrary } from "../hooks/useDropToLibrary";
@@ -130,6 +131,8 @@ export function PlayerScreen() {
   const shown = { ...status, positionSecs: position };
   const hasTrack = status.track !== null;
   const durationSecs = status.track?.durationSecs ?? null;
+  // Arayüzün vurgu renkleri çalan bölümün temasına (gökyüzüyle aynı) yavaşça geçer.
+  const theme = themeAt(songMap?.sections ?? [], position);
   const layout = useMemo(
     () =>
       songMap && durationSecs
@@ -179,6 +182,7 @@ export function PlayerScreen() {
       className={`app${cinema ? " is-cinema" : ""}${drawer.open ? " has-drawer" : ""}${
         status.state === "error" || player.error ? " is-error" : ""
       }`}
+      data-theme={theme}
     >
       {/* Sahne çizilemezse yalnızca sahne yerine durgun gök kalır; başka sahne seçilince yeniden denenir. */}
       <ErrorBoundary

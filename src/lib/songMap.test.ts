@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropCountdown, dropLabels, meterLabel, sectionTheme } from "./songMap";
+import { dropCountdown, dropLabels, meterLabel, sectionTheme, themeAt } from "./songMap";
 
 describe("bölüm teması", () => {
   it("etiketi dört temaya dağıtır; geçersiz etiket ilk tema olur", () => {
@@ -36,5 +36,26 @@ describe("şarkı haritası yazıları", () => {
   it("yakın drop'larda yalnızca ilkinin yazısı gösterilir", () => {
     expect(dropLabels([0.1, 0.12, 0.3, 0.33, 0.5], 0.06)).toEqual([true, false, true, false, true]);
     expect(dropLabels([], 0.06)).toEqual([]);
+  });
+});
+
+describe("çalan bölümün teması", () => {
+  const sections = [
+    { start: 0, end: 30, label: 0 },
+    { start: 30, end: 90, label: 1 },
+    { start: 90, end: 120, label: 6 },
+  ];
+
+  it("konumun bölümünün etiketinden gelir; bölüm sınırında yenisi başlar", () => {
+    expect(themeAt(sections, 10)).toBe(0);
+    expect(themeAt(sections, 30)).toBe(1);
+    expect(themeAt(sections, 89.9)).toBe(1);
+    expect(themeAt(sections, 100)).toBe(2); // etiket 6 → tema 2
+  });
+
+  it("harita yoksa ya da konum bölümlerin dışındaysa varsayılan tema", () => {
+    expect(themeAt([], 10)).toBe(0);
+    expect(themeAt(sections, 120)).toBe(0);
+    expect(themeAt(sections, Number.NaN)).toBe(0);
   });
 });
