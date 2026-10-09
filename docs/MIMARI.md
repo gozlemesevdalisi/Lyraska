@@ -96,10 +96,13 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 
 - `PlayerScreen` yalnızca parçaları birleştirir:
   - `SceneStage`: tam pencere sahne.
-  - `NowPlaying`: büyük başlık.
-  - `InfoStack`: drop sayacı, bilgi kartları, sıradaki.
-  - `Dock`: şarkı haritası şeridi ve düğmeler.
-  - Çekmece: kütüphane, ekolayzer, işaretleme, senkron, ayarlar.
+  - `LiveChrome`: akıcı konumu gösteren katmanlar (`useLivePosition`); çalarken her karede yalnızca bunlar
+    yeniden çizilir:
+    - `NowPlaying`: büyük başlık.
+    - `InfoStack`: drop sayacı, bilgi kartları, sıradaki.
+    - `Dock`: şarkı haritası şeridi ve düğmeler.
+  - Çekmece: kütüphane, ekolayzer, işaretleme, senkron, ayarlar. Yalnızca bir şey değişince (ses motorunun
+    saniyede 4 bildirimi, kullanıcı) yeniden çizilir.
 - Durum ve davranış hook'lardadır:
   - `usePlayback`: oynatıcı ve çalma sırası.
   - `useDrawer`: çekmece ve Esc.
@@ -116,6 +119,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 | ------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
 | Kütüphane ve analiz önbelleği   | `library.sqlite3` (uygulama veri klasörü) | `storage.rs`: sıralı göç adımları (`user_version`)         |
 | Analiz sonuçlarının geçerliliği | aynı dosya, `analyses` tablosu            | `ANALYSIS_VERSION` (hesap değişince artırılır; şu an 5)    |
+| Şarkı etiketlerinin okunuşu     | aynı dosya, `tracks.tags_version`         | `TAGS_VERSION` (okuma kuralı değişince; şu an 1)           |
 | Ayarlar                         | `settings.json`                           | Eksik alan varsayılanla dolar; bozuk dosyada varsayılanlar |
 | İşaretler                       | `isaretler/*.json`                        | Dosyada `format` alanı                                     |
 | Hata günlüğü                    | `logs/lyraska.log`                        | 1 MB'ta bir yedeklenir                                     |
@@ -150,6 +154,10 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Yasaklı lisans yok                                           | `npm run check:licenses`, `cargo deny` (CI)                      |
 | Depoda ses dosyası yok                                       | `npm run check:audio` (CI)                                       |
 | Biçim ve lint temiz, tür hatası yok                          | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                |
+| Çalarken paneller her karede yeniden çizilmez                | Bileşen testi "çizim yükü" (kütüphane panelinin çizim sayısı)    |
+| Durum sorguları birikmez (yanıt gelmeden yenisi gitmez)      | `src/hooks/usePlayer.test.ts`                                    |
+| İşaretler ses aygıtının gecikmesi düşülerek kaydedilir       | `src/hooks/useMarker.test.ts`                                    |
+| Etiket okuma kuralı değişince eski kayıtlar yeniden okunur   | `library::db` `TAGS_VERSION`, göç 4 ve tarama testleri           |
 
 ## Nasıl eklenir?
 

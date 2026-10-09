@@ -46,7 +46,22 @@ const backend = vi.hoisted(() => ({
   /** Şarkıların içindeki kapaklar (yol → `data:` adresi). */
   covers: {} as Record<string, string>,
   coverAsked: vi.fn(),
+  /** Kütüphane panelinin kaç kez çizildiği (her karede yeniden çizilmemeli). */
+  libraryPanelRenders: 0,
 }));
+
+// Kütüphane paneli aynen çizilir; yalnızca çizim sayılır.
+vi.mock("./LibraryPanel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./LibraryPanel")>();
+  const { createElement } = await import("react");
+  return {
+    ...actual,
+    LibraryPanel: (props: Parameters<typeof actual.LibraryPanel>[0]) => {
+      backend.libraryPanelRenders++;
+      return createElement(actual.LibraryPanel, props);
+    },
+  };
+});
 
 vi.mock("../lib/backend", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/backend")>();
@@ -235,9 +250,34 @@ beforeEach(() => {
   backend.songMap = null;
   backend.annotation = null;
   backend.covers = {};
+  backend.libraryPanelRenders = 0;
   clearCoverCache();
   window.localStorage.clear();
   vi.clearAllMocks();
+});
+
+describe("çizim yükü", () => {
+  it("çalarken her karede yalnızca konumu gösterenler yeniden çizilir, paneller değil", async () => {
+    backend.desktop = true;
+    backend.status = playing;
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kütüphane" })));
+    const renders = backend.libraryPanelRenders;
+    // Gerçek zamanda 0,6 sn: ekran kareleri sayılır.
+    let frames = 0;
+    const count = () => {
+      frames++;
+      if (frames < 1000) raf = window.requestAnimationFrame(count);
+    };
+    let raf = window.requestAnimationFrame(count);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    window.cancelAnimationFrame(raf);
+    expect(frames).toBeGreaterThan(20);
+    // Kütüphane paneli yalnızca ses motorunun bildirimlerinde (saniyede 4) çizilir. Eskiden
+    // bütün ekran her karede yeniden çiziliyordu (5000 şarkıda karenin yaklaşık yarısı).
+    expect(backend.libraryPanelRenders - renders).toBeLessThan(frames / 3);
+  });
 });
 
 /** Alttaki şeridin erişilebilir süre metni: "01:23 / 03:45". */

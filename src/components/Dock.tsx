@@ -6,6 +6,8 @@ import type { PlayerControls } from "../hooks/usePlayer";
 
 export interface DockProps {
   player: PlayerControls;
+  /** Ekranda gösterilen (akıcı) konum. */
+  position: number;
   /** Şarkı haritası (analiz bitmediyse `null`: düz çubuk). */
   layout: TimelineLayout | null;
   canNext: boolean;
@@ -14,8 +16,8 @@ export interface DockProps {
 }
 
 /** Alttaki cam: şarkı haritası şeridi, süre ve çalma düğmeleri. */
-export function Dock({ player, layout, canNext, onPrevious, onNext }: DockProps) {
-  const { status, position, available } = player;
+export function Dock({ player, position, layout, canNext, onPrevious, onNext }: DockProps) {
+  const { status, available } = player;
   const hasTrack = status.track !== null;
   const playing = status.state === "playing";
   const durationSecs = status.track?.durationSecs ?? null;

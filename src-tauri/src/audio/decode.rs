@@ -11,6 +11,7 @@ use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::well_known::METADATA_ID_ID3V1;
 use symphonia::core::meta::{MetadataOptions, StandardTag, StandardVisualKey, Visual};
 use symphonia::core::units::{Time, TimeBase};
 
@@ -264,10 +265,31 @@ struct Tags {
 
 /// Etiketleri okur (ID3, Vorbis yorumları, MP4 vb.). Aynı etiket birden çok
 /// kez varsa ilki alınır.
+///
+/// Eski tip ID3v1 etiketi yalnızca yeni tip etiketlerde olmayan alanlar için kullanılır
+/// (30 karakterle sınırlıdır, kod sayfası belirtmez). Metni Türkçe harflerle okunur:
+/// bkz. [`id3v1_text`].
 fn read_tags(format: &mut dyn FormatReader) -> Tags {
     let mut tags = Tags::default();
     let mut metadata = format.metadata();
-    if let Some(revision) = metadata.skip_to_latest() {
+    // Bütün revizyonlar: dosyanın başındaki (ID3v2) ve sonundaki (ID3v1, APE) etiketler.
+    let mut revisions = Vec::new();
+    revisions.extend(metadata.current().cloned());
+    while metadata.pop().is_some() {
+        revisions.extend(metadata.current().cloned());
+    }
+    // En yeni revizyon önce (eskiden yalnızca o okunuyordu); ID3v1 en sonda.
+    revisions.reverse();
+    revisions.sort_by_key(|r| r.info.metadata == METADATA_ID_ID3V1);
+    for revision in &revisions {
+        let legacy = revision.info.metadata == METADATA_ID_ID3V1;
+        let text = |value: &str| {
+            if legacy {
+                non_empty(&id3v1_text(value))
+            } else {
+                non_empty(value)
+            }
+        };
         let track_tags = revision
             .per_track
             .iter()
@@ -275,16 +297,16 @@ fn read_tags(format: &mut dyn FormatReader) -> Tags {
         for tag in revision.media.tags.iter().chain(track_tags) {
             match &tag.std {
                 Some(StandardTag::TrackTitle(v)) if tags.title.is_none() => {
-                    tags.title = non_empty(v);
+                    tags.title = text(v);
                 }
                 Some(StandardTag::Artist(v)) if tags.artist.is_none() => {
-                    tags.artist = non_empty(v);
+                    tags.artist = text(v);
                 }
                 Some(StandardTag::Album(v)) if tags.album.is_none() => {
-                    tags.album = non_empty(v);
+                    tags.album = text(v);
                 }
                 Some(StandardTag::AlbumArtist(v)) if tags.album_artist.is_none() => {
-                    tags.album_artist = non_empty(v);
+                    tags.album_artist = text(v);
                 }
                 Some(StandardTag::TrackNumber(n)) if tags.track_number.is_none() => {
                     tags.track_number = u32::try_from(*n).ok().filter(|&n| n > 0);
@@ -297,6 +319,45 @@ fn read_tags(format: &mut dyn FormatReader) -> Tags {
         }
     }
     tags
+}
+
+/// ID3v1 metni. Etiket kod sayfası belirtmez; symphonia baytları ISO-8859-1 sayar (her
+/// bayt bir karakter, geri çevrilebilir). Baytlar geçerli UTF-8 ise (bazı programlar öyle
+/// yazar) UTF-8, değilse Türkçe Windows'un kod sayfası Windows-1254 olarak okunur. Bu, Batı
+/// Avrupa harflerini de doğru verir; yalnızca Ð, Ý, Þ, ð, ý, þ yerine Ğ, İ, Ş, ğ, ı, ş gelir.
+fn id3v1_text(latin1: &str) -> String {
+    let bytes: Option<Vec<u8>> = latin1.chars().map(|c| u8::try_from(c).ok()).collect();
+    let Some(bytes) = bytes else {
+        return latin1.to_owned(); // zaten çözülmüş metin
+    };
+    match std::str::from_utf8(&bytes) {
+        Ok(text) => return text.to_owned(),
+        // 30 baytta kesilmiş UTF-8: son harf yarım kalmış, öncesi geçerli.
+        Err(e) if e.error_len().is_none() && !bytes[..e.valid_up_to()].is_ascii() => {
+            return String::from_utf8_lossy(&bytes[..e.valid_up_to()]).into_owned();
+        }
+        Err(_) => {}
+    }
+    bytes.iter().map(|&b| windows_1254(b)).collect()
+}
+
+/// Windows-1254 (Türkçe) kod sayfasındaki karakter.
+fn windows_1254(byte: u8) -> char {
+    const HIGH: [char; 32] = [
+        '€', '\u{FFFD}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{FFFD}',
+        '\u{FFFD}', '\u{FFFD}', '\u{FFFD}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›',
+        'œ', '\u{FFFD}', '\u{FFFD}', 'Ÿ',
+    ];
+    match byte {
+        0x80..=0x9F => HIGH[usize::from(byte - 0x80)],
+        0xD0 => 'Ğ',
+        0xDD => 'İ',
+        0xDE => 'Ş',
+        0xF0 => 'ğ',
+        0xFD => 'ı',
+        0xFE => 'ş',
+        _ => char::from(byte),
+    }
 }
 
 /// Dosyayı açar ve biçimini tanır (ses çözülmez).
@@ -657,6 +718,94 @@ mod tests {
         let path = mp3_with_pictures(&[(3, "image/png", b"resim degil")]);
         assert_eq!(read_cover(&path).unwrap(), None);
         std::fs::remove_file(path).ok();
+    }
+
+    /// Test MP3'ünün ID3v2 etiketini atar, sonuna verilen 30 baytlık alanlarla eski tip
+    /// (ID3v1) etiket ekler: başlık, sanatçı, albüm.
+    fn mp3_with_id3v1(title: &[u8], artist: &[u8], album: &[u8]) -> PathBuf {
+        let original = std::fs::read(fixture("mp3")).unwrap();
+        let old = original[6..10]
+            .iter()
+            .fold(0usize, |size, &b| (size << 7) | usize::from(b & 0x7f));
+        append_id3v1(original[10 + old..].to_vec(), title, artist, album)
+    }
+
+    fn append_id3v1(mut bytes: Vec<u8>, title: &[u8], artist: &[u8], album: &[u8]) -> PathBuf {
+        let field = |text: &[u8]| {
+            let mut out = [0u8; 30];
+            out[..text.len()].copy_from_slice(text);
+            out
+        };
+        bytes.extend_from_slice(b"TAG");
+        bytes.extend_from_slice(&field(title));
+        bytes.extend_from_slice(&field(artist));
+        bytes.extend_from_slice(&field(album));
+        bytes.extend_from_slice(b"2026");
+        bytes.extend_from_slice(&[0u8; 30]); // yorum
+        bytes.push(255); // tür yok
+        let path = temp_path("id3v1.mp3");
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn yalnizca_eski_tip_etiketli_mp3_adi_okunur() {
+        // #27: yalnızca ID3v1 taşıyan MP3'lerde listede dosya adı görünüyordu.
+        let path = mp3_with_id3v1(b"Gece Yolu", b"Lyraska Test", b"Deneme");
+        let info = Decoder::open(&path).unwrap().info().clone();
+        assert_eq!(info.title.as_deref(), Some("Gece Yolu"));
+        assert_eq!(info.artist.as_deref(), Some("Lyraska Test"));
+        assert_eq!(info.album.as_deref(), Some("Deneme"));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn eski_tip_etiketteki_turkce_harfler_dogru_okunur() {
+        // ID3v1 kod sayfası belirtmez; Türkçe Windows'ta yazılanlar Windows-1254'tür.
+        // "Şarkı Ğİ" → Ş 0xDE, ı 0xFD, Ğ 0xD0, İ 0xDD (Latin-1 okunsa "Þarký ÐÝ" olurdu).
+        let path = mp3_with_id3v1(
+            b"\xDEark\xFD \xD0\xDD",
+            b"\xC7a\xF0r\xFD \xD6z\xFC\xFE",
+            "Deneme".as_bytes(),
+        );
+        let info = Decoder::open(&path).unwrap().info().clone();
+        assert_eq!(info.title.as_deref(), Some("Şarkı Ğİ"));
+        assert_eq!(info.artist.as_deref(), Some("Çağrı Özüş"));
+        std::fs::remove_file(path).ok();
+
+        // Bazı programlar ID3v1'e UTF-8 yazar: o da doğru okunur; 30 baytta yarım kalan
+        // son harf atılır.
+        let path = mp3_with_id3v1("Gökyüzü".as_bytes(), b"Lyraska", b"");
+        let info = Decoder::open(&path).unwrap().info().clone();
+        assert_eq!(info.title.as_deref(), Some("Gökyüzü"));
+        std::fs::remove_file(path).ok();
+        let long = "Çok uzun bir şarkı adı ğğğğ".as_bytes();
+        let path = mp3_with_id3v1(&long[..30], b"Lyraska", b"");
+        let info = Decoder::open(&path).unwrap().info().clone();
+        assert_eq!(info.title.as_deref(), Some("Çok uzun bir şarkı adı ğ"));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn yeni_tip_etiket_eski_tipten_onceliklidir() {
+        // Hem ID3v2 ("Üç Ton") hem ID3v1 ("Kisa") olan dosyada ID3v2 okunur; ID3v1 yalnızca
+        // ID3v2'de olmayan alanı (burada yok) tamamlar.
+        let original = std::fs::read(fixture("mp3")).unwrap();
+        let path = append_id3v1(original, b"Kisa", b"Baska", b"Eski");
+        let info = Decoder::open(&path).unwrap().info().clone();
+        assert_eq!(info.title.as_deref(), Some("Üç Ton"));
+        assert_eq!(info.artist.as_deref(), Some("Lyraska Test"));
+        assert_eq!(info.album.as_deref(), Some("Deneme Albümü"));
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn windows_1254_turkce_ve_bati_harfleri() {
+        assert_eq!(id3v1_text("\u{DE}\u{FD}\u{D0}\u{DD}\u{F0}\u{FE}"), "ŞıĞİğş");
+        // Diğer Batı Avrupa harfleri ve noktalama Windows-1252 ile aynı.
+        assert_eq!(id3v1_text("Caf\u{E9} \u{80}5 \u{93}a\u{94}"), "Café €5 “a”");
+        // Zaten Unicode olan metin (ID3v1 değilse) olduğu gibi kalır.
+        assert_eq!(id3v1_text("Şarkı"), "Şarkı");
     }
 
     #[test]

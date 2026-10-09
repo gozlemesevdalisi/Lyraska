@@ -16,6 +16,10 @@ beat F-ölçüsü en az **%80**.
 5. En az 8 beat işaretledikten sonra **Doğruluğu ölç**: program şarkıyı analiz edip kendi bulduğu vuruşları
    sizinkilerle karşılaştırır. Sonuç da dosyaya yazılır.
 
+**Bluetooth kulaklık ya da hoparlörle** işaretleyecekseniz önce **Senkron** sekmesinde "Ölçümü başlat" ile ses
+gecikmesini ölçün. Bu tür aygıtlar sesi 150–250 ms geç çalar; program ölçülen gecikmeyi işaretlerden düşer
+(0.0.33'ten önce düşmüyordu: o sürümlerle Bluetooth'ta yapılan işaretler geç kalmış olabilir).
+
 İpucu: Şarkının tamamını işaretlemek gerekmez; 30–60 saniyelik bir bölüm de işe yarar. Farklı türlerden
 (pop, rock, Türk sanat/halk, elektronik, rap, akustik) şarkılar en faydalısıdır.
 

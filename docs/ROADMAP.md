@@ -39,8 +39,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       yoksa albüm adından özgün renk kapağı. Arayüzün vurgu renkleri çalan bölümün temasına yumuşakça geçer.
       Her panel ve sahne bir hata sınırı içinde: hata yalnızca o bölümü kapatır
 - [ ] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29))
-- [ ] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
-      ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27))
+- [x] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
+      ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27)). 0.0.33: Türkçe harfler (Windows-1254) ve
+      UTF-8 doğru okunur; kütüphanedeki etkilenmiş kayıtlar bir sonraki taramada kendiliğinden düzelir.
+      Proje sahibinin kendi MP3'lerinde doğrulaması bekleniyor
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)
 

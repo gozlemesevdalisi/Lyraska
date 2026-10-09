@@ -11,17 +11,24 @@ import { SceneStage } from "./SceneStage";
 import { SettingsPanel } from "./SettingsPanel";
 import { SyncPanel } from "./SyncPanel";
 import { CloseIcon, LibraryIcon, LyraMark, SettingsIcon, SlidersIcon } from "./icons";
-import { BROWSER_FALLBACK, getAppInfo, type AppInfo, type LibraryTrack } from "../lib/backend";
+import {
+  BROWSER_FALLBACK,
+  getAppInfo,
+  type AppInfo,
+  type LibraryTrack,
+  type SongMap,
+} from "../lib/backend";
 import { SCENES } from "../lib/scene";
 import { fileStem, trackTitle } from "../lib/format";
 import { themeAt } from "../lib/songMap";
-import { timelineLayout } from "../lib/timeline";
+import { timelineLayout, type TimelineLayout } from "../lib/timeline";
 import { useDrawer, type Panel } from "../hooks/useDrawer";
 import { useDropToLibrary } from "../hooks/useDropToLibrary";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
 import { usePlayback } from "../hooks/usePlayback";
+import { useLivePosition, type PlayerControls } from "../hooks/usePlayer";
 import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSkyLook } from "../hooks/useSkyLook";
@@ -74,12 +81,12 @@ export function PlayerScreen() {
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
-  const marker = useMarker(statusPath, playing, player.positionNow, songMap);
   const sync = useSync(
     player.openPath,
     player.positionNow,
     status.state === "ended" ? statusPath : null,
   );
+  const marker = useMarker(statusPath, playing, player.positionNow, songMap, sync.delayMs);
 
   // Panelden ayrılınca işaretleme biter (Boşluk yine çal/duraklat olur), senkron ölçümü de.
   const { setRecording } = marker;
@@ -127,9 +134,9 @@ export function PlayerScreen() {
   const idle = useIdle(IDLE_MS);
   const cinema = idle && playing && !drawer.open && !drop.dragging;
 
-  // Ekranda akıcı saatle ilerleyen konum kullanılır (sarmada anında güncellenir).
+  // Son bilinen konum (saniyede birkaç kez güncellenir). Akıcı konum yalnızca `LiveChrome`'da:
+  // ekranın geri kalanı her karede yeniden çizilmez.
   const position = player.position;
-  const shown = { ...status, positionSecs: position };
   const hasTrack = status.track !== null;
   const durationSecs = status.track?.durationSecs ?? null;
   // Arayüzün vurgu renkleri çalan bölümün temasına (gökyüzüyle aynı) yavaşça geçer.
@@ -146,7 +153,7 @@ export function PlayerScreen() {
         : null,
     [songMap, durationSecs],
   );
-  // Ekran her karede yeniden çizilir: büyük kütüphanede aramayı her karede yapmamak için.
+  // Büyük kütüphanede aramayı her çizimde yapmamak için.
   const current = useMemo(
     () => libraryTrack(library.tracks, statusPath),
     [library.tracks, statusPath],
@@ -236,34 +243,20 @@ export function PlayerScreen() {
         </div>
       </header>
 
-      <div className="lower">
-        <div className="hero chrome">
-          <NowPlaying
-            status={shown}
-            album={status.track?.album ?? current?.album ?? null}
-            queueLabel={playback.queueLabel}
-            error={player.error}
-            available={player.available}
-            cover={cover}
-          />
-          <InfoStack
-            status={status}
-            positionSecs={position}
-            songMap={songMap}
-            soundShaped={soundShaped}
-            safe={visualSafe.safe}
-            next={upNext}
-          />
-        </div>
-
-        <Dock
-          player={player}
-          layout={layout}
-          canNext={playback.canNext}
-          onPrevious={playback.previous}
-          onNext={playback.next}
-        />
-      </div>
+      <LiveChrome
+        player={player}
+        album={status.track?.album ?? current?.album ?? null}
+        queueLabel={playback.queueLabel}
+        cover={cover}
+        songMap={songMap}
+        soundShaped={soundShaped}
+        safe={visualSafe.safe}
+        next={upNext}
+        layout={layout}
+        canNext={playback.canNext}
+        onPrevious={playback.previous}
+        onNext={playback.next}
+      />
 
       <aside
         id="drawer"
@@ -381,5 +374,73 @@ export function PlayerScreen() {
 
       <DropOverlay dragging={drop.dragging} notice={drop.notice} />
     </main>
+  );
+}
+
+interface LiveChromeProps {
+  player: PlayerControls;
+  album: string | null;
+  queueLabel: string | null;
+  cover: string | null;
+  songMap: SongMap | null;
+  soundShaped: boolean;
+  safe: boolean;
+  next: UpNext | null;
+  layout: TimelineLayout | null;
+  canNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}
+
+/**
+ * Akıcı konumu gösteren cam katmanlar: büyük başlık, bilgi kartları (drop sayacı) ve alttaki
+ * şarkı haritası şeridi. Çalarken her karede yalnızca bunlar yeniden çizilir.
+ */
+function LiveChrome({
+  player,
+  album,
+  queueLabel,
+  cover,
+  songMap,
+  soundShaped,
+  safe,
+  next,
+  layout,
+  canNext,
+  onPrevious,
+  onNext,
+}: LiveChromeProps) {
+  const position = useLivePosition(player);
+  const { status } = player;
+  return (
+    <div className="lower">
+      <div className="hero chrome">
+        <NowPlaying
+          status={{ ...status, positionSecs: position }}
+          album={album}
+          queueLabel={queueLabel}
+          error={player.error}
+          available={player.available}
+          cover={cover}
+        />
+        <InfoStack
+          status={status}
+          positionSecs={position}
+          songMap={songMap}
+          soundShaped={soundShaped}
+          safe={safe}
+          next={next}
+        />
+      </div>
+
+      <Dock
+        player={player}
+        position={position}
+        layout={layout}
+        canNext={canNext}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    </div>
   );
 }

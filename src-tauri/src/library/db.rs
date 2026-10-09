@@ -12,6 +12,11 @@ use crate::audio::decode::TrackInfo;
 
 /// Arama sonucunda dönen en fazla şarkı sayısı.
 pub const MAX_RESULTS: usize = 50_000;
+/// Etiket okuma kuralının sürümü. Etiketlerin okunuşu değişince (ör. eski tip ID3v1'in
+/// Türkçe harfleri) artırılır ve bir göç adımı hangi kayıtların yeniden okunacağını işaretler
+/// (`tags_version` küçük olanlar): dosyalar değişmese de etiketleri bir kez yeniden okunur.
+/// 1: ID3v1 metni Windows-1254 / UTF-8 olarak okunuyor (göç 4).
+pub const TAGS_VERSION: i64 = 1;
 
 /// Kütüphanedeki bir klasör.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,6 +69,18 @@ impl Library {
         Self::init(Connection::open_in_memory()?)
     }
 
+    /// Testlerde veritabanını doğrudan değiştirmek için (ör. eski sürümün kaydını kurmak).
+    #[cfg(test)]
+    pub fn execute_for_test(&self, sql: &str) {
+        self.conn.execute_batch(sql).unwrap();
+    }
+
+    /// Testlerde tek sayılık sorgu.
+    #[cfg(test)]
+    pub fn count_for_test(&self, sql: &str) -> i64 {
+        self.conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
     fn init(mut conn: Connection) -> Result<Self, LibraryError> {
         // Analiz önbelleği aynı dosyaya yazarken kısa süre beklenir.
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -84,6 +101,33 @@ impl Library {
         }
         Ok(FolderRow {
             id: self.conn.last_insert_rowid(),
+            path: path.to_owned(),
+        })
+    }
+
+    /// Yeni bir klasör ekler ve kapsadığı eski kaynakların (`covered`) yerini alır: şarkıları
+    /// silinmez, yeni klasöre taşınır. Silinseydi analizleri de silinir (tetikleyici) ve bütün
+    /// şarkılar baştan analiz edilirdi; etiketleri de yeniden okunurdu. Tek işlemde.
+    pub fn replace_folders(
+        &mut self,
+        path: &str,
+        covered: &[i64],
+    ) -> Result<FolderRow, LibraryError> {
+        let tx = self.conn.transaction()?;
+        if tx.execute("INSERT OR IGNORE INTO folders (path) VALUES (?1)", [path])? == 0 {
+            return Err(LibraryError::FolderExists);
+        }
+        let id = tx.last_insert_rowid();
+        for old in covered {
+            tx.execute(
+                "UPDATE tracks SET folder_id = ?1 WHERE folder_id = ?2",
+                [id, *old],
+            )?;
+            tx.execute("DELETE FROM folders WHERE id = ?1", [*old])?;
+        }
+        tx.commit()?;
+        Ok(FolderRow {
+            id,
             path: path.to_owned(),
         })
     }
@@ -138,18 +182,22 @@ impl Library {
     }
 
     /// Klasördeki bilinen dosyalar ve damgaları (yeniden taramada değişmeyenleri atlamak için).
-    pub fn known_files(&self, folder_id: i64) -> Result<HashMap<String, FileStamp>, LibraryError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path, file_size, modified FROM tracks WHERE folder_id = ?1")?;
+    /// Etiketi eski bir okuma kuralıyla okunmuş dosyanın damgası `None`: dosya değişmese de
+    /// etiketi yeniden okunur ([`TAGS_VERSION`]).
+    pub fn known_files(
+        &self,
+        folder_id: i64,
+    ) -> Result<HashMap<String, Option<FileStamp>>, LibraryError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, file_size, modified, tags_version FROM tracks WHERE folder_id = ?1",
+        )?;
         let rows = stmt.query_map([folder_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                FileStamp {
-                    size: r.get::<_, i64>(1)? as u64,
-                    modified: r.get(2)?,
-                },
-            ))
+            let stamp = FileStamp {
+                size: r.get::<_, i64>(1)? as u64,
+                modified: r.get(2)?,
+            };
+            let current = r.get::<_, i64>(3)? >= TAGS_VERSION;
+            Ok((r.get::<_, String>(0)?, current.then_some(stamp)))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
@@ -166,8 +214,9 @@ impl Library {
             let mut insert = tx.prepare_cached(
                 "INSERT INTO tracks (folder_id, path, file_name, title, artist, album, album_artist,
                      track_number, disc_number, duration_secs, codec, sample_rate, channels,
-                     file_size, modified, sort_key, search)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                     file_size, modified, sort_key, search, tags_version)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                     ?18)
                  ON CONFLICT(path) DO UPDATE SET
                      folder_id = excluded.folder_id, file_name = excluded.file_name,
                      title = excluded.title, artist = excluded.artist, album = excluded.album,
@@ -176,7 +225,7 @@ impl Library {
                      codec = excluded.codec, sample_rate = excluded.sample_rate,
                      channels = excluded.channels, file_size = excluded.file_size,
                      modified = excluded.modified, sort_key = excluded.sort_key,
-                     search = excluded.search",
+                     search = excluded.search, tags_version = excluded.tags_version",
             )?;
             for (info, stamp) in upserts {
                 insert.execute(params![
@@ -197,6 +246,7 @@ impl Library {
                     stamp.modified,
                     sort_key(info),
                     search_text(info),
+                    TAGS_VERSION,
                 ])?;
             }
             let mut delete = tx.prepare_cached("DELETE FROM tracks WHERE path = ?1")?;
@@ -548,10 +598,10 @@ mod tests {
         assert_eq!(lib.search("remaster", 10).unwrap().len(), 1);
         assert_eq!(
             lib.known_files(folder).unwrap()["/muzik/c.mp3"],
-            FileStamp {
+            Some(FileStamp {
                 size: 5,
                 modified: 2
-            }
+            })
         );
     }
 

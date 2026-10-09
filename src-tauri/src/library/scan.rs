@@ -146,7 +146,13 @@ pub fn scan_folder(
         .collect();
     let to_read: Vec<(PathBuf, FileStamp)> = files
         .into_iter()
-        .filter(|(path, stamp)| known.get(path.to_string_lossy().as_ref()) != Some(stamp))
+        .filter(|(path, stamp)| {
+            known
+                .get(path.to_string_lossy().as_ref())
+                .copied()
+                .flatten()
+                != Some(*stamp)
+        })
         .collect();
 
     let mut summary = ScanSummary {
@@ -320,6 +326,28 @@ mod tests {
         assert!(mp3
             .iter()
             .any(|t| t.path.ends_with("uc-uc-ton.mp3") && t.codec == "flac"));
+    }
+
+    #[test]
+    fn eski_kuralla_okunmus_etiket_dosya_degismese_de_yeniden_okunur() {
+        // Göç 4 eski kuralla (ID3v1 Latin-1) okunmuş MP3'leri işaretler: etiketleri bir
+        // sonraki taramada yeniden okunur, diğer dosyalar atlanır.
+        let (library, folder, _dir) = setup();
+        let state = ScanState::default();
+        scan_folder(&library, &folder, &state).unwrap();
+        library.lock().unwrap().execute_for_test(
+            "UPDATE tracks SET title = 'Üç Ton (eski)', tags_version = 0
+                 WHERE path LIKE '%.mp3'",
+        );
+
+        let again = scan_folder(&library, &folder, &state).unwrap();
+        assert_eq!(again.updated, 1);
+        assert_eq!(again.unchanged, 3);
+        let lib = library.lock().unwrap();
+        assert!(lib.search("eski", 10).unwrap().is_empty());
+        drop(lib);
+        // Bir daha okunmaz.
+        assert_eq!(scan_folder(&library, &folder, &state).unwrap().updated, 0);
     }
 
     #[test]
