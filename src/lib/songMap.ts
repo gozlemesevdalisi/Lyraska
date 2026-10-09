@@ -26,6 +26,21 @@ export function themeAt(
 /** Drop sayacı bu kadar saniye kala görünür. */
 export const DROP_COUNTDOWN_SECS = 30;
 
+/**
+ * Drop sayacı yalnızca güveni en az bu kadar olan droplar için görünür. Analiz bazı şarkılarda
+ * küçük bir bas artışını da drop sayabiliyor; "drop yaklaşıyor" deyip hiçbir şey olmaması
+ * sayacın hiç olmamasından kötüdür. Belirgin droplar ~0,8–1, sınırdakiler ~0,1–0,4 alır.
+ */
+export const DROP_CONFIDENCE_MIN = 0.6;
+
+/** Güveni yüksek droplar (saniye). Güveni bilinmeyen drop (eski analiz) sayılmaz. */
+export function confidentDrops(
+  map: { drops: number[]; dropConfidence?: number[] },
+  min = DROP_CONFIDENCE_MIN,
+): number[] {
+  return map.drops.filter((_, i) => (map.dropConfidence?.[i] ?? 0) >= min);
+}
+
 export interface DropCountdown {
   /** Drop'a kalan süre (saniye). */
   seconds: number;

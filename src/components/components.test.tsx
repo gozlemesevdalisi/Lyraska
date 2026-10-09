@@ -1134,6 +1134,7 @@ describe("şarkı haritası ve bilgi kartları", () => {
         { start: 150, end: 225, energy: 0.5, label: 0 },
       ],
       drops: [60, 100],
+      dropConfidence: [0.9, 0.85],
       energy: [],
     };
     const { container } = render(<App />);
@@ -1154,6 +1155,26 @@ describe("şarkı haritası ve bilgi kartları", () => {
     expect(screen.getByText("FLAC 44,1 → 48 kHz")).toBeInTheDocument();
     // Arayüzün vurgu renkleri çalan bölümün temasında (83,4 sn: ikinci bölüm, etiket 1).
     expect(container.querySelector("main")).toHaveAttribute("data-theme", "1");
+  });
+
+  it("güveni düşük drop için sayaç görünmez", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, bpm: 128 };
+    backend.songMap = {
+      meter: 4,
+      downbeatPhase: 0,
+      downbeats: [],
+      sections: [{ start: 0, end: 225, energy: 0.6, label: 0 }],
+      // 100. saniyedeki "drop" şüpheli (küçük bir bas artışı): "drop yaklaşıyor" denmez.
+      drops: [100],
+      dropConfidence: [0.2],
+      energy: [],
+    };
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await waitFor(() => expect(container.querySelector(".songmap")).toBeInTheDocument());
+    expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
+    expect(screen.queryByText("Drop yaklaşıyor")).not.toBeInTheDocument();
   });
 
   it("analiz bitmeden şerit düz çubuktur, sayaç görünmez", async () => {
@@ -1526,6 +1547,7 @@ describe("işaretleme", () => {
         { start: 60, end: 225, energy: 0.9, label: 1 },
       ],
       drops: [61.5],
+      dropConfidence: [0.9],
       energy: [],
     };
     render(<App />);
