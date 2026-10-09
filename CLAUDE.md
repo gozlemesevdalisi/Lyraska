@@ -16,6 +16,18 @@ değişmesi gerekiyorsa önce proje sahibine sorulur.
 - Test için sahibine her zaman sabit indirme linki verilir:
   https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
 
+## Şu anki dönem: doğrulama haftası (9 Ekim 2026'dan itibaren)
+
+Proje sahibinin kararı: **[docs/DOGRULAMA.md](docs/DOGRULAMA.md)'deki sonuçları bildirene kadar yeni özellik
+eklenmez; yalnızca bulduğu hatalar düzeltilir.**
+
+- Bildirilen her hata için önce hatayı yakalayan test yazılır, sonra düzeltilir; sonuç `DOGRULAMA.md`'nin
+  "Bildirdikleriniz" tablosuna işlenir.
+- Serbest olanlar: bildirilen hataların düzeltmesi, belgeler, testler, CI bakımı, kendi bulduğun hatalar.
+- Yeni bir özellik ya da yol haritasından bir iş istenirse önce bu kural hatırlatılır; proje sahibi açıkça isterse
+  yapılır.
+- Bu bölüm, proje sahibi sonuçları bildirip dönemi kapattığında kaldırılır.
+
 ## Ürün
 
 Adı **Lyraska** (lir çalgısı ve Lyra takımyıldızından). Depo: `gozlemesevdalisi/Lyraska`.
@@ -118,6 +130,7 @@ lyraska/
 │   ├── ROADMAP.md            # Yol haritası
 │   ├── MIMARI.md             # Mimari ve kuralları denetleyen testler
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
+│   ├── DOGRULAMA.md          # Gerçek cihazda denenecekler listesi ve proje sahibinin bildirdiği sonuçlar
 │   ├── LISANSLAR.md          # Dışarıdan alınan varlıklar (yazı tipleri vb.) ve lisansları
 │   └── devlog/               # Oturum devir notları (Türkçe)
 └── .github/                  # CI, test sürümü yayını, hata kaydı formu
