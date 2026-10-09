@@ -11,6 +11,18 @@ export function sectionTheme(label: number): number {
   return Number.isFinite(label) && label >= 0 ? Math.floor(label) % THEME_COUNT : 0;
 }
 
+/**
+ * Çalan anın bölümünün renk teması (arayüzün vurgu renkleri buna uyar). Harita yoksa ya da
+ * konum bir bölümde değilse 0 (varsayılan tema).
+ */
+export function themeAt(
+  sections: readonly { start: number; end: number; label: number }[],
+  positionSecs: number,
+): number {
+  const section = sections.find((s) => positionSecs >= s.start && positionSecs < s.end);
+  return section ? sectionTheme(section.label) : 0;
+}
+
 /** Drop sayacı bu kadar saniye kala görünür. */
 export const DROP_COUNTDOWN_SECS = 30;
 

@@ -102,6 +102,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::open_track,
+            commands::track_cover,
             commands::toggle_playback,
             commands::stop_playback,
             commands::seek_playback,
