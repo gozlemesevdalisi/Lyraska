@@ -35,6 +35,9 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       içinde) ([#30](https://github.com/gozlemesevdalisi/Lyraska/issues/30)). 0.0.30: perdeler yeniden çizildi
       (katlanma, ince ışınlar, alttan yeşil üstte mor, dört derinlik, Vega'nın ışık çizgileri); üç manzara
       (göl, korona, karlı vadi) Ayarlar'da. Proje sahibinin seçimi ve onayı bekleniyor
+- [x] Gerçek albüm kapakları (0.0.32): şarkının içindeki kapak büyük başlığın yanında ve sıradaki şarkı kartında;
+      yoksa albüm adından özgün renk kapağı. Arayüzün vurgu renkleri çalan bölümün temasına yumuşakça geçer.
+      Her panel ve sahne bir hata sınırı içinde: hata yalnızca o bölümü kapatır
 - [ ] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29))
 - [ ] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
       ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27))

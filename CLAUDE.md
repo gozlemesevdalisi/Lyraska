@@ -60,7 +60,7 @@ lyraska/
 │   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
 │   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
 │   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
-│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi)
+│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
 │   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
@@ -72,7 +72,7 @@ lyraska/
 │   │   ├── lib.rs            # Tauri kurulumu, komut kaydı
 │   │   ├── commands.rs       # Arayüzün çağırdığı ince Tauri komutları
 │   │   ├── audio/            # Ses motoru
-│   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler
+│   │   │   ├── decode.rs     #   symphonia ile çözme → f64 örnekler, etiketler, kapak resmi
 │   │   │   ├── gapless.rs    #   boşluksuz çalma: MP4/AAC kodlayıcı dolgusu (iTunSMPB, elst)
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
 │   │   │   ├── bass.rs       #   bas düğmesi (raf, 0–18 dB), derinlik (alt oktav), küçük hoparlör bası, bas tepesi ölçümü
