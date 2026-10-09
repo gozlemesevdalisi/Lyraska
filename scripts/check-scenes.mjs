@@ -158,11 +158,75 @@ async function hideChrome(page) {
  */
 const SLOW = 180_000;
 
-/** Sahne denetimi için yeni sayfa: bütün işlemler yavaş çizime göre beklenir. */
+/**
+ * Sahneler pencere düzeni aynı kalarak yarı çözünürlükte çizilir (cihaz piksel oranı 0,5):
+ * dört kat az piksel, yazılımsal çizimde dört kat hızlı. Gölgelendiriciler aynı derlenir;
+ * parlama penceresi de aynı oranda küçülür (ekranın aynı payı), ölçümün anlamı değişmez.
+ */
+const SCALE = 0.5;
+
+/**
+ * Sahnelerin sanal zamanı: ekran kareleri gerçek zamanda döner (ekran görüntüleri bekletmez),
+ * ama sahnelere verilen zaman damgası sanaldır. Her kare en fazla `STEP_MS` ilerler ve yalnızca
+ * denetimin izin verdiği kadar kare ilerler; sonra sahne aynı anda durur. Böylece her sayfa,
+ * makinenin hızından bağımsız olarak tam aynı sanal süreyi yaşar. Gerçek zamanla, ekran kartsız
+ * makinede iki sayfa farklı sayıda kare çiziyor, perdeler farklı yerde yakalanıyordu: parlama
+ * ölçümü müziğin etkisi yerine iki ayrı anı karşılaştırıyordu.
+ */
+const STEP_MS = 250;
+const VIRTUAL_TIME = `
+  (() => {
+    const realFrame = window.requestAnimationFrame.bind(window);
+    const time = { allowed: 0, done: 0, now: 0, lastFrame: -1 };
+    window.__sceneTime = time;
+    window.requestAnimationFrame = (callback) =>
+      realFrame((frame) => {
+        if (frame !== time.lastFrame) {
+          time.lastFrame = frame;
+          if (time.done < time.allowed) {
+            time.done += 1;
+            time.now += ${STEP_MS};
+          }
+        }
+        callback(time.now);
+      });
+  })();
+`;
+
+/** Sahneyi `ms` kadar (sanal) ilerletir ve sahnenin o kareleri işlemesini bekler. */
+async function advance(page, ms) {
+  await page.evaluate(
+    (frames) => {
+      window.__sceneTime.allowed += frames;
+    },
+    Math.round(ms / STEP_MS),
+  );
+  await page.waitForFunction(() => window.__sceneTime.done >= window.__sceneTime.allowed, null, {
+    polling: 50,
+  });
+  // Son karenin de çizilip ekrana gelmesi için bir kare daha (sanal saat ilerlemez).
+  await page.waitForTimeout(50);
+}
+
+/** Sahne denetimi için yeni sayfa: sanal zamanlı; bütün işlemler yavaş çizime göre beklenir. */
 async function openPage(browser) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 860 },
+    deviceScaleFactor: SCALE,
+  });
   page.setDefaultTimeout(SLOW);
+  await page.addInitScript(VIRTUAL_TIME);
   return page;
+}
+
+/** Programı açar ve çalmaya başlatır; sahne `ms` kadar (sanal) ilerler. */
+async function startPlaying(page, ms) {
+  await page.goto(APP_URL);
+  await advance(page, STEP_MS);
+  await page.mouse.click(5, 5);
+  await page.keyboard.press("Space"); // çal
+  await page.waitForTimeout(100);
+  await advance(page, ms);
 }
 
 /**
@@ -188,9 +252,9 @@ async function capture(page, locator) {
 
 /**
  * İki görüntü arasındaki en büyük ortalama parlaklık farkı, WCAG'nin parlama alanı
- * büyüklüğündeki (1024×768 ekranda 341×256 piksel) en kötü pencerede.
+ * büyüklüğündeki (1024×768 ekranda 341×256 piksel; görüntünün ölçeğiyle) en kötü pencerede.
  */
-async function worstWindowDifference([before, after]) {
+async function worstWindowDifference([before, after, scale]) {
   const load = async (data) => {
     const img = new Image();
     img.src = "data:image/png;base64," + data;
@@ -223,8 +287,8 @@ async function worstWindowDifference([before, after]) {
         sum[y * (W + 1) + x];
     }
   }
-  const bw = Math.min(341, W);
-  const bh = Math.min(256, H);
+  const bw = Math.min(Math.round(341 * scale), W);
+  const bh = Math.min(Math.round(256 * scale), H);
   let worst = 0;
   for (let y = 0; y + bh <= H; y += 4) {
     for (let x = 0; x + bw <= W; x += 4) {
@@ -257,11 +321,8 @@ async function checkFlashBound(browser, scene, variant, theme) {
     await page.addInitScript(
       initScript(scene.id, { look: variant.look, level, theme: theme ?? 1 }),
     );
-    await page.goto(APP_URL);
-    await page.waitForTimeout(800);
-    await page.mouse.click(5, 5);
-    await page.keyboard.press("Space");
-    await page.waitForTimeout(3000); // hız sınırlı değerler yerine otursun
+    // Hız sınırlı değerler yerine otursun: enerjiler ~1,2 sn'de, renk teması 2 sn'de.
+    await startPlaying(page, 2500);
     await hideChrome(page);
     const stage = page.locator(".stage");
     const problem = await renderProblem(page, stage, errors);
@@ -273,7 +334,7 @@ async function checkFlashBound(browser, scene, variant, theme) {
     await page.close();
   }
   const page = await browser.newPage();
-  const worst = await page.evaluate(worstWindowDifference, shots);
+  const worst = await page.evaluate(worstWindowDifference, [...shots, SCALE]);
   await page.close();
   console.log(`${name}: sessiz → tam ses en büyük parlaklık farkı ${worst.toFixed(4)}`);
   return worst < FLASH_DELTA
@@ -349,11 +410,7 @@ async function checkScene(browser, scene, variant) {
   });
   page.on("pageerror", (e) => problems.push(`sayfa hatası: ${e}`));
   await page.addInitScript(initScript(scene.id, { look: variant.look }));
-  await page.goto(APP_URL);
-  await page.waitForTimeout(800);
-  await page.mouse.click(5, 5);
-  await page.keyboard.press("Space"); // çal
-  await page.waitForTimeout(2500);
+  await startPlaying(page, 1500);
   await hideChrome(page);
 
   const canvas = page.locator("canvas:not([hidden])").first();
@@ -369,7 +426,7 @@ async function checkScene(browser, scene, variant) {
     gpu: c.dataset.gpu ?? null,
   }));
   const first = await page.evaluate(measure, await capture(page, canvas));
-  await page.waitForTimeout(600);
+  await advance(page, 750);
   const second = await page.evaluate(measure, await capture(page, canvas));
   // Hareket: örneklenen noktaların ne kadarı belirgin biçimde değişti (şerit çizgileri,
   // ışık perdeleri; gökyüzünün büyük kısmı durgundur).
