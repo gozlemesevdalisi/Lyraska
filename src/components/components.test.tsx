@@ -1294,10 +1294,14 @@ describe("işaretleme", () => {
     expect(backend.toggle).toHaveBeenCalledTimes(1); // artık yine çal/duraklat
   });
 
+  /** İşaretlemenin başladığı an: sahte çekirdeğin konumu bundan itibaren gerçek zamanla ilerler. */
+  let playingSince = 0;
+
   /** İşaretleme sekmesini açar ve işaretlemeyi başlatır. */
   async function startMarking() {
     backend.desktop = true;
     backend.status = playing;
+    playingSince = performance.now();
     render(<App />);
     // Oynatıcı çalan şarkıyı ilk komutla öğrenir (diğer testlerdeki gibi).
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
@@ -1310,9 +1314,11 @@ describe("işaretleme", () => {
   /** Bir vuruş aralığı arayla `count` kez Boşluk'a basar (sürekli işaretleme). */
   async function tapBeats(count: number, intervalMs: number) {
     for (let i = 0; i < count; i++) {
-      // Sahte çekirdek de şarkının ilerlediğini bildirsin (yoksa vuruşlar üst üste düşer).
-      const status = backend.status!;
-      backend.status = { ...status, positionSecs: status.positionSecs + intervalMs / 1000 };
+      // Sahte çekirdek de şarkının gerçek zamanla ilerlediğini bildirsin. Vuruş başına sabit
+      // adım yetmez: makine yüklüyken vuruşlar arası daha uzun sürer, ekrandaki saat bildirilen
+      // konumdan uzaklaşıp geri sıçrar ve iki vuruş üst üste düşer.
+      const elapsed = (performance.now() - playingSince) / 1000;
+      backend.status = { ...backend.status!, positionSecs: playing.positionSecs + elapsed };
       await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
       await act(() => new Promise((resolve) => setTimeout(resolve, intervalMs)));
     }
