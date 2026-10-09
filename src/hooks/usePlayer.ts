@@ -190,14 +190,27 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
   const hasTrack = status.track !== null;
   useEffect(() => {
     if (!available || !hasTrack) return;
+    // Yanıt gelmeden yenisi gönderilmez: çekirdek meşgulken (şarkı açılırken kilit birkaç
+    // saniye tutulabilir) sorgular birikip çekirdeğin iş parçacıklarını bekletmesin, eski
+    // yanıt yenisinden sonra gelip konumu geri çekmesin.
+    let inFlight = false;
+    let cancelled = false;
     const timer = window.setInterval(() => {
+      if (inFlight) return;
+      inFlight = true;
       getPlaybackStatus()
-        .then((next) => applyStatus(next, false))
+        .then((next) => !cancelled && applyStatus(next, false))
         .catch(() => {
           /* Geçici hata: bir sonraki turda yeniden denenir. */
+        })
+        .finally(() => {
+          inFlight = false;
         });
     }, POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [available, hasTrack, applyStatus]);
 
   // Klavye kısayolları
