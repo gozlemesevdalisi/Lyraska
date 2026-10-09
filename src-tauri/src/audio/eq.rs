@@ -92,8 +92,10 @@ const TUNING: Tuning = Tuning {
 /// Kullanıcının ekolayzer ayarları. Ayarlar dosyasında da bu biçimde saklanır.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct EqSettings {
     pub enabled: bool,
+    #[cfg_attr(test, ts(type = "Array<number>"))]
     pub gains_db: [f64; BANDS],
 }
 
@@ -137,9 +139,12 @@ impl EqSettings {
 /// Arayüzün gösterdiği ekolayzer durumu: ayarlar ve gerçekten uygulanan eğri.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct EqState {
     pub enabled: bool,
+    #[cfg_attr(test, ts(type = "Array<number>"))]
     pub gains_db: [f64; BANDS],
+    #[cfg_attr(test, ts(type = "Array<number>"))]
     pub bands_hz: [f64; BANDS],
     pub max_gain_db: f64,
     /// Kırpılmayı önlemek için düşürülen kazanç (dB, ≤ 0).

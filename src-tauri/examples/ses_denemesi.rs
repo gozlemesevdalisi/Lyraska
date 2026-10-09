@@ -6,6 +6,9 @@
 //!
 //! Çalıştırma: `cargo run --example ses_denemesi`
 
+// Deneme kodu: beklenmeyen bir hata denemeyi hemen durdurmalı.
+#![allow(clippy::expect_used)]
+
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};

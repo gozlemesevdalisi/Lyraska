@@ -74,10 +74,18 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       Ekolayzerle ilgili kalan işler tek yerde: [#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)
 - [x] AutoEq kulaklık profilleri: ParametricEQ.txt içe aktarma (öne alındı: 0.0.13). Hazır profil listesi, ölçüm
       kaynaklarının lisansı doğrulanınca
-- [ ] EBU R128 loudness
+- [ ] EBU R128 loudness — **öne alındı** (proje sahibi, 8 Ekim 2026: "bas dedin mi gerçekten hissedilsin"):
+      şarkılar aynı yüksekliğe getirilir (varsayılan açık), ekolayzer sesi kısmadan yükseltebilir; bas raf filtresi
+      ve yeni hazır ayarlar ("Bas", "Derin bas")
 - [ ] Crossfeed
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
-- [ ] Bit-perfect mod
+- [ ] Bit-perfect mod — **öne alındı**: WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin kararı)
+
+## Sürekli: mimari güvenceler
+
+- [x] (0.0.26) Rust ↔ arayüz veri tipleri üretiliyor (ts-rs) ve CI'da denetleniyor; komut sözleşmesi denetimi;
+      ses yolunda bellek ayırma testi; Clippy ile unwrap/expect/panic yasağı; veritabanı göçleri (`storage.rs`);
+      ana ekran hook'lara ayrıldı; `docs/MIMARI.md`
 
 ## Faz 4 — Görsel kütüphane ve v1.0 (18 Ocak – 28 Şubat 2027; lansman Mart 2027 başı)
 

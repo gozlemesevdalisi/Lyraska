@@ -4,6 +4,9 @@
 //! 2–3 sn 1760 Hz. Sarmadan sonra duyulan tonun frekansı, doğru yere gidilip
 //! gidilmediğini gösterir. Ayrıntı: `tests/data/README.md`.
 
+// Deneme kodu: beklenmeyen bir hata denemeyi hemen durdurmalı.
+#![allow(clippy::unwrap_used)]
+
 use std::path::PathBuf;
 
 use lyraska_lib::audio::decode::Decoder;

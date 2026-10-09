@@ -190,6 +190,10 @@ const track: TrackInfo = {
   sampleRate: 44100,
   channels: 2,
   durationSecs: 225,
+  album: null,
+  albumArtist: null,
+  trackNumber: null,
+  discNumber: null,
 };
 
 const playing: PlaybackStatus = {
@@ -1229,6 +1233,16 @@ describe("işaretleme", () => {
     backend.desktop = true;
     backend.status = playing;
     backend.annotation = {
+      format: 1,
+      appVersion: "0.0.25",
+      track: {
+        path: track.path,
+        fileName: track.fileName,
+        title: track.title,
+        artist: track.artist,
+        durationSecs: track.durationSecs,
+        sizeBytes: null,
+      },
       savedAt: "",
       beats: Array.from({ length: 12 }, (_, i) => 1 + i * 0.5),
       drops: [61],

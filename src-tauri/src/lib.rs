@@ -6,6 +6,7 @@
 //! - [`director`]: Görsel Yönetmen — şarkıyı önceden bilen koreografi (atmosfer, ritim, doku)
 //! - [`visual_bridge`]: analiz ve çalma zamanını arayüzdeki görsellere taşıyan köprü
 //! - [`library`]: müzik kütüphanesi (SQLite, klasör tarama, arama)
+//! - [`storage`]: kütüphane veritabanının şeması ve sıralı göçleri
 //! - [`settings`]: kalıcı kullanıcı ayarları (ekolayzer vb.)
 //! - [`commands`]: arayüzün çağırabildiği Tauri komutları
 //! - [`diagnostics`]: yerel hata ve çökme günlüğü
@@ -17,6 +18,7 @@ pub mod diagnostics;
 pub mod director;
 pub mod library;
 pub mod settings;
+pub mod storage;
 pub mod visual_bridge;
 
 use tauri::Manager;
@@ -24,7 +26,7 @@ use tauri::Manager;
 /// Programı başlatır.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let built = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::PlayerState::default())
         .setup(|app| {
@@ -131,12 +133,22 @@ pub fn run() {
             commands::audio_delay_set,
             commands::calibration_track,
         ])
-        .build(tauri::generate_context!())
-        .expect("Lyraska başlatılamadı")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<commands::LibraryState>().shutdown();
-                app.state::<commands::BackgroundState>().shutdown();
-            }
-        });
+        .build(tauri::generate_context!());
+    let app = match built {
+        Ok(app) => app,
+        Err(e) => {
+            // Pencere ya da WebView2 açılamadı. Günlük açılmışsa nedeni oraya da yazılır
+            // (kullanıcı hata kaydına ekler); program panik yerine düzgünce kapanır.
+            let message = format!("Lyraska başlatılamadı: {e}");
+            diagnostics::error(&message);
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|app, event| {
+        if let tauri::RunEvent::Exit = event {
+            app.state::<commands::LibraryState>().shutdown();
+            app.state::<commands::BackgroundState>().shutdown();
+        }
+    });
 }

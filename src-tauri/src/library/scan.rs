@@ -36,6 +36,7 @@ pub struct ScanState {
 /// Tarama durumunun anlık görüntüsü.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct ScanProgress {
     pub scanning: bool,
     /// Taranan klasördeki ses dosyası sayısı.

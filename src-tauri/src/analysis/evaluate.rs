@@ -22,6 +22,7 @@ pub const BEAT_TOLERANCE: f64 = 0.07;
 /// Bir şarkının beat değerlendirmesi.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct BeatEvaluation {
     /// İşaretlere doğrudan göre F-ölçüsü (0..1).
     pub f_measure: f64,

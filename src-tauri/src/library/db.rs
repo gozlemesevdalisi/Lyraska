@@ -7,40 +7,8 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
 
 use super::{search_key, LibraryError};
-use crate::analysis::cache::{self, ANALYSIS_VERSION};
+use crate::analysis::cache::ANALYSIS_VERSION;
 use crate::audio::decode::TrackInfo;
-
-/// Şema sürümü; yapı değişince artırılır ve göç adımı eklenir.
-const SCHEMA_VERSION: i64 = 1;
-
-const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS folders (
-    id   INTEGER PRIMARY KEY,
-    path TEXT NOT NULL UNIQUE
-);
-CREATE TABLE IF NOT EXISTS tracks (
-    id            INTEGER PRIMARY KEY,
-    folder_id     INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    path          TEXT NOT NULL UNIQUE,
-    file_name     TEXT NOT NULL,
-    title         TEXT,
-    artist        TEXT,
-    album         TEXT,
-    album_artist  TEXT,
-    track_number  INTEGER,
-    disc_number   INTEGER,
-    duration_secs REAL,
-    codec         TEXT NOT NULL,
-    sample_rate   INTEGER NOT NULL,
-    channels      INTEGER NOT NULL,
-    file_size     INTEGER NOT NULL,
-    modified      INTEGER NOT NULL,
-    sort_key      TEXT NOT NULL,
-    search        TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS tracks_folder ON tracks(folder_id);
-CREATE INDEX IF NOT EXISTS tracks_sort ON tracks(sort_key);
-";
 
 /// Arama sonucunda dönen en fazla şarkı sayısı.
 pub const MAX_RESULTS: usize = 50_000;
@@ -48,7 +16,9 @@ pub const MAX_RESULTS: usize = 50_000;
 /// Kütüphanedeki bir klasör.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, rename = "LibraryFolder"))]
 pub struct FolderRow {
+    #[cfg_attr(test, ts(type = "number"))]
     pub id: i64,
     pub path: String,
 }
@@ -56,7 +26,9 @@ pub struct FolderRow {
 /// Listede gösterilen bir şarkı.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, rename = "LibraryTrack"))]
 pub struct TrackRow {
+    #[cfg_attr(test, ts(type = "number"))]
     pub id: i64,
     pub path: String,
     /// Etiketteki başlık, yoksa dosya adı.
@@ -92,20 +64,14 @@ impl Library {
         Self::init(Connection::open_in_memory()?)
     }
 
-    fn init(conn: Connection) -> Result<Self, LibraryError> {
+    fn init(mut conn: Connection) -> Result<Self, LibraryError> {
+        // Analiz önbelleği aynı dosyaya yazarken kısa süre beklenir.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;",
         )?;
-        conn.execute_batch(SCHEMA)?;
-        // Analiz önbelleğinin tablosu: listedeki BPM sütunu buradan okunur.
-        conn.execute_batch(cache::SCHEMA)?;
-        // Kütüphaneden çıkan şarkının (silinen dosya, çıkarılan klasör) analizi de silinir;
-        // önbellek sonsuza dek büyümez.
-        conn.execute_batch(
-            "CREATE TRIGGER IF NOT EXISTS analyses_follow_tracks AFTER DELETE ON tracks
-             BEGIN DELETE FROM analyses WHERE path = old.path; END;",
-        )?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        // Şema ve göçler tek yerde (kütüphane ve analiz önbelleği aynı dosyayı kullanır).
+        crate::storage::migrate(&mut conn)?;
         Ok(Self { conn })
     }
 

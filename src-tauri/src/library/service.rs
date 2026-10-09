@@ -14,6 +14,7 @@ use super::{path_covers, FolderRow, Library, LibraryError, TrackRow};
 /// Arayüzün gösterdiği kütüphane durumu.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct LibraryStatus {
     pub folders: Vec<FolderRow>,
     pub track_count: usize,
@@ -27,6 +28,7 @@ pub struct LibraryStatus {
 /// Pencereye bırakılanların sonucu.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct DropOutcome {
     /// Çalınacak şarkılar, bırakılış sırasıyla (zaten kütüphanede olanlar dahil).
     pub tracks: Vec<String>,

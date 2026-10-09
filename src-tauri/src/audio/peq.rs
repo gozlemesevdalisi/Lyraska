@@ -40,6 +40,7 @@ const CROSSFADE_SECONDS: f64 = 0.03;
 /// Filtre türü.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub enum FilterKind {
     /// Tepe/çukur (PK).
     Peaking,
@@ -51,6 +52,7 @@ pub enum FilterKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, rename = "HeadphoneFilter"))]
 pub struct PeqFilter {
     pub kind: FilterKind,
     pub freq_hz: f64,
@@ -61,6 +63,7 @@ pub struct PeqFilter {
 /// Bir kulaklığın düzeltme profili.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct HeadphoneProfile {
     /// Kullanıcıya gösterilen ad (genellikle kulaklık modeli).
     pub name: String,
@@ -90,6 +93,7 @@ impl HeadphoneSettings {
 /// Arayüze giden durum: ayar ve çizim için düzeltme eğrisi.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct HeadphoneState {
     pub enabled: bool,
     pub profile: Option<HeadphoneProfile>,

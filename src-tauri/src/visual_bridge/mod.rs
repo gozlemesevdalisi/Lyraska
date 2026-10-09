@@ -43,6 +43,7 @@ pub fn visual_time(heard_secs: f64, audio_delay_ms: i32) -> f64 {
 /// Arayüzün her ekran karesinde istediği görsel veri.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct VisualFrame {
     /// Verinin ait olduğu çalma konumu (saniye).
     pub position_secs: f64,
@@ -68,6 +69,7 @@ pub struct VisualFrame {
 /// O anın vuruş ızgarasındaki yeri.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct BeatFrame {
     /// Şarkının temposu (vuruş/dakika).
     pub bpm: f64,

@@ -42,6 +42,8 @@ jobs:
         run: npm run check:licenses
       - name: Depoda ses dosyası yok (telif)
         run: npm run check:audio
+      - name: Komut sözleşmesi (arayüz ↔ çekirdek)
+        run: npm run check:commands
       - name: Derleme
         run: npm run build
 
@@ -78,6 +80,16 @@ jobs:
       - name: Testler
         working-directory: src-tauri
         run: cargo test --locked
+      # Testler Rust → arayüz veri tiplerini src/lib/bindings/ altına yeniden üretir (ts-rs).
+      # Depodakiyle aynı olmalı: Rust'ta değişen bir tip arayüzde fark edilmeden kalamaz.
+      - name: Arayüz tipleri güncel mi (ts-rs)
+        run: |
+          if [ -n "$(git status --porcelain -- src/lib/bindings)" ]; then
+            echo "src/lib/bindings güncel değil. 'cd src-tauri && cargo test' ile üretip commit edin:"
+            git status --porcelain -- src/lib/bindings
+            git diff -- src/lib/bindings
+            exit 1
+          fi
       - name: Lisans ve kaynak denetimi (cargo-deny)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
