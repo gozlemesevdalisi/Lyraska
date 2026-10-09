@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { countFlashes } from "./flash";
 import {
   AURORA_BASE,
@@ -8,10 +8,13 @@ import {
   LYRA_LINES,
   LYRA_STARS,
   SKY_AT_REST,
+  SKY_LOOKS,
   auroraLuminance,
   bandEnergies,
+  loadSkyLook,
   parseHexColor,
   mixColors,
+  saveSkyLook,
   stepSky,
   type DirectorInput,
   type Energies,
@@ -234,5 +237,31 @@ describe("renkler ve takımyıldız", () => {
     }
     const brightest = [...LYRA_STARS].sort((a, b) => b.brightness - a.brightness)[0];
     expect(brightest?.name).toBe("Vega");
+  });
+});
+
+describe("gece göğünün görünümü", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("üç manzara var; seçim hatırlanır, bozuk kayıtta göl", () => {
+    expect(SKY_LOOKS.map((l) => l.name)).toEqual(["Göl", "Korona", "Karlı vadi"]);
+    expect(loadSkyLook()).toBe("lake");
+    saveSkyLook("snow");
+    expect(loadSkyLook()).toBe("snow");
+    saveSkyLook("corona");
+    expect(loadSkyLook()).toBe("corona");
+    window.localStorage.setItem("lyraska.skyLook", "çöl");
+    expect(loadSkyLook()).toBe("lake");
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("erişim yok");
+    });
+    expect(loadSkyLook()).toBe("lake");
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("erişim yok");
+    });
+    expect(() => saveSkyLook("snow")).not.toThrow();
   });
 });

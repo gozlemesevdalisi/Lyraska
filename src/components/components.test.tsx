@@ -1187,6 +1187,20 @@ describe("kulaklık düzeltmesi", () => {
   });
 });
 
+describe("gece göğünün manzarası", () => {
+  it("ayarlardan seçilir ve hatırlanır", async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
+    const lake = screen.getByRole("button", { name: "Göl" });
+    expect(lake).toHaveAttribute("aria-pressed", "true");
+    expect(lake).toHaveAccessibleDescription(/durgun gölde yansımaları/);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Korona" })));
+    expect(screen.getByRole("button", { name: "Korona" })).toHaveAttribute("aria-pressed", "true");
+    expect(lake).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem("lyraska.skyLook")).toBe("corona");
+  });
+});
+
 describe("hata günlüğü", () => {
   afterEach(() => {
     backend.desktop = false;

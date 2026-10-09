@@ -4,6 +4,7 @@ import { SpectrumDemo } from "./SpectrumDemo";
 import { SpectrumView } from "./SpectrumView";
 import { VuScene } from "./VuScene";
 import type { Scene } from "../lib/scene";
+import type { SkyLook } from "../lib/sky";
 
 const SPECTRUM_BANDS = 16;
 const SPECTRUM_ROWS = 10;
@@ -14,10 +15,12 @@ export interface SceneStageProps {
   hasTrack: boolean;
   /** Epilepsi güvenli modu. */
   safe: boolean;
+  /** Gece göğünün manzarası. */
+  skyLook: SkyLook;
 }
 
 /** Tüm pencereyi kaplayan görsel sahne. Sahne değişince yenisi yavaşça belirir. */
-export function SceneStage({ scene, playing, hasTrack, safe }: SceneStageProps) {
+export function SceneStage({ scene, playing, hasTrack, safe, skyLook }: SceneStageProps) {
   return (
     <div className="stage" data-scene={scene}>
       {scene === "vu" ? (
@@ -43,7 +46,7 @@ export function SceneStage({ scene, playing, hasTrack, safe }: SceneStageProps) 
           )}
         </div>
       ) : (
-        <SkyScene playing={playing} safe={safe} />
+        <SkyScene playing={playing} safe={safe} look={skyLook} />
       )}
     </div>
   );
