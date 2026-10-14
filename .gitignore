@@ -43,3 +43,6 @@ Thumbs.db
 *.dsf
 *.dff
 !src-tauri/tests/data/*
+
+# Araştırma betiklerinin Python önbelleği
+__pycache__/

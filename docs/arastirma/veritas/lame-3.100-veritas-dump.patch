@@ -1,0 +1,46 @@
+--- a/libmp3lame/encoder.c	2017-09-06 19:33:35.000000000 +0000
++++ b/libmp3lame/encoder.c	2026-10-14 16:55:07.494746753 +0000
+@@ -39,6 +39,8 @@
+ #include "psymodel.h"
+ #include "lame-analysis.h"
+ #include "bitstream.h"
++#include <stdio.h>
++#include <stdlib.h>
+ #include "VbrTag.h"
+ #include "quantize.h"
+ #include "quantize_pvt.h"
+@@ -535,6 +537,34 @@
+     }
+ 
+ 
++    {   /* VERITAS ölçümü: nicemleme bittikten sonra her granülün θ, q ve yan bilgisi */
++        static FILE *vf = NULL;
++        static int tried = 0;
++        if (!tried) { const char *path = getenv("VERITAS_DUMP"); tried = 1; if (path) vf = fopen(path, "wb"); }
++        if (vf) {
++            int gr, ch, j;
++            for (gr = 0; gr < cfg->mode_gr; gr++)
++                for (ch = 0; ch < cfg->channels_out; ch++) {
++                    gr_info const *ci = &gfc->l3_side.tt[gr][ch];
++                    int hdr[12];
++                    float xr[576];
++                    hdr[0] = gr; hdr[1] = ch; hdr[2] = ci->block_type; hdr[3] = ci->mixed_block_flag;
++                    hdr[4] = ci->global_gain; hdr[5] = gfc->ov_enc.mode_ext; hdr[6] = ci->scalefac_scale;
++                    hdr[7] = ci->preflag; hdr[8] = ci->sfbmax; hdr[9] = ci->psymax;
++                    hdr[10] = ci->max_nonzero_coeff; hdr[11] = 0;
++                    fwrite(hdr, sizeof(int), 12, vf);
++                    fwrite(ci->subblock_gain, sizeof(int), 4, vf);
++                    fwrite(ci->scalefac, sizeof(int), SFBMAX, vf);
++                    fwrite(ci->width, sizeof(int), SFBMAX, vf);
++                    fwrite(ci->window, sizeof(int), SFBMAX, vf);
++                    for (j = 0; j < 576; j++) xr[j] = (float) ci->xr[j];
++                    fwrite(xr, sizeof(float), 576, vf);
++                    fwrite(ci->l3_enc, sizeof(int), 576, vf);
++                }
++            fflush(vf);
++        }
++    }
++
+     /****************************************
+     *   Stage 5: bitstream formatting       *
+     ****************************************/
