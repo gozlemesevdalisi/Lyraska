@@ -372,6 +372,20 @@ MOS (yüksek iyi); parantez içinde SNR farkı (çözücüye göre). Hiçbir yö
 | Kâhin: q ≠ 0 katsayılar gerçek                | 4,296        | 4,864        | 4,691        | 4,849        | 4,635        | 4,912        | 4,708     |
 | **Kâhin: q = 0 katsayılar (delikler) gerçek** | 4,872        | 4,867        | 4,876        | 4,883        | 4,857        | 4,894        | **4,875** |
 
+### 7.2b Sonuçlar, 128 kbps (44,1 kHz), altı parçanın ortalaması
+
+| Yöntem                                    | MOS (ortalama) | SNR farkı (çözücüye göre) |
+| ----------------------------------------- | -------------- | ------------------------- |
+| Standart çözücü                           | 4,910          | —                         |
+| Wiener + kesik Gauss + enerji koruma      | 4,906          | +0,2 … +0,7 dB            |
+| Faz-tutarlı tonal delik doldurma          | 4,910          | −0,2 … +0,1 dB            |
+| Kâhin: Wiener (gerçek güç biliniyor)      | 4,912          | +1,1 … +2,0 dB            |
+| Kâhin: q = 0 katsayılar (delikler) gerçek | 4,943          | +0,6 … +1,7 dB            |
+| Kâhin: q ≠ 0 katsayılar gerçek            | 4,955          | +5 … +9 dB                |
+
+128 kbps'te çözücü zaten 4,87–4,97 arasında; bilgiyi kâhin olarak bilsek bile kazanılacak en fazla +0,045 MOS.
+İyileştirmenin anlamlı olduğu yer 96 kbps ve altı.
+
 ### 7.3 Bulgular
 
 1. **En küçük hata kulağa daha kötü gelir.** Sonsal ortalama (Laplace, Wiener) SNR'ı artırıyor ama enerjiyi kısıyor:
@@ -408,6 +422,11 @@ MOS (yüksek iyi); parantez içinde SNR farkı (çözücüye göre). Hiçbir yö
   1. **Kör dinleme aracı (ABX):** ses mühendisiyle tartışmayı kulakla, kanıtla bitirir ("320 kbps ile FLAC'ı
      ayırabiliyor muyum?").
   2. **R2, öğrenmeli önsel araştırması:** kutularla sınırlanmış, delikleri dolduran küçük bir model.
+     - Görev tanımı, devralacak model için kendi başına anlaşılır biçimde:
+       [arastirma/veritas/R2_GOREV.md](arastirma/veritas/R2_GOREV.md).
+     - Dayanağı: tutarlılık kümesine izdüşüm kesin ve ucuz, P_C(x) = S·clip(A·x, lo, hi). Çünkü SᵀS = c_t·I granül
+       başına (uzun blokta 288, kısada 96; son granül hariç A·S = I). Her üretici yöntem adım başına bir analiz, bir
+       kırpma ve bir sentezle dosyayla kesin tutarlı kılınabilir.
      - Eğitim verisi lisans sorunu olmadan üretilebilir: programla yazılmış parçalar ve MIT lisanslı ses bankası; ayrıca
        proje sahibinin kendi kayıpsız arşivi, yalnızca kendi bilgisayarında.
      - Risk: gerçek kayıtlara ve vokale genelleme burada ölçülemez.

@@ -16,6 +16,7 @@ ve depo dışındaki bir çalışma klasörüne yazılır.
 | `deney.py`                      | R1 düzeneği: döküm → çözücü görünümü, kutular, yöntemler, SNR ve Zimtohrli MOS                 |
 | `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                      |
 | `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)     |
+| `R2_GOREV.md`                   | R2 görev tanımı: devralacak model için kendi başına anlaşılır, kanıtlı olgular ve kapılarla    |
 
 ## Gerekenler
 
