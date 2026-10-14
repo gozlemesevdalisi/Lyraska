@@ -97,6 +97,10 @@ export function LibraryPanel({
   const scan = status.scan;
   const noFolders = status.folders.length === 0;
   const analyzing = analysisPending(status.analyzed, status.trackCount);
+  // Kütüphane açılamadıysa ekleme düğmeleri kapalıdır (çalışmazlar); nedeni uyarıda yazar.
+  const usable = available && !library.unavailable;
+  // Açılamamış kütüphanede her işlem aynı hatayı verir: bir kez, uyarının içinde gösterilir.
+  const problems = [...status.problems, ...(library.error && usable ? [library.error] : [])];
 
   return (
     <section className="library" aria-label="Kütüphane">
@@ -113,7 +117,7 @@ export function LibraryPanel({
             onChange={(e) => library.setQuery(e.target.value)}
             placeholder="Ara: şarkı, sanatçı, albüm"
             aria-label="Kütüphanede ara"
-            disabled={!available || noFolders}
+            disabled={!usable || noFolders}
             spellCheck={false}
           />
         </label>
@@ -121,7 +125,7 @@ export function LibraryPanel({
           type="button"
           className="hw-button hw-button--small"
           onClick={() => void library.addFolder()}
-          disabled={!available}
+          disabled={!usable}
           title="Klasördeki bütün şarkıları ekleyin"
           aria-label="Klasör ekle"
         >
@@ -132,7 +136,7 @@ export function LibraryPanel({
           type="button"
           className="hw-button hw-button--small"
           onClick={() => void library.addFiles(extensions)}
-          disabled={!available}
+          disabled={!usable}
           title="Tek tek şarkı seçip ekleyin (birden fazla seçebilirsiniz)"
           aria-label="Şarkı ekle"
         >
@@ -143,7 +147,7 @@ export function LibraryPanel({
           type="button"
           className="hw-button hw-button--small hw-button--icon"
           onClick={() => void library.rescan()}
-          disabled={!available || noFolders || scan.scanning}
+          disabled={!usable || noFolders || scan.scanning}
           title="Kütüphaneyi yeniden tara"
           aria-label="Kütüphaneyi yeniden tara"
         >
@@ -169,7 +173,19 @@ export function LibraryPanel({
         </ul>
       )}
 
-      {(scan.scanning || analyzing || status.problems.length > 0 || library.error) && (
+      {library.unavailable && (
+        <div className="section-error library__unavailable" role="alert">
+          <p className="section-error__title">Kütüphane açılamadı</p>
+          <p className="section-error__text">
+            Müzik dosyalarınıza bir şey olmadı: yalnızca Lyraska'nın şarkı listesini tuttuğu
+            kütüphane dosyası okunamadı. Bu yüzden şimdilik şarkı eklenemiyor. Programı kapatıp
+            yeniden açın; düzelmezse Ayarlar &gt; Hata günlüğü dosyasını bir hata kaydına ekleyin.
+          </p>
+          <p className="library__problem library__reason">Neden: {library.unavailable}</p>
+        </div>
+      )}
+
+      {(scan.scanning || analyzing || problems.length > 0) && (
         <div className="library__notice" role="status">
           {scan.scanning && (
             <span>
@@ -183,7 +199,7 @@ export function LibraryPanel({
               şarkı analiz edildi
             </span>
           )}
-          {[...status.problems, ...(library.error ? [library.error] : [])].map((problem) => (
+          {problems.map((problem) => (
             <span key={problem} className="library__problem">
               {problem}
             </span>
@@ -191,7 +207,7 @@ export function LibraryPanel({
         </div>
       )}
 
-      {noFolders ? (
+      {library.unavailable ? null : noFolders ? (
         <div className="library__empty">
           <p className="library__empty-title">Müziğinizi ekleyin</p>
           <p>

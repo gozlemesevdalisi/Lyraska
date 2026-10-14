@@ -493,6 +493,37 @@ kbd {
   backdrop-filter: blur(var(--glass-blur));
 }
 
+/* Programın bir bölümü açılamadığında üst çubuğun altında duran uyarı (yanıp sönmez). */
+.app-alert {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(720px, calc(100% - 56px));
+  padding: 8px 8px 8px 16px;
+  border: 1px solid rgba(255, 181, 76, 0.32);
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--accent);
+  background: rgba(40, 24, 6, 0.72);
+  backdrop-filter: blur(var(--glass-blur));
+  transform: translateX(-50%);
+}
+
+.app-alert .glass-button {
+  flex: none;
+}
+
+/* Çekmece açıkken uyarı sahnenin görünen kısmının ortasında durur. */
+.app.has-drawer .app-alert {
+  left: calc((100% - var(--drawer-width) - 40px) / 2);
+  max-width: calc(100% - var(--drawer-width) - 96px);
+}
+
 .info {
   display: flex;
   flex-direction: column;
@@ -1111,6 +1142,24 @@ kbd {
   font-size: 14px;
   line-height: 1.5;
   color: var(--ink-2);
+}
+
+.section-error__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.library__unavailable {
+  margin-top: 12px;
+}
+
+.library__reason {
+  margin: 4px 0 0;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .stage__error {

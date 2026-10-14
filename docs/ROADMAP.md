@@ -26,6 +26,8 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Dosya aç, çal/duraklat (yumuşak geçişli), durdur; sürükle-bırak; konum ve takılma sayacı
 - [x] Sarma (ilerleme çubuğu, ←/→); önceden analiz edilen gerçek spektrum (60 kare/sn, 32 bant)
 - [x] Müzik kütüphanesi (SQLite): klasör tarama, etiketler, Türkçe duyarlı arama; çalma sırası, önceki/sonraki, otomatik geçiş
+      (0.0.35: 0.0.5–0.0.25'in kütüphane dosyaları 0.0.28'den beri açılmıyordu, düzeltildi; analiz önbelleği bozuksa
+      kütüphane yine açılır, açılamazsa ekranda uyarı çıkar)
 - [x] 10 bantlı ekolayzer (sürgüler gerçekten duyulan eğri; bozulma koruması; hazır ayarlar; ayarlar kalıcı)
 - [x] Şarkılar arası boşluksuz geçiş (AAC kodlayıcı dolgusu dahil); yerel hata/çökme günlüğü ve "Hata günlüğü" düğmesi
 - [x] 3 sahne: nokta matris spektrum, VU ibreleri, "Gece göğü" (WebGL2 gölgelendirici: kuzey ışıkları ve Lyra takımyıldızı).

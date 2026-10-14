@@ -243,6 +243,19 @@ export function PlayerScreen() {
         </div>
       </header>
 
+      {/* Kütüphane açılamadıysa çekmece kapalıyken de görünür; ayrıntı kütüphane panelinde. */}
+      {library.unavailable && !(drawer.open && drawer.panel === "library") && (
+        <div className="app-alert chrome" role="alert">
+          <span>
+            <strong>Kütüphane açılamadı.</strong> Müzik dosyalarınıza bir şey olmadı; şimdilik şarkı
+            eklenemiyor.
+          </span>
+          <button type="button" className="glass-button" onClick={() => drawer.toggle("library")}>
+            Ayrıntılar
+          </button>
+        </div>
+      )}
+
       <LiveChrome
         player={player}
         album={status.track?.album ?? current?.album ?? null}

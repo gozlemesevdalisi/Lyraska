@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PlaybackStatus, TrackInfo } from "../lib/backend";
 import { marqueeWindow } from "./Marquee";
 import { spectrumColumns } from "./SpectrumDemo";
@@ -16,6 +16,8 @@ const backend = vi.hoisted(() => ({
   seek: vi.fn(),
   bands: null as number[] | null,
   library: null as import("../lib/backend").LibraryStatus | null,
+  /** Kütüphane açılamadıysa çekirdeğin her kütüphane komutunda verdiği hata. */
+  libraryFailure: null as string | null,
   tracks: [] as import("../lib/backend").LibraryTrack[],
   search: vi.fn(),
   addFolder: vi.fn(),
@@ -126,9 +128,13 @@ vi.mock("../lib/backend", async (importOriginal) => {
             gainsDb: Array(10).fill(0),
           } as unknown as import("../lib/backend").EqState)
         : actual.getEqualizer(),
-    getLibraryStatus: async () => backend.library ?? actual.EMPTY_LIBRARY,
+    getLibraryStatus: async () => {
+      if (backend.libraryFailure) throw backend.libraryFailure;
+      return backend.library ?? actual.EMPTY_LIBRARY;
+    },
     searchLibrary: async (query: string) => {
       backend.search(query);
+      if (backend.libraryFailure) throw backend.libraryFailure;
       return backend.tracks;
     },
     pickFolder: async () => backend.pickFolder(),
@@ -243,6 +249,7 @@ beforeEach(() => {
   backend.status = null;
   backend.bands = null;
   backend.library = null;
+  backend.libraryFailure = null;
   backend.tracks = [];
   backend.drag = null;
   backend.dragFailure = null;
@@ -446,6 +453,35 @@ describe("kütüphane", () => {
     scan: { scanning: false, found: 3, processed: 3, current: null },
     problems: [],
   };
+
+  it("kütüphane açılamazsa uyarı panelde ve çekmece kapalıyken ana ekranda görünür", async () => {
+    // 0.0.33'te eski kütüphane dosyaları açılamıyordu; hata yalnızca günlüğe yazılıyordu.
+    backend.desktop = true;
+    backend.libraryFailure = "Kütüphane veritabanı hatası: no such table: analyses";
+    render(<App />);
+    const panel = await screen.findByRole("region", { name: "Kütüphane" });
+    const alert = await within(panel).findByRole("alert");
+    expect(alert).toHaveTextContent("Kütüphane açılamadı");
+    expect(alert).toHaveTextContent("Müzik dosyalarınıza bir şey olmadı");
+    expect(alert).toHaveTextContent("Neden: Kütüphane veritabanı hatası: no such table: analyses");
+    // Çalışmayacak düğmeler kapalı; "müziğinizi ekleyin" daveti gösterilmez.
+    expect(within(panel).getByRole("button", { name: "Klasör ekle" })).toBeDisabled();
+    expect(within(panel).getByRole("button", { name: "Şarkı ekle" })).toBeDisabled();
+    expect(screen.queryByText("Müziğinizi ekleyin")).not.toBeInTheDocument();
+    // Neden bir kez yazılır (açılıştaki aramanın aynı hatası ayrıca gösterilmez).
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(within(panel).getAllByText(/no such table/)).toHaveLength(1);
+
+    // Çekmece kapanınca uyarı ana ekranda kalır; "Ayrıntılar" kütüphaneyi açar.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Kütüphane" })));
+    const banner = screen.getByRole("alert");
+    expect(banner).toHaveTextContent("Kütüphane açılamadı.");
+    await act(async () =>
+      fireEvent.click(within(banner).getByRole("button", { name: "Ayrıntılar" })),
+    );
+    expect(screen.getByRole("region", { name: "Kütüphane" })).toBeVisible();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
 
   it("klasör yokken klasör eklemeye davet eder ve seçilen klasörü ekler", async () => {
     backend.desktop = true;

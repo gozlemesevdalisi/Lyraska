@@ -148,6 +148,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Rust ↔ arayüz veri tipleri aynı                              | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı          |
 | Arayüzün çağırdığı komut ve argümanlar çekirdekte var        | `npm run check:commands` (CI)                                    |
 | Veritabanı yapısı değişince eski dosyalar güncellenir        | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)      |
+| Her eski sürümün dosyası yeni kurulumla aynı şemaya ulaşır   | `storage.rs` testleri `her_eski_dosya_…`, `surum_0_0_19_…`       |
+| Analiz önbelleği bozuksa kütüphane açılır, şarkılar kalır    | `storage.rs` `analiz_tablosu_…`, `kutuphane_tablosunda_…`        |
+| Kütüphane açılamazsa ekranda uyarı çıkar (günlükte kalmaz)   | Bileşen testi "kütüphane açılamazsa …"                           |
 | Analiz hesabı değişince eski sonuçlar kullanılmaz            | `cache::VERSIONS` ve önbellek testleri                           |
 | Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı   | `analysis::spectrogram` testi `eskiyen_ritim_…`                  |
 | Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez      | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)             |
@@ -176,7 +179,12 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 **Veritabanında yeni sütun ya da tablo**
 
 - `storage.rs`'teki `MIGRATIONS` listesinin **sonuna** yeni adım ekleyin (`ALTER TABLE …`). Eski adımları
-  değiştirmeyin. Göç testine yeni adımı ekleyin.
+  değiştirmeyin. Veri dönüştüren bir adımsa (ör. göç 5) onun testini yazın.
+- `her_eski_dosya_…` testi, Lyraska'nın bugüne kadar bıraktığı her tür dosyanın (0.0.5'ten bu yana) yeni adımla
+  birlikte yeni kurulumla aynı şemaya ulaştığını ve hiçbirinde analizlerin silinmediğini kendiliğinden denetler.
+- 1. adım baştan sona `IF NOT EXISTS` kalmalıdır: sürümü 1 olan eski dosyalarda yeniden uygulanır.
+- Analiz önbelleği yeniden hesaplanabilir: bir adım önbellek tablosunda takılırsa önbellek boşaltılıp yeniden
+  kurulur; klasörlere ve şarkılara hiçbir koşulda dokunulmaz.
 
 **Yeni bir sahne**
 
