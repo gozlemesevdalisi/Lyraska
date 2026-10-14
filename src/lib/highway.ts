@@ -1,3 +1,4 @@
+import { SCENE_CLOCK_PERIOD, foldTime } from "./sceneClock";
 /**
  * "Gece otoyolu" sahnesi için saf hesaplar. Gece, ufukta şehir ışıkları olan
  * boş bir otoyolda gidiyoruz:
@@ -161,7 +162,7 @@ export function stepHighway(
     bloom,
     palette: stepPalette(prev.palette, director?.theme ?? null, step),
     // "Animasyonları azalt" açıkken pencereler yanıp sönmez, yol kıvrılmaz.
-    time: reducedMotion ? prev.time : (prev.time + step) % 10_000,
+    time: reducedMotion ? prev.time : (prev.time + step) % SCENE_CLOCK_PERIOD,
   };
 }
 
@@ -207,4 +208,9 @@ function fract(x: number): number {
 /** Faz farkını −0,5..0,5 aralığına getirir (en kısa yoldan). */
 function wrapHalf(x: number): number {
   return x - Math.round(x);
+}
+
+/** Otoyolun çizimde kullanılan saati: saatlerce çalınca da yolun kıvrımı sıçramaz ([`foldTime`]). */
+export function highwayClock(state: HighwayState): number {
+  return foldTime(state.time);
 }

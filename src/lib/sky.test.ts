@@ -15,6 +15,7 @@ import {
   parseHexColor,
   mixColors,
   saveSkyLook,
+  skyClocks,
   stepSky,
   type DirectorInput,
   type Energies,
@@ -142,6 +143,25 @@ function runDirected(
   }
   return s;
 }
+
+describe("gökyüzünün saatleri", () => {
+  it("saatlerce çalınca da görüntü sıçramaz (saatler sarılmaz, katlanır)", () => {
+    // Saatler 10 000 sınırına çok yakın: bir sonraki karede sınırı aşar.
+    let state: SkyState = { ...SKY_AT_REST, flowTime: 9_999.99, twinkleTime: 9_999.995 };
+    const beat: Energies = [1, 1, 1];
+    for (let frame = 0; frame < 600; frame++) {
+      const before = skyClocks(state);
+      state = stepSky(state, beat, DT);
+      const after = skyClocks(state);
+      // Ekran kartına giden saat bir karede ancak o karenin ilerlemesi kadar değişir.
+      expect(Math.abs(after.flow - before.flow)).toBeLessThan(0.1);
+      expect(Math.abs(after.twinkle - before.twinkle)).toBeLessThan(0.1);
+      // Hassasiyet için sınırlı kalır.
+      expect(after.flow).toBeGreaterThanOrEqual(0);
+      expect(after.flow).toBeLessThanOrEqual(10_000);
+    }
+  });
+});
 
 describe("Görsel Yönetmen ile gök", () => {
   it("en kötü durumda bile saniyede 3'ten fazla parlamaz (normal ve güvenli mod)", () => {

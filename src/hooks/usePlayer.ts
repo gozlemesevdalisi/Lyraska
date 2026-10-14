@@ -63,6 +63,8 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
   const statusRef = useRef(status);
   const anchor = useRef<ClockAnchor | null>(null);
   const busy = useRef(false);
+  /** Bir komut sürerken açılmak istenen şarkı (o komut bitince açılır). */
+  const pendingOpen = useRef<string | null>(null);
   const seekInFlight = useRef(false);
   const pendingSeek = useRef<number | null>(null);
   const onEnded = useRef(options.onEnded);
@@ -106,18 +108,30 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     setPosition(positionAt(anchor.current, now(), duration));
   }, []);
 
-  /** Komutları sıraya koyar: aynı anda iki komut gönderilmez. */
+  /**
+   * Komutları sıraya koyar: aynı anda iki komut gönderilmez. Bir komut sürerken gelen komut
+   * yok sayılır (art arda basışlar birikmez); yalnızca açılmak istenen şarkı bekletilir ve
+   * komut bitince açılır (#52).
+   */
   const run = useCallback(
     async (command: () => Promise<PlaybackStatus | void>) => {
       if (busy.current) return;
       busy.current = true;
       try {
-        const next = await command();
-        applyStatus(next ?? (await getPlaybackStatus()), true);
-        setError(null);
-      } catch (e) {
-        setError(errorMessage(e));
-        applyStatus(await getPlaybackStatus().catch(() => IDLE_STATUS), true);
+        let next: (() => Promise<PlaybackStatus | void>) | null = command;
+        while (next) {
+          try {
+            const result = await next();
+            applyStatus(result ?? (await getPlaybackStatus()), true);
+            setError(null);
+          } catch (e) {
+            setError(errorMessage(e));
+            applyStatus(await getPlaybackStatus().catch(() => IDLE_STATUS), true);
+          }
+          const waiting = pendingOpen.current;
+          pendingOpen.current = null;
+          next = waiting === null ? null : () => openTrack(waiting).then(() => undefined);
+        }
       } finally {
         busy.current = false;
       }
@@ -126,10 +140,17 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
   );
 
   const openPath = useCallback(
-    (path: string) =>
-      run(async () => {
+    (path: string) => {
+      // Bir komut (ör. başka bir şarkının açılışı) sürüyorsa bu şarkı onun ardından açılır;
+      // arada istenenlerden yalnızca sonuncusu.
+      if (busy.current) {
+        pendingOpen.current = path;
+        return Promise.resolve();
+      }
+      return run(async () => {
         await openTrack(path);
-      }),
+      });
+    },
     [run],
   );
 

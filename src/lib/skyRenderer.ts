@@ -6,6 +6,7 @@ import {
   SKY_THEMES,
   mixColors,
   parseHexColor,
+  skyClocks,
   type SkyLook,
   type SkyState,
 } from "./sky";
@@ -368,8 +369,9 @@ export function createSkyRenderer(
       ctx.bindVertexArray(vao);
       ctx.uniform2f(uniforms.uResolution, width, height);
       ctx.uniform1f(uniforms.uPixel, pixel);
-      ctx.uniform1f(uniforms.uFlow, state.flowTime);
-      ctx.uniform1f(uniforms.uTwinkle, state.twinkleTime);
+      const clocks = skyClocks(state);
+      ctx.uniform1f(uniforms.uFlow, clocks.flow);
+      ctx.uniform1f(uniforms.uTwinkle, clocks.twinkle);
       ctx.uniform3f(uniforms.uEnergy, ...state.energies);
       ctx.uniform1f(uniforms.uTension, state.tension);
       ctx.uniform1f(uniforms.uBloom, state.bloom);

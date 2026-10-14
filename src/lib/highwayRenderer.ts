@@ -1,6 +1,6 @@
 import { fitCanvas, linkFullscreenProgram, openScene, retrySetup } from "./gl";
 import { BLOOM_LUMINANCE, SKY_THEMES, mixColors, parseHexColor } from "./sky";
-import { DASHES_PER_LAMP, GLOW_BASE, type HighwayState } from "./highway";
+import { DASHES_PER_LAMP, GLOW_BASE, highwayClock, type HighwayState } from "./highway";
 
 /**
  * "Gece otoyolu" sahnesinin WebGL2 çizimi. Tek tam ekran üçgende, parça
@@ -237,7 +237,7 @@ export function createHighwayRenderer(canvas: HTMLCanvasElement): HighwayRendere
       ctx.uniform1f(uniforms.uGlow, state.glow);
       ctx.uniform1f(uniforms.uTension, state.tension);
       ctx.uniform1f(uniforms.uBloom, state.bloom);
-      ctx.uniform1f(uniforms.uTime, state.time);
+      ctx.uniform1f(uniforms.uTime, highwayClock(state));
       const { from, to, mix } = state.palette;
       const a = themes[from % themes.length] ?? GLOW_FALLBACK;
       const b = themes[to % themes.length] ?? GLOW_FALLBACK;
