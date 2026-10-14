@@ -20,7 +20,7 @@ import {
 } from "../lib/backend";
 import { SCENES } from "../lib/scene";
 import { fileStem, trackTitle } from "../lib/format";
-import { themeAt } from "../lib/songMap";
+import { confidentDrops, themeAt } from "../lib/songMap";
 import { timelineLayout, type TimelineLayout } from "../lib/timeline";
 import { useDrawer, type Panel } from "../hooks/useDrawer";
 import { useDropToLibrary } from "../hooks/useDropToLibrary";
@@ -150,7 +150,8 @@ export function PlayerScreen() {
         ? timelineLayout({
             durationSecs,
             sections: songMap.sections,
-            programDrops: songMap.drops,
+            // Güveni düşük drop şeritte de işaretlenmez (sayaç ve Görsel Yönetmen gibi).
+            programDrops: confidentDrops(songMap),
             markedDrops: [],
           })
         : null,
