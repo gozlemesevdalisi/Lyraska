@@ -154,6 +154,7 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Analiz hesabı değişince eski sonuçlar kullanılmaz            | `cache::VERSIONS` ve önbellek testleri                           |
 | Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı   | `analysis::spectrogram` testi `eskiyen_ritim_…`                  |
 | Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez      | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)             |
+| Drop sayacı yalnızca güveni yüksek droplar için görünür      | `analysis::structure` drop güveni testleri, bileşen testi        |
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                   | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)    |
 | Parlama sınırı her renk temasında ve her gök manzarasında    | `npm run check:scenes` (temaya göre renklenen sahneler, CI)      |
 | Yasaklı lisans yok                                           | `npm run check:licenses`, `cargo deny` (CI)                      |

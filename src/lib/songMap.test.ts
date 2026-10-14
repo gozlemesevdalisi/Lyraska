@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { dropCountdown, dropLabels, meterLabel, sectionTheme, themeAt } from "./songMap";
+import {
+  confidentDrops,
+  dropCountdown,
+  dropLabels,
+  meterLabel,
+  sectionTheme,
+  themeAt,
+} from "./songMap";
 
 describe("bölüm teması", () => {
   it("etiketi dört temaya dağıtır; geçersiz etiket ilk tema olur", () => {
@@ -24,6 +31,21 @@ describe("drop sayacı", () => {
     expect(dropCountdown([150, Number.NaN, 90], 80)?.seconds).toBe(10);
     expect(dropCountdown([], 80)).toBeNull();
     expect(dropCountdown([10], 80)).toBeNull(); // son drop geçti
+  });
+});
+
+describe("drop güveni", () => {
+  it("sayaç yalnızca güveni yüksek droplar için", () => {
+    const map = { drops: [40, 90, 150], dropConfidence: [0.95, 0.2, 0.6] };
+    expect(confidentDrops(map)).toEqual([40, 150]);
+    // 90. saniyedeki şüpheli drop için sayaç çıkmaz; sıradaki güvenli drop uzak.
+    expect(dropCountdown(confidentDrops(map), 70)).toBeNull();
+    expect(dropCountdown(confidentDrops(map), 125)?.seconds).toBe(25);
+  });
+
+  it("güveni bilinmeyen drop sayılmaz", () => {
+    expect(confidentDrops({ drops: [40, 90], dropConfidence: [0.9] })).toEqual([40]);
+    expect(confidentDrops({ drops: [40] })).toEqual([]);
   });
 });
 

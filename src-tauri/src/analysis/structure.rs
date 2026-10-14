@@ -33,6 +33,12 @@ const DROP_AFTER_BARS: usize = 2;
 const DROP_MIN_BASS_JUMP: f64 = 0.12;
 /// İki drop arası en az (ölçü).
 const DROP_MIN_GAP_BARS: usize = 16;
+/// Drop güveninde bas artışı bu kadar olunca (bant ölçeği: 0,3 ≈ 18 dB) tam puan.
+const DROP_SURE_BASS_JUMP: f64 = 0.30;
+/// Drop güveninde enerji farkı (önceki 4 ölçüye göre) bu kadar olunca tam puan.
+const DROP_SURE_ENERGY_RISE: f64 = 0.40;
+/// Drop'tan sonra yüksek enerjinin sürdüğüne bakılan ölçü sayısı.
+const DROP_SUSTAIN_BARS: usize = 8;
 
 /// Şarkının yapısı.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,6 +54,11 @@ pub struct SongMap {
     pub sections: Vec<Section>,
     /// Drop anları (saniye).
     pub drops: Vec<f64>,
+    /// Her drop'un güveni (0..1; `drops` ile aynı sırada). Bas ve enerji ne kadar belirgin
+    /// döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Arayüz drop sayacını
+    /// yalnızca güveni yüksek droplar için gösterir.
+    #[serde(default)]
+    pub drop_confidence: Vec<f32>,
     /// Saniyede bir enerji değeri (0..1).
     pub energy: Vec<f32>,
 }
@@ -256,10 +267,15 @@ pub fn map_song(
         section.label = label;
     }
 
-    let drops = find_drops(&bar_bass, &bar_energy)
+    let (drops, drop_confidence) = find_drops(&bar_bass, &bar_energy)
         .into_iter()
-        .map(bar_time)
-        .collect();
+        .map(|k| {
+            (
+                bar_time(k),
+                drop_confidence(k, &bar_bass, &bar_energy, &cuts),
+            )
+        })
+        .unzip();
 
     Some(SongMap {
         meter,
@@ -267,6 +283,7 @@ pub fn map_song(
         downbeats,
         sections,
         drops,
+        drop_confidence,
         energy,
     })
 }
@@ -432,6 +449,30 @@ fn find_drops(bar_bass: &[f64], bar_energy: &[f64]) -> Vec<usize> {
     }
     chosen.sort_unstable();
     chosen
+}
+
+/// `k`. ölçüdeki drop'un güveni (0..1). Dört işaret, ağırlıklarıyla:
+/// - bas ne kadar güçlü döndü (%35; eşikte 0, 18 dB'de tam),
+/// - enerji önceki dört ölçüye göre ne kadar arttı (%30),
+/// - bölüm sınırına (±1 ölçü) denk geliyor mu (%20): gerçek droplar yeni bölüm başlatır,
+/// - yüksek enerji sonraki sekiz ölçü boyunca sürüyor mu (%15): tek bir vurgu drop değildir.
+fn drop_confidence(k: usize, bar_bass: &[f64], bar_energy: &[f64], cuts: &[usize]) -> f32 {
+    let n = bar_bass.len();
+    let before = k.saturating_sub(DROP_BEFORE_BARS)..k;
+    let after = k..(k + DROP_AFTER_BARS).min(n);
+    let jump = mean(&bar_bass[after.clone()]) - mean(&bar_bass[before.clone()]);
+    let rise = mean(&bar_energy[after]) - mean(&bar_energy[before]);
+    let unit = |x: f64| x.clamp(0.0, 1.0);
+    let bass = unit((jump - DROP_MIN_BASS_JUMP) / (DROP_SURE_BASS_JUMP - DROP_MIN_BASS_JUMP));
+    let energy = unit(rise / DROP_SURE_ENERGY_RISE);
+    let boundary = if cuts.iter().any(|&c| c > 0 && c.abs_diff(k) <= 1) {
+        1.0
+    } else {
+        0.0
+    };
+    let sustained = mean(&bar_energy[k..(k + DROP_SUSTAIN_BARS).min(n)]);
+    let sustain = unit((sustained - 0.45) / 0.3);
+    (0.35 * bass + 0.30 * energy + 0.20 * boundary + 0.15 * sustain) as f32
 }
 
 fn distance(a: &[f64], b: &[f64]) -> f64 {
@@ -619,6 +660,14 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(map.drops.len(), 1, "tek drop: {:?}", map.drops);
+        // Sakin kısımdan sonra bas ve enerji birden dönüyor, yeni bölüm başlıyor, enerji
+        // sürüyor: drop güveni yüksek (drop sayacı gösterilir).
+        assert_eq!(map.drop_confidence.len(), map.drops.len());
+        assert!(
+            map.drop_confidence[0] >= 0.8,
+            "güven {:?}",
+            map.drop_confidence
+        );
         // Benzer bölümler aynı etiketi alır: ana kısım ve drop aynı, sakin kısım farklı.
         let label_at = |t: f64| map.sections[map.section_at(t).unwrap()].label;
         assert_eq!(label_at(5.0), label_at(drop_time + 5.0));
@@ -671,6 +720,7 @@ mod tests {
             downbeats: vec![],
             sections: vec![],
             drops: vec![],
+            drop_confidence: vec![],
             energy: vec![0.1, 0.9],
         };
         assert_eq!(
@@ -679,6 +729,31 @@ mod tests {
         );
         assert_eq!(map.energy_at(1.5), Some(0.9));
         assert_eq!(map.energy_at(9.0), None);
+    }
+
+    #[test]
+    fn belirgin_drop_yuksek_sinirda_aday_dusuk_guven_alir() {
+        // Ölçü başına bas ve enerji: 8 ölçü sakin (bas yok), sonra 12 ölçü tam drop.
+        let mut bass = vec![0.15; 8];
+        bass.extend([0.55; 12]);
+        let mut energy = vec![0.35; 8];
+        energy.extend([0.95; 12]);
+        let drops = find_drops(&bass, &energy);
+        assert_eq!(drops, [8]);
+        let strong = drop_confidence(8, &bass, &energy, &[0, 8]);
+        assert!(strong > 0.95, "belirgin drop: {strong}");
+
+        // Zaten yüksek bir kısımda bas biraz artıyor (eşiğin hemen üstünde), bölüm sınırı yok,
+        // iki ölçü sonra enerji düşüyor: drop sayılır ama güveni düşük (sayaç gösterilmez).
+        let mut bass = vec![0.40; 8];
+        bass.extend([0.53, 0.53, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40]);
+        let mut energy = vec![0.60; 8];
+        energy.extend([0.72, 0.72, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40, 0.40]);
+        assert_eq!(find_drops(&bass, &energy), [8]);
+        let weak = drop_confidence(8, &bass, &energy, &[0]);
+        assert!(weak < 0.4, "sınırdaki aday: {weak}");
+        // Güven her zaman 0..1.
+        assert!((0.0..=1.0).contains(&strong) && (0.0..=1.0).contains(&weak));
     }
 
     #[test]

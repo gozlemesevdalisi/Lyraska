@@ -50,7 +50,8 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 
 - [x] İşaretleme aracı: şarkı çalarken beat (Boşluk) ve drop (D) işaretleme, doğruluk ölçümü (F-ölçüsü)
 - [x] Şarkı haritası analizi: beat (tempo ve vuruşlar), ölçü başı (4/4–3/4), bölümler, drop, enerji — gerçek
-      şarkılarda doğruluk işaretleme aracıyla ölçülecek
+      şarkılarda doğruluk işaretleme aracıyla ölçülecek. 0.0.36: her drop'un güveni (bas dönüşü, enerji artışı,
+      bölüm sınırı, sürme); drop sayacı yalnızca güveni yüksek droplar için
 - [x] Şarkı haritası önbelleği (0.0.20): analiz sonuçları (spektrum, beat, ölçü başı, bölümler, drop, enerji)
       SQLite'ta; anahtar yol + boyut + değiştirilme zamanı + analiz sürümü (algoritma değişince kendiliğinden yeniden
       hesaplanır). Kütüphane arka planda, düşük öncelikle analiz edilir (önce çalan, sonra sıradaki, sonra geri

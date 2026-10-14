@@ -54,7 +54,8 @@ pub struct PartVersions {
 /// Parçaların şu anki sürümleri.
 pub const VERSIONS: PartVersions = PartVersions {
     spectrum: 1,
-    rhythm: 1,
+    // 2: şarkı haritasında drop güveni.
+    rhythm: 2,
     loudness: 1,
     bass: 1,
 };
@@ -425,6 +426,7 @@ mod tests {
                     label: 0,
                 }],
                 drops: vec![],
+                drop_confidence: vec![],
                 energy: vec![0.1, 0.9, 0.4],
             }),
             loudness: Some(Loudness {

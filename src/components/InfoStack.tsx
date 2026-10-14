@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import type { PlaybackStatus, SongMap } from "../lib/backend";
 import { coverGradient } from "../lib/cover";
 import { formatBpm, formatLabel } from "../lib/format";
-import { dropCountdown, meterLabel } from "../lib/songMap";
+import { confidentDrops, dropCountdown, meterLabel } from "../lib/songMap";
 
 export interface UpNext {
   title: string;
@@ -25,7 +25,7 @@ export interface InfoStackProps {
 
 /**
  * Sahnenin sağ altındaki bilgi kartları: yaklaşan drop'un geri sayımı (Lyraska şarkıyı
- * önceden bildiği için), tempo ve ses biçimi, sıradaki şarkı.
+ * önceden bildiği için; yalnızca güveni yüksek droplar), tempo ve ses biçimi, sıradaki şarkı.
  */
 export function InfoStack({
   status,
@@ -38,7 +38,9 @@ export function InfoStack({
   const { track } = status;
   if (!track) return null;
   const countdown =
-    songMap && status.state !== "ended" ? dropCountdown(songMap.drops, positionSecs) : null;
+    songMap && status.state !== "ended"
+      ? dropCountdown(confidentDrops(songMap), positionSecs)
+      : null;
   const tempo = status.bpm
     ? [formatBpm(status.bpm), songMap ? meterLabel(songMap.meter) : null]
         .filter(Boolean)

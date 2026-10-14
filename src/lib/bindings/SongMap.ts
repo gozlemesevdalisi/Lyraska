@@ -22,6 +22,12 @@ downbeats: Array<number>, sections: Array<Section>,
  */
 drops: Array<number>, 
 /**
+ * Her drop'un güveni (0..1; `drops` ile aynı sırada). Bas ve enerji ne kadar belirgin
+ * döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Arayüz drop sayacını
+ * yalnızca güveni yüksek droplar için gösterir.
+ */
+dropConfidence: Array<number>, 
+/**
  * Saniyede bir enerji değeri (0..1).
  */
 energy: Array<number>, };

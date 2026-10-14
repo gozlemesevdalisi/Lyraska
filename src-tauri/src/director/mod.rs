@@ -342,6 +342,7 @@ mod tests {
                 },
             ],
             drops: vec![drop],
+            drop_confidence: vec![0.9],
             energy: vec![],
         };
         (BeatGrid { bpm, beats }, map)
