@@ -172,12 +172,18 @@ impl Library {
     }
 
     /// Analizi tamamen güncel (dosyası değişmemiş, hiçbir parçası eskimemiş) şarkı sayısı.
+    /// Analiz önbelleği okunamıyorsa 0: kütüphane önbelleksiz de çalışır.
     pub fn analyzed_count(&self) -> Result<usize, LibraryError> {
-        let n: i64 = self.conn.query_row(
-            &format!("SELECT COUNT(*) FROM tracks t {VALID_ANALYSIS_JOIN} WHERE {FULLY_CURRENT}"),
-            analysis_versions(),
-            |r| r.get(0),
-        )?;
+        let n: i64 = self
+            .conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM tracks t {VALID_ANALYSIS_JOIN} WHERE {FULLY_CURRENT}"
+                ),
+                analysis_versions(),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         Ok(n as usize)
     }
 
@@ -262,20 +268,46 @@ impl Library {
     /// sanatçı, albüm ya da dosya adında geçmelidir (sıra önemsiz, Türkçe karakter
     /// ve büyük/küçük harf duyarsız). Sıralama: sanatçı, albüm, disk, parça.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<TrackRow>, LibraryError> {
+        // Analiz önbelleği okunamıyorsa (ör. tablosu bozuk) şarkılar BPM'siz listelenir:
+        // kütüphane önbelleksiz de çalışır.
+        self.search_with(query, limit, true)
+            .or_else(|_| self.search_with(query, limit, false))
+    }
+
+    fn search_with(
+        &self,
+        query: &str,
+        limit: usize,
+        with_analysis: bool,
+    ) -> Result<Vec<TrackRow>, LibraryError> {
         let words: Vec<String> = search_key(query)
             .split_whitespace()
             .map(|w| format!("%{}%", escape_like(w)))
             .collect();
-        // ?1–?4 analiz parçalarının sürümleri; arama kelimeleri ?5'ten başlar.
-        let mut sql = format!(
-            "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
-                    t.track_number, t.duration_secs, t.codec, a.bpm,
-                    a.path IS NOT NULL AND {FULLY_CURRENT}
-             FROM tracks t LEFT {VALID_ANALYSIS_JOIN}"
-        );
+        // Analizle: ?1–?4 analiz parçalarının sürümleri, arama kelimeleri ?5'ten başlar.
+        let (mut sql, mut values): (String, Vec<rusqlite::types::Value>) = if with_analysis {
+            (
+                format!(
+                    "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
+                            t.track_number, t.duration_secs, t.codec, a.bpm,
+                            a.path IS NOT NULL AND {FULLY_CURRENT}
+                     FROM tracks t LEFT {VALID_ANALYSIS_JOIN}"
+                ),
+                analysis_versions().into_iter().map(Into::into).collect(),
+            )
+        } else {
+            (
+                "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
+                        t.track_number, t.duration_secs, t.codec, NULL, 0
+                 FROM tracks t"
+                    .to_owned(),
+                Vec::new(),
+            )
+        };
+        let first_word = values.len() + 1;
         for i in 0..words.len() {
             sql.push_str(if i == 0 { " WHERE " } else { " AND " });
-            sql.push_str(&format!("t.search LIKE ?{} ESCAPE '\\'", i + 5));
+            sql.push_str(&format!("t.search LIKE ?{} ESCAPE '\\'", i + first_word));
         }
         sql.push_str(&format!(
             " ORDER BY t.sort_key LIMIT {}",
@@ -283,8 +315,6 @@ impl Library {
         ));
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut values: Vec<rusqlite::types::Value> =
-            analysis_versions().into_iter().map(Into::into).collect();
         values.extend(words.into_iter().map(rusqlite::types::Value::from));
         let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
             Ok(TrackRow {
@@ -481,6 +511,21 @@ mod tests {
         // LIKE özel karakterleri kaçırılır: "_" her karakterle eşleşmemeli.
         assert_eq!(lib.search("z_d", 100).unwrap().len(), 1);
         assert!(lib.search("%", 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn analiz_onbellegi_okunamazsa_sarkilar_bpm_siz_listelenir() {
+        let lib = sample();
+        // Önbellek tablosu çalışırken bozuldu (açılışta onarılır; o zamana kadar).
+        lib.execute_for_test("DROP TRIGGER analyses_follow_tracks; DROP TABLE analyses;");
+        let all = lib.search("", 100).unwrap();
+        assert_eq!(all.len(), 4);
+        assert!(all.iter().all(|t| t.bpm.is_none() && !t.analyzed));
+        // Arama da çalışır (kelimeler ?1'den başlar).
+        let found = lib.search("şebnem kelime", 100).unwrap();
+        assert_eq!(found.len(), 2);
+        assert_eq!(lib.analyzed_count().unwrap(), 0);
+        assert_eq!(lib.track_count().unwrap(), 4);
     }
 
     #[test]
