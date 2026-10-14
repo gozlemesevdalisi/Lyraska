@@ -23,8 +23,9 @@ downbeats: Array<number>, sections: Array<Section>,
 drops: Array<number>, 
 /**
  * Her drop'un güveni (0..1; `drops` ile aynı sırada). Bas ve enerji ne kadar belirgin
- * döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Arayüz drop sayacını
- * yalnızca güveni yüksek droplar için gösterir.
+ * döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Güveni
+ * [`DROP_CONFIDENCE_MIN`]'in altındaki drop hiçbir yerde drop sayılmaz
+ * ([`SongMap::confident_drops`]).
  */
 dropConfidence: Array<number>, 
 /**

@@ -2,6 +2,7 @@ import type { MarkerControls } from "../hooks/useMarker";
 import { openAnnotationFolder } from "../lib/backend";
 import { formatTime } from "../lib/format";
 import { tapBpm } from "../lib/marks";
+import { confidentDrops } from "../lib/songMap";
 import { timelineLayout } from "../lib/timeline";
 
 export interface MarkerPanelProps {
@@ -16,10 +17,12 @@ export interface MarkerPanelProps {
 /** Şarkı haritası şeridi: bölümler (enerjiye göre koyuluk), programın ve sizin droplarınız. */
 function SongTimeline({ marker, durationSecs }: { marker: MarkerControls; durationSecs: number }) {
   const map = marker.songMap;
+  // Programın bulduğu droplar: güveni yeterli olanlar (sayaçta ve şeritte gösterilenler).
+  const programDrops = map ? confidentDrops(map) : [];
   const layout = timelineLayout({
     durationSecs,
     sections: map?.sections ?? [],
-    programDrops: map?.drops ?? [],
+    programDrops,
     markedDrops: marker.marks.drops,
   });
   if (!layout) return null;
@@ -30,7 +33,7 @@ function SongTimeline({ marker, durationSecs }: { marker: MarkerControls; durati
         viewBox={`0 0 ${W} 44`}
         preserveAspectRatio="none"
         role="img"
-        aria-label={`Şarkı haritası: ${map ? `${map.sections.length} bölüm, programın bulduğu ${map.drops.length} drop` : "analiz sürüyor"}, sizin ${marker.marks.drops.length} drop işaretiniz`}
+        aria-label={`Şarkı haritası: ${map ? `${map.sections.length} bölüm, programın bulduğu ${programDrops.length} drop` : "analiz sürüyor"}, sizin ${marker.marks.drops.length} drop işaretiniz`}
       >
         {layout.sections.map((s, i) => (
           <rect

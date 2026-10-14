@@ -1175,6 +1175,9 @@ describe("şarkı haritası ve bilgi kartları", () => {
     await waitFor(() => expect(container.querySelector(".songmap")).toBeInTheDocument());
     expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
     expect(screen.queryByText("Drop yaklaşıyor")).not.toBeInTheDocument();
+    // Şerit de onu drop diye işaretlemez: ekranın her yeri aynı droplara bakar.
+    expect(container.querySelector(".songmap__drop")).toBeNull();
+    expect(screen.queryByText("DROP")).not.toBeInTheDocument();
   });
 
   it("analiz bitmeden şerit düz çubuktur, sayaç görünmez", async () => {
@@ -1617,8 +1620,9 @@ describe("işaretleme", () => {
         { start: 0, end: 60, energy: 0.3, label: 0 },
         { start: 60, end: 225, energy: 0.9, label: 1 },
       ],
-      drops: [61.5],
-      dropConfidence: [0.9],
+      // 150. saniyedeki aday şüpheli: programın bulduğu drop sayılmaz.
+      drops: [61.5, 150],
+      dropConfidence: [0.9, 0.3],
       energy: [],
     };
     render(<App />);

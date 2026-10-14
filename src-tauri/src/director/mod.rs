@@ -94,6 +94,8 @@ pub struct Choreography {
     beats: Vec<f64>,
     bpm: f64,
     map: SongMap,
+    /// Güveni yeterli droplar: beklenti ve açılım yalnızca bunlarda (arayüzün gösterdikleri).
+    drops: Vec<f64>,
     /// Nabız olayları (saniye): normal ve güvenli mod.
     pulses: Vec<f64>,
     safe_pulses: Vec<f64>,
@@ -137,6 +139,7 @@ impl Choreography {
             beats: beats.beats.clone(),
             bpm: beats.bpm,
             map: map.clone(),
+            drops: map.confident_drops().collect(),
             pulses,
             safe_pulses,
             accents,
@@ -165,9 +168,8 @@ impl Choreography {
             mood += (f64::from(next.energy) - mood) * blend;
         }
 
-        // Beklenti ve boşalma: en yakın drop.
+        // Beklenti ve boşalma: en yakın (güveni yeterli) drop.
         let anticipation = self
-            .map
             .drops
             .iter()
             .filter(|&&d| d >= t)
@@ -177,7 +179,6 @@ impl Choreography {
             })
             .fold(0.0, f64::max);
         let release = self
-            .map
             .drops
             .iter()
             .filter(|&&d| d <= t)
@@ -413,6 +414,22 @@ mod tests {
         assert!(at(drop + 2.0 * bar).release < 0.25);
         assert_eq!(at(drop + 0.1).anticipation, 0.0);
         assert_eq!(at(drop - 1.0).release, 0.0);
+    }
+
+    #[test]
+    fn guveni_dusuk_dropta_beklenti_ve_bosalma_olmaz() {
+        // Arayüz bu "drop"u göstermiyor (sayaç, şerit): gökyüzü de boşuna gerilmemeli.
+        let (grid, mut map) = song(128.0, 24);
+        map.drop_confidence = vec![0.2];
+        let drop = map.drops[0];
+        let frames = (24.0 * 4.0 * 60.0 / 128.0 * 60.0) as usize + 120;
+        let bands: Vec<u8> = (0..frames * 32).map(|i| (i % 255) as u8).collect();
+        let onset: Vec<f32> = (0..frames).map(|i| (i % 30) as f32 / 30.0).collect();
+        let c = Choreography::build(&grid, &map, &bands, 32, &onset, 60.0);
+        for t in [drop - 4.0, drop - 0.01, drop, drop + 0.5, drop + 4.0] {
+            let rhythm = c.frame_at(t, false).rhythm;
+            assert_eq!((rhythm.anticipation, rhythm.release), (0.0, 0.0), "{t}");
+        }
     }
 
     #[test]

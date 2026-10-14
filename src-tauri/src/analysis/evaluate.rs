@@ -82,9 +82,10 @@ pub fn evaluate_file(
     let grid = spectrogram.beat_grid();
     let detected = grid.as_ref().map_or(&[][..], |g| &g.beats[..]);
     let mut result = evaluate_beats(detected, grid.as_ref().map(|g| g.bpm), marked);
-    let drops = spectrogram
+    // Programın bulduğu droplar: güveni yeterli olanlar (ekranda gösterilenler).
+    let drops: Vec<f64> = spectrogram
         .song_map()
-        .map(|m| m.drops.clone())
+        .map(|m| m.confident_drops().collect())
         .unwrap_or_default();
     result.drop_hits = drop_hits(&drops, marked_drops);
     result.marked_drops = marked_drops.len();

@@ -55,8 +55,9 @@ pub struct SongMap {
     /// Drop anları (saniye).
     pub drops: Vec<f64>,
     /// Her drop'un güveni (0..1; `drops` ile aynı sırada). Bas ve enerji ne kadar belirgin
-    /// döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Arayüz drop sayacını
-    /// yalnızca güveni yüksek droplar için gösterir.
+    /// döndü, bölüm sınırına denk geliyor mu, yüksek enerji sürüyor mu. Güveni
+    /// [`DROP_CONFIDENCE_MIN`]'in altındaki drop hiçbir yerde drop sayılmaz
+    /// ([`SongMap::confident_drops`]).
     #[serde(default)]
     pub drop_confidence: Vec<f32>,
     /// Saniyede bir enerji değeri (0..1).
@@ -75,7 +76,22 @@ pub struct Section {
     pub label: usize,
 }
 
+/// Drop sayılmak için gereken en düşük güven. Altındaki aday hiçbir yerde drop sayılmaz:
+/// sayaç, şarkı haritası şeridindeki işaret, Görsel Yönetmen'in beklentisi ve açılımı,
+/// doğruluk ölçümü. Arayüzdeki `DROP_CONFIDENCE_MIN` (`src/lib/songMap.ts`) ile aynıdır
+/// (testli).
+pub const DROP_CONFIDENCE_MIN: f32 = 0.6;
+
 impl SongMap {
+    /// Güveni yeterli droplar (artan sırada). Güveni kayıtlı olmayan drop sayılmaz.
+    pub fn confident_drops(&self) -> impl Iterator<Item = f64> + '_ {
+        self.drops
+            .iter()
+            .zip(&self.drop_confidence)
+            .filter(|(_, &confidence)| confidence >= DROP_CONFIDENCE_MIN)
+            .map(|(&drop, _)| drop)
+    }
+
     /// Verilen andaki enerji (0..1).
     pub fn energy_at(&self, seconds: f64) -> Option<f32> {
         if !seconds.is_finite() || seconds < 0.0 {
@@ -754,6 +770,40 @@ mod tests {
         assert!(weak < 0.4, "sınırdaki aday: {weak}");
         // Güven her zaman 0..1.
         assert!((0.0..=1.0).contains(&strong) && (0.0..=1.0).contains(&weak));
+    }
+
+    #[test]
+    fn yalnizca_guveni_yeterli_droplar_drop_sayilir() {
+        let map = SongMap {
+            meter: 4,
+            downbeat_phase: 0,
+            downbeats: vec![],
+            sections: vec![],
+            drops: vec![30.0, 60.0, 90.0, 120.0],
+            // Güveni eksik olan son drop da sayılmaz (eski kayıt).
+            drop_confidence: vec![0.2, 0.6, 0.95],
+            energy: vec![],
+        };
+        assert_eq!(map.confident_drops().collect::<Vec<_>>(), [60.0, 90.0]);
+    }
+
+    #[test]
+    fn drop_guven_esigi_arayuzdekiyle_ayni() {
+        // Arayüz (sayaç, şerit) ile Görsel Yönetmen aynı droplara bakmalı.
+        let source = include_str!("../../../src/lib/songMap.ts");
+        let line = source
+            .lines()
+            .find(|l| l.starts_with("export const DROP_CONFIDENCE_MIN ="))
+            .expect("songMap.ts'te DROP_CONFIDENCE_MIN yok");
+        let value: f32 = line
+            .split('=')
+            .nth(1)
+            .unwrap()
+            .trim()
+            .trim_end_matches(';')
+            .parse()
+            .unwrap();
+        assert_eq!(value, DROP_CONFIDENCE_MIN);
     }
 
     #[test]

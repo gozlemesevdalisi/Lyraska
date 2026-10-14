@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.38 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.39 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -177,12 +177,13 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
   değiştirin.
 - Neye bakılır: görüntü takılmadan akar (saniyede 60 kare); panel açıkken de kapalıyken de aynı.
 
-**D3. Drop sayacı (0.0.36)**
+**D3. Drop sayacı, şeritteki DROP ve gökyüzünün gerilmesi (0.0.36, 0.0.39)**
 
 - Nasıl: Belirgin drop'u olan bir elektronik şarkı çalın; drop'tan 30 saniye önce sağ altta "Drop yaklaşıyor"
   sayacı çıkmalı. Sonra drop'u olmayan sakin bir şarkı çalın.
-- Neye bakılır: sayaç gerçek drop'ta sıfıra iner; sakin şarkıda ve "drop olmayan" yerlerde sayaç çıkmaz. Yanlış yerde
-  çıkan ya da gerçek drop'ta çıkmayan sayacı şarkı adı ve saniyesiyle bildirin.
+- Neye bakılır: sayaç gerçek drop'ta sıfıra iner; alttaki şeritte o noktada "DROP" yazar; gökyüzü drop'a doğru
+  gerilir ve drop'ta açılır. Sakin şarkıda ve "drop olmayan" yerlerde üçü de olmaz (hepsi aynı droplara bakar).
+  Yanlış yerde çıkan ya da gerçek drop'ta çıkmayan drop'u şarkı adı ve saniyesiyle bildirin.
 
 **D4. Albüm kapakları (0.0.32)**
 
