@@ -214,9 +214,20 @@ mod tests {
         // sürdürmeli. Burada yedeğin yerinde boş olmayan bir klasör var.
         std::fs::remove_file(dir.join(OLD_LOG_NAME)).unwrap();
         std::fs::create_dir_all(dir.join(OLD_LOG_NAME).join("kilitli")).unwrap();
-        info(&"x".repeat(MAX_LOG_BYTES as usize));
+        let big = "x".repeat(MAX_LOG_BYTES as usize);
+        info(&big);
         info("yedeklenemese de yazılır");
+        // Günlük süreç genelinde tek: paralel testler (göç, oynatıcı) araya ya da ardına satır
+        // yazabilir (CI'da yazdılar). Bu yüzden son satıra değil, satırın büyük bloktan sonra
+        // aynı dosyada olmasına bakılır; ardından gelen bir satır da bunu bozmaz.
+        error("paralel bir testin satırı");
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.ends_with("yedeklenemese de yazılır\n"));
+        let block = text.find(&big).expect("büyük blok aynı dosyada kalır");
+        let line = text.find("yedeklenemese de yazılır\n");
+        let tail: Vec<&str> = text.lines().rev().take(3).collect();
+        assert!(
+            line.is_some_and(|at| at > block),
+            "yedek alınamayınca da aynı dosyaya yazılmaya devam eder: {tail:?}"
+        );
     }
 }
