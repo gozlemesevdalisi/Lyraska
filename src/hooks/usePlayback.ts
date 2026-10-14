@@ -64,11 +64,21 @@ export function usePlayback(extensions: string[]): PlaybackControls {
   const player = usePlayer(extensions, { onEnded });
   const { status } = player;
   const statusPath = status.track?.path ?? null;
-  // Boşluksuz geçişte çekirdek sıradakine kendisi geçer: sıra buna göre ilerlemiş sayılır.
-  const activeQueue = followQueue(queue, statusPath);
+  // Boşluksuz geçişte çekirdek sıradakine kendisi geçer: sıra buna göre ilerler. Yalnızca
+  // çalan şarkı değiştiği anda ve o ana kadar sıranın şarkısı çalıyorduysa: kullanıcı başka
+  // bir şarkı seçince o açılana kadar eski şarkı çalıyor görünür; sıra o arada kaymamalı
+  // (yoksa "Önceki"de sıra yeniden çalan şarkıya ilerler, #51).
+  const [seenPath, setSeenPath] = useState<string | null>(null);
+  let activeQueue = queue;
+  if (statusPath !== seenPath) {
+    if (seenPath !== null && seenPath === currentPath(queue)) {
+      activeQueue = followQueue(queue, statusPath);
+    }
+    setSeenPath(statusPath);
+  }
   // İlerleyen sıra saklanır: yoksa ikinci geçişte sıra eski yerinden bakar, çalan
-  // şarkıyı tanımaz ve çalma o şarkının sonunda durur. (Çizim sırasında güncellenir:
-  // sıra ilerlemediyse `followQueue` aynı nesneyi döndürür, döngü olmaz.)
+  // şarkıyı tanımaz ve çalma o şarkının sonunda durur. (Çizim sırasında güncellenir;
+  // yalnızca çalan şarkı değişince, döngü olmaz.)
   if (activeQueue !== queue) setQueue(activeQueue);
 
   // Sıradaki şarkı çekirdeğe önceden bildirilir: şarkı bitince ses kesilmeden ona geçer.
