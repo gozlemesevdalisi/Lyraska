@@ -163,6 +163,8 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Çalarken paneller her karede yeniden çizilmez                | Bileşen testi "çizim yükü" (kütüphane panelinin çizim sayısı)    |
 | Durum sorguları birikmez (yanıt gelmeden yenisi gitmez)      | `src/hooks/usePlayer.test.ts`                                    |
 | İşaretler ses aygıtının gecikmesi düşülerek kaydedilir       | `src/hooks/useMarker.test.ts`                                    |
+| Sahne saatleri saatlerce çalınca sıçramaz (katlanır)         | `src/lib/sceneClock.test.ts`, sky ve highway testleri            |
+| "Önceki" ve açılırken yapılan seçim çalma sırasını bozmaz    | `src/hooks/usePlayback.test.ts`                                  |
 | Etiket okuma kuralı değişince eski kayıtlar yeniden okunur   | `library::db` `TAGS_VERSION`, göç 4 ve tarama testleri           |
 
 ## Nasıl eklenir?

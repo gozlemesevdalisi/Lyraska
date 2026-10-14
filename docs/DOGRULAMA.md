@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.36 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.37 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -126,6 +126,13 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 - Nasıl: Bir saat boyunca kütüphaneden çalın (başka işler yaparken de olur).
 - Neye bakılır: ses hiç takılmaz; **Ayarlar → Sesin yolu** altında "Kesinti: 0".
+
+**B8. "Önceki" ve çalma sırası (#51, #52, 0.0.37)**
+
+- Nasıl: Kütüphanede bir albümün ikinci şarkısına çift tıklayın; ilk 3 saniye içinde **Önceki**'ye basın. Sonra bir
+  şarkı açılırken (hemen) başka bir şarkıya çift tıklayın.
+- Neye bakılır: "Önceki"de ilk şarkı çalar, altta "1 / …" yazar ve şarkı bitince ikinciye geçer. İkinci denemede son
+  çift tıkladığınız şarkı çalar ve sıra yazısı ona göredir.
 
 ## C. Ekolayzer ve bas
 
