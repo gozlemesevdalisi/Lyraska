@@ -4,8 +4,9 @@
 //! - [`TrackLevels`]: bir oturumdaki şarkıların ses akışındaki başlangıç karesi ve ölçülen
 //!   ses yüksekliği. Boşluksuz geçişte çözme iş parçacığı yeni şarkıyı ekler; analiz
 //!   bitince oynatıcı ölçümü yazar. Hepsi atomiktir: ses iş parçacığı hiç beklemez.
-//! - [`Leveler`]: ses iş parçacığında kazancı uygular. Şarkı değişince kazanç tam o
-//!   karede değişmeye başlar.
+//! - [`Leveler`]: ses iş parçacığında kazancı uygular. Şarkı değişince yeni şarkı ilk
+//!   karesinden kendi seviyesinde çalar: kısılacaksa kazanç sınırdan önceki 10 ms'de iner,
+//!   yükselecekse sınırdan sonraki 10 ms'de çıkar (doğrusal; tık olmaz).
 //!
 //! Ekolayzer bir bandı yükseltince ses taşmasın diye kısılması gerekir. Eşitleme şarkıyı
 //! hedefe getirirken çoğu zaman yer açar (yüksek kaydedilmiş şarkılar kısılır): ön kazanç
@@ -24,9 +25,10 @@ use super::Sample;
 const ASSUMED_LUFS: f64 = -10.0;
 /// Aynı anda tutulan şarkı sayısı (çalan, sıradakiler; çözme en fazla 2 sn önden gider).
 const SLOTS: usize = 8;
-/// Kazancın yaklaşma süreleri (saniye): şarkı sınırında kısa (tık olmasın), ölçüm sonradan
-/// gelince ya da ayar değişince uzun (fark edilmesin).
-const SWITCH_SECONDS: f64 = 0.1;
+/// Şarkı sınırındaki doğrusal geçiş (saniye): tık olmayacak kadar uzun, yeni şarkının başını
+/// yanlış seviyede çalmayacak kadar kısa.
+const BOUNDARY_RAMP_SECONDS: f64 = 0.01;
+/// Ölçüm sonradan gelince ya da ayar değişince kazancın yaklaşma süresi (fark edilmesin).
 const UPDATE_SECONDS: f64 = 1.5;
 /// Ekolayzerin koruma kısması: taşmayı önlemek için hızlı iner, yavaş kalkar.
 const PROTECT_ATTACK_SECONDS: f64 = 0.01;
@@ -266,12 +268,20 @@ pub struct Leveler {
     /// Ekolayzerin koruma kısması: şu anki ve hedef (doğrusal, ≤ 1).
     protect: f64,
     protect_target: f64,
-    switch_coef: f64,
+    /// Sıradaki şarkının (varsa) eşitleme kazancı ve koruması: sınırda bunlara geçilir.
+    next_target: f64,
+    next_protect: f64,
     update_coef: f64,
     attack_coef: f64,
     release_coef: f64,
-    /// Şarkı yeni değişti: kazanç kısa sürede hedefe gider.
-    switching: bool,
+    /// Şarkı sınırındaki doğrusal geçişin uzunluğu ve sınırdan sonra kalan karesi.
+    ramp_frames: u64,
+    ramp_left: u64,
+    /// Kazanç sınırdan önce iniyor (sınıra tam `ramp_frames` kala başladı).
+    ramping_down: bool,
+    /// Henüz hiç tur başlamadı: koruma ilk turda doğrudan hedefinden başlar (oturumun ilk
+    /// karesi korumasız çalmasın).
+    fresh: bool,
     /// Çalan şarkının boşluğu (dB).
     headroom_db: f64,
     /// Son bildirilen ekolayzer ve bas yükseltmesi (şarkı sınırında yeniden kullanılır).
@@ -285,6 +295,16 @@ fn coefficient(seconds: f64, sample_rate: f64) -> f64 {
 
 fn db_to_linear(db: f64) -> f64 {
     10f64.powf(db / 20.0)
+}
+
+fn linear_to_db(gain: f64) -> f64 {
+    20.0 * gain.max(1e-9).log10()
+}
+
+/// Ekolayzerin ve bas motorunun yükseltmesi boşluğu aşıyorsa koruma kısması (doğrusal, ≤ 1).
+fn protection(level: &TrackLevel, headroom_db: f64, eq_db: f64, bass: BassBoost) -> f64 {
+    let boost_db = eq_db + bass.rise_db(level.bass_peaks.as_ref());
+    db_to_linear(-(boost_db - headroom_db).max(0.0))
 }
 
 impl Leveler {
@@ -301,11 +321,15 @@ impl Leveler {
             target: gain,
             protect: 1.0,
             protect_target: 1.0,
-            switch_coef: coefficient(SWITCH_SECONDS, rate),
+            next_target: gain,
+            next_protect: 1.0,
             update_coef: coefficient(UPDATE_SECONDS, rate),
             attack_coef: coefficient(PROTECT_ATTACK_SECONDS, rate),
             release_coef: coefficient(PROTECT_RELEASE_SECONDS, rate),
-            switching: false,
+            ramp_frames: ((BOUNDARY_RAMP_SECONDS * rate).round() as u64).max(1),
+            ramp_left: 0,
+            ramping_down: false,
+            fresh: true,
             headroom_db: level.headroom_db,
             eq_db: 0.0,
             bass: BassBoost::default(),
@@ -328,30 +352,74 @@ impl Leveler {
         let level = levels.level(self.track, normalize);
         self.target = db_to_linear(level.gain_db);
         self.headroom_db = level.headroom_db;
-        let boost_db = eq_db + bass.rise_db(level.bass_peaks.as_ref());
-        self.protect_target = db_to_linear(-(boost_db - self.headroom_db).max(0.0));
+        // Kazanç hedefine inerken (eşitleme yeni açıldı, ölçüm sonradan geldi) boşluk henüz
+        // açılmadı: koruma o anki kazancın boşluğuna göre. Yoksa koruma kazançtan önce kalkar,
+        // ekolayzerli ses 0 dBFS'yi aşar (#55).
+        let falling_db = (level.gain_db - linear_to_db(self.gain)).min(0.0);
+        self.protect_target = protection(
+            &level,
+            (level.headroom_db + falling_db).max(0.0),
+            eq_db,
+            bass,
+        );
+        if self.fresh {
+            self.protect = self.protect_target;
+            self.fresh = false;
+        }
+        if self.next_start.is_some() {
+            let next = levels.level(self.track + 1, normalize);
+            self.next_target = db_to_linear(next.gain_db);
+            self.next_protect = protection(&next, next.headroom_db, eq_db, bass);
+        }
     }
 
     /// Bir kare için toplam kazanç (eşitleme × koruma); her kare bir kez çağrılır.
     #[inline]
     pub fn next_gain(&mut self, levels: &TrackLevels, normalize: bool) -> Sample {
         if self.next_start.is_some_and(|start| self.frame >= start) {
-            // Boşluksuz geçiş: yeni şarkının ilk karesi.
+            // Boşluksuz geçiş: yeni şarkının ilk karesi. Daha kısık çalacaksa kazanç sınırdan
+            // önce inmiştir (aşağıda); daha yüksek çalacaksa (ya da sınır inişe yetecek kadar
+            // önce bilinmediyse) şimdi kısa bir doğrusal geçişle yeni seviyeye gider.
             self.track += 1;
-            self.switching = true;
+            self.ramping_down = false;
             self.begin_block(levels, normalize, self.eq_db, self.bass);
+            let total = self.gain * self.protect;
+            let target = self.target * self.protect_target;
+            self.ramp_left = if (total - target).abs() > 1e-12 {
+                self.ramp_frames
+            } else {
+                0
+            };
         }
+        let frame = self.frame;
         self.frame += 1;
 
-        let coef = if self.switching {
-            self.switch_coef
-        } else {
-            self.update_coef
-        };
-        self.gain = approach(self.gain, self.target, coef);
-        if self.gain == self.target {
-            self.switching = false;
+        // Sınıra tam 10 ms kalmışken yeni şarkı daha kısık çalacaksa kazanç doğrusal olarak iner
+        // ve tam sınırda yeni seviyeye varır: yeni şarkının ilk karesi fazla yüksek çalmaz (#55).
+        // (Sınır daha geç öğrenildiyse iniş birkaç kareye sıkışıp tık üretmesin diye yapılmaz.)
+        if let Some(start) = self.next_start {
+            let left = start.saturating_sub(frame);
+            if left == self.ramp_frames
+                && self.next_target * self.next_protect < self.gain * self.protect
+            {
+                self.ramping_down = true;
+            }
+            if self.ramping_down && left > 0 {
+                let n = left as f64;
+                self.gain += (self.next_target - self.gain) / n;
+                self.protect += (self.next_protect - self.protect) / n;
+                return self.gain * self.protect;
+            }
         }
+        if self.ramp_left > 0 {
+            let n = self.ramp_left as f64;
+            self.gain += (self.target - self.gain) / n;
+            self.protect += (self.protect_target - self.protect) / n;
+            self.ramp_left -= 1;
+            return self.gain * self.protect;
+        }
+
+        self.gain = approach(self.gain, self.target, self.update_coef);
         let coef = if self.protect_target < self.protect {
             self.attack_coef
         } else {
@@ -481,7 +549,119 @@ mod tests {
         );
         assert!(gains[1000] > -6.0, "sınırda değişmeye başlar");
         assert!(gains[1000] < -5.0, "tık olmasın diye kısa bir geçişle");
-        assert!((gains.last().unwrap() - 6.0).abs() < 0.01, "sonra +6");
+        // Yeni şarkı 10 ms içinde kendi seviyesinde (eskiden 0,1 sn'lik yaklaşma).
+        let ramp = RATE as usize / 100;
+        assert!(
+            gains[1000 + ramp..].iter().all(|&g| (g - 6.0).abs() < 1e-9),
+            "10 ms sonra +6"
+        );
+    }
+
+    /// Bir oturumu ses iş parçacığı gibi çalar: her 10 ms'lik turun başında hedefler güncellenir.
+    fn render_blocks(
+        leveler: &mut Leveler,
+        levels: &TrackLevels,
+        frames: usize,
+        normalize: bool,
+        boost: f64,
+    ) -> Vec<f64> {
+        let block = RATE as usize / 100;
+        let mut gains = Vec::with_capacity(frames);
+        while gains.len() < frames {
+            leveler.begin_block(levels, normalize, boost, BassBoost::default());
+            for _ in 0..block.min(frames - gains.len()) {
+                gains.push(leveler.next_gain(levels, normalize));
+            }
+        }
+        gains
+    }
+
+    #[test]
+    fn sessizden_yuksege_geciste_yeni_sarki_fazla_yuksek_baslamaz() {
+        // Sessiz kayıt (+6 dB) bitince yüksek kayıt (−6 dB) başlar (#55): yeni şarkının ilk
+        // karesi bile hedefinin üstünde çalmamalı (eskiden ~50 ms 9–12 dB fazla yüksekti).
+        let levels = TrackLevels::new();
+        levels.set_loudness(0, Some(quiet()));
+        let mut leveler = Leveler::new(RATE, &levels, true);
+        let boundary = RATE as usize;
+        levels.begin_track(boundary as u64);
+        levels.set_loudness(1, Some(loud()));
+        let gains = render_blocks(&mut leveler, &levels, 2 * RATE as usize, true, 0.0);
+        let ramp = RATE as usize / 100;
+        assert!(
+            gains[..boundary - ramp]
+                .iter()
+                .all(|&g| (to_db(g) - 6.0).abs() < 1e-9),
+            "sınıra 10 ms kalana kadar +6"
+        );
+        assert!(
+            gains[boundary..].iter().all(|&g| to_db(g) <= -6.0 + 1e-9),
+            "yeni şarkı ilk karesinden hedefinde: {}",
+            to_db(gains[boundary])
+        );
+        // Geçiş tık üretmez: kare başına değişim, 10 ms'lik doğrusal inişten büyük değil.
+        let step = (db_to_linear(6.0) - db_to_linear(-6.0)) / ramp as f64;
+        let worst = gains
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(worst <= step * (1.0 + 1e-9), "{worst} > {step}");
+    }
+
+    #[test]
+    fn sinir_gec_ogrenilirse_gecis_sinirdan_sonra_ve_tiksiz() {
+        // Sıradaki şarkı sınıra 2 ms kala eklendi (ör. tampon neredeyse boşken): iniş birkaç
+        // kareye sıkışmaz; yeni şarkı ilk 10 ms'de kendi seviyesine iner.
+        let levels = TrackLevels::new();
+        levels.set_loudness(0, Some(quiet()));
+        let mut leveler = Leveler::new(RATE, &levels, true);
+        let boundary = RATE as usize;
+        let ramp = RATE as usize / 100;
+        let mut gains = render_blocks(&mut leveler, &levels, boundary - ramp / 5, true, 0.0);
+        levels.begin_track(boundary as u64);
+        levels.set_loudness(1, Some(loud()));
+        gains.extend(render_blocks(
+            &mut leveler,
+            &levels,
+            RATE as usize,
+            true,
+            0.0,
+        ));
+        let step = (db_to_linear(6.0) - db_to_linear(-6.0)) / ramp as f64;
+        let worst = gains
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(worst <= step * (1.0 + 1e-9), "{worst} > {step}");
+        assert!(gains[boundary + ramp..]
+            .iter()
+            .all(|&g| (to_db(g) + 6.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn esitleme_acilinca_koruma_kazanctan_once_kalkmaz() {
+        // 0 dBTP'lik yüksek kayıt, ekolayzer +6 dB (#55). Eşitleme kapalıyken koruma 6 dB
+        // kısar. Eşitleme açılınca kazanç 1,5 sn'de −6 dB'ye iner; koruma ondan önce kalkarsa
+        // ses 0 dBFS'yi aşar (eskiden ~0,7 sn sonra +3 dBFS). Oturumun ilk karesi de korumalı
+        // (eskiden koruma 0 dB'den başlayıp 10 ms'de iniyordu: her sarmada +6 dBFS).
+        let levels = TrackLevels::new();
+        levels.set_loudness(0, Some(loud()));
+        let mut leveler = Leveler::new(RATE, &levels, false);
+        let mut gains = render_blocks(&mut leveler, &levels, RATE as usize, false, 6.0);
+        gains.extend(render_blocks(
+            &mut leveler,
+            &levels,
+            10 * RATE as usize,
+            true,
+            6.0,
+        ));
+        let worst = gains
+            .iter()
+            .map(|&g| 6.0 + to_db(g))
+            .fold(f64::MIN, f64::max);
+        assert!(worst <= 0.05, "ekolayzerli tepe {worst:.2} dBFS");
+        // Sonunda: −6 dB eşitleme, boşluk yetiyor, koruma kalktı.
+        assert!((to_db(*gains.last().unwrap()) + 6.0).abs() < 0.01);
     }
 
     #[test]
