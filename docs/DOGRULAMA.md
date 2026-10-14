@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.37 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.38 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -94,21 +94,24 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Neye bakılır: ses doğal; cızırtı, boğukluk, hız/ton farkı, kesilme yok. Gariplik varsa türünü ve "Sesin yolu"
   satırında yazanı bildirin.
 
-**B2. Ses yüksekliği eşitleme (0.0.28)**
+**B2. Ses yüksekliği eşitleme (0.0.28; geçiş #55, 0.0.38)**
 
 - Nasıl: Çok yüksek kaydedilmiş bir şarkı (yeni bir pop) ile sessiz kaydedilmiş bir şarkıyı (eski bir kayıt)
-  arka arkaya çalın. **Ayarlar → Ses yüksekliği eşitleme**'yi kapatıp açarak karşılaştırın.
-- Neye bakılır: açıkken iki şarkı yaklaşık aynı yükseklikte çalar; geçişte ani sıçrama olmaz.
+  kütüphaneden **sırayla** çalın: önce sessiz olan, sonra yüksek olan. **Ayarlar → Ses yüksekliği eşitleme**'yi
+  kapatıp açarak karşılaştırın.
+- Neye bakılır: açıkken iki şarkı yaklaşık aynı yükseklikte çalar. Yüksek şarkının ilk anı patlamaz ya da ezik
+  çalmaz; geçişte ani sıçrama olmaz.
 
 **B3. Duraklatma, sarma ve şarkı değiştirirken "tık" yok (0.0.23)**
 
 - Nasıl: Çalarken **Boşluk** ile duraklatıp devam edin; ← → ile sarın; şeride tıklayın; sonraki şarkıya geçin.
 - Neye bakılır: hiçbirinde "tık" ya da "pat" sesi yok; ses yumuşakça kısılıp açılıyor.
 
-**B4. Boşluksuz geçiş**
+**B4. Boşluksuz geçiş (tık düzeltmesi #54, 0.0.38)**
 
-- Nasıl: Şarkıların birbirine bağlı olduğu bir albüm (canlı kayıt ya da kesintisiz bir albüm) çalın.
-- Neye bakılır: şarkılar arasında boşluk ya da tık yok.
+- Nasıl: Şarkıların birbirine bağlı olduğu bir albüm (canlı kayıt ya da kesintisiz bir albüm) çalın. CD'den
+  alınmış (44,1 kHz) bir albüm en iyisi: Windows'taki çoğu aygıt 48 kHz'te çalışır, o zaman şarkı dönüştürülür.
+- Neye bakılır: şarkılar arasında boşluk ya da tık yok; ses sınırda kesintisiz sürer.
 
 **B5. Kulaklık çıkarılınca (0.0.23)**
 

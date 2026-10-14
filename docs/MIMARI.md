@@ -139,6 +139,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Bas motorunun korumaya bildirdiği pay tepeleri karşılar      | `audio::bass` testi `yukseltme_payi_tepeleri_karsilar`           |
 | Ölçülen bas tepeleri gerçek artışı karşılar, gereksiz kısmaz | `audio::bass` testi `olculen_bas_tepeleri_…`                     |
 | Vuruş ilk anı güçlendirir; sürekli basa ve ortaya dokunmaz   | `audio::punch` testleri, `audio::bass` testi `vurus_…`           |
+| Boşluksuz geçişte yeniden örneklenen dalga sınırda kopmaz    | `audio::player` testi `bosluksuz_geciste_yeniden_…`              |
+| Şarkı sınırında yeni şarkı ilk karesinden kendi seviyesinde  | `audio::normalize` testi `sessizden_yuksege_…`                   |
+| Ekolayzer koruması kazançtan önce kalkmaz, ilk kare korumalı | `audio::normalize` testi `esitleme_acilinca_…`                   |
 | Sahne denetiminin sahte çekirdeği arayüzün tipleriyle aynı   | `src/lib/sceneCheck.test.ts` (üretilen tipe bağlı)               |
 | Bir panelin ya da sahnenin hatası pencereyi karartmaz        | `ErrorBoundary` testleri, bileşen testi "hata sınırları"         |
 | Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır         | `audio::resample` testleri                                       |

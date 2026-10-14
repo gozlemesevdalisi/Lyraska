@@ -471,10 +471,13 @@ impl PeqProcessor {
     pub fn new(control: Arc<PeqControl>, channels: usize, sample_rate: u32) -> Self {
         let rate = f64::from(sample_rate.max(1));
         let channels = channels.max(1);
+        // Sürüm tasarımdan önce okunur: profil tam arada değişirse ilk turda yeniden tasarlanır
+        // (sonra okunsaydı değişiklik bu oturum boyunca uygulanmazdı; `EqProcessor` da böyle).
+        let seen_version = control.version();
         let mut current = Bank::new(channels);
         control.design(rate, &mut current);
         Self {
-            seen_version: control.version(),
+            seen_version,
             control,
             sample_rate: rate,
             current,
