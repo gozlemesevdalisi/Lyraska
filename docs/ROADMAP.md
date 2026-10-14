@@ -73,6 +73,23 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       adı; şarkı haritası şeridi (bölümler gökyüzünün o bölümdeki renginde, enerji, drop'lar); drop geri sayımı;
       sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–4 tuşları
       sahne seçer; Inter yazı tipi (OFL-1.1)
+- [ ] **Ton tespiti (Camelot)** (plan, 9 Ekim 2026): şarkının tonu (ör. "A minör") ve Camelot kodu (ör. 8A), güven
+      değeriyle. Kütüphanede sütun; Akıllı Geçiş (Faz 6) ve Otomatik DJ (Faz 7) ton uyumunu buradan alır.
+  - Yöntem: kroma (12 perde sınıfı) özellikleri + ton profilleriyle karşılaştırma (Krumhansl–Kessler / Temperley
+    gibi klasik, lisans gerektirmeyen yöntem). Yapay zekâ modeli gerekirse önce kod ve ağırlık lisansı doğrulanır.
+  - Kroma, saklanan 32 bant kareden çıkmaz (perde çözünürlüğü yetmez): yeni bir analiz parçası olur, kendi sürümüyle
+    (`analysis::cache::VERSIONS`). Eklenince kütüphane bir kez çözülür; spektrum ve ritim yeniden hesaplanmaz.
+  - Güven düşükse (atonal, perküsyon, ton değiştiren şarkı) ton gösterilmez; şarkı içinde ton değişiyorsa bölüm
+    bölüm.
+  - Kalite hedefi: işaretli şarkılarda ton isabeti (aynı ton ya da Camelot komşusu) ≥ %80; işaretleme aracına ton
+    girişi eklenir.
+- [ ] **Aksak ölçü desteği** (plan, 9 Ekim 2026): 9/8, 7/8, 5/4 ve Türk müziğinin aksak usulleri (ör. 9/8 =
+      2+2+2+3, 7/8 = 2+2+3). Şu an yalnızca 4/4 ve 3/4 seçiliyor.
+  - Ölçü seçimi her ölçü ve gruplama için puanlanır; vuruşlar eşit aralıklı değilse (aksak) gruplar ayrı tutulur.
+  - **Güven düşükse ölçü vurgusu kapanır:** görseller ölçü başını vurgulamaz (lamba, dalga), yalnızca vuruşa tepki
+    verir. Yanlış ölçü vurgusu, hiç vurgu olmamasından kötüdür.
+  - Yalnızca ritim parçasının sürümü artar: kütüphane çözülmeden yenilenir.
+  - Kalite hedefi: işaretli aksak şarkılarda ölçü başı isabeti; test verisi sentetik 9/8 ve 7/8 davul kayıtları.
 - [ ] "Gece sürüşü" nostalji modu (proje sahibi onayladı, A'dan sonra): ön camdan gece otoyolu, torpidoda
       özgün tasarım teyp — parlayan nokta matris ekran, ışık halkalı düğmeler, arkadan aydınlatmalı VU
       ibreleri. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz
@@ -119,6 +136,19 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [ ] Kinetik şarkı sözleri
 - [ ] Preset sistemi
 - [ ] Kod imzalama (Windows "bilinmeyen yayımcı" uyarısının kalkması)
+- [ ] **Açık şarkı haritası formatı** (plan, 9 Ekim 2026): Lyraska'nın şarkı haritası (vuruşlar, ölçü başları,
+      bölümler, droplar ve güvenleri, enerji, ton) belgelenmiş, sürümlü bir JSON biçiminde dışa ve içe aktarılır.
+  - **Ses ve şarkı sözü içermez** (telif): yalnızca zamanlar ve sayılar. İşaretleme dosyaları gibi.
+  - **Ses parmak iziyle eşleşir:** dosya adı ya da etiket değil, sesin kendisinden çıkarılan kısa bir parmak izi.
+    Aynı kaydın farklı biçimleri (MP3/FLAC) ve farklı adları eşleşir; farklı kayıtlar (canlı, remaster) eşleşmez.
+    Parmak izi programda, çevrimdışı hesaplanır. Yöntem eklenmeden önce lisansı doğrulanır (Chromaprint
+    LGPL-2.1; başka bir uygulama da olabilir).
+  - **Topluluk paylaşır:** insanların düzelttiği haritalar (ör. işaretleme aracıyla) dosya olarak paylaşılır; içe
+    aktarılan harita programın analizinin önüne geçer. İsteğe bağlı bir topluluk deposu ileride düşünülebilir;
+    program **hiçbir zaman internete bağlanmak zorunda değildir**, telemetri yoktur. Paylaşılan harita ses
+    içermediği için kayıt sahibinin hakkına dokunmaz.
+  - Biçim belgesi (`docs/`) ve şema sürümü; eski sürümün dosyaları okunur. Kötü niyetli dosyaya karşı sınırlar
+    (boyut, değer aralıkları) ve testler.
 
 ## Faz 5 — Büyüme (v1.0 sonrası)
 
@@ -146,6 +176,23 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [ ] Görsel Yönetmen geçişi de koreografe eder
 - Kalite hedefi: üst üste binme boyunca iki şarkının vuruşları arasındaki fark en fazla 10 ms; şüphede düz
   geçişe düşülür
+
+## Faz 7 — Otomatik DJ (v1.0 sonrası; plan, 9 Ekim 2026)
+
+Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçişi Akıllı Geçiş yapar.
+
+- [ ] Kullanıcı bir başlangıç (şarkı, albüm, çalma listesi ya da kütüphanenin bir kısmı) ve isteğe bağlı süre ya da
+      ruh hâli seçer; program sıradaki şarkıyı seçmeye başlar.
+- [ ] Seçim ölçütleri, şarkı haritasından (çevrimdışı):
+  - **BPM:** sıradaki şarkının temposu yakın (varsayılan en fazla %6 fark; yarım/çift tempo da sayılır).
+  - **Ton:** Camelot tekerleğinde aynı, komşu ya da paralel ton (Faz 2 ton tespiti; güveni düşük ton hesaba katılmaz).
+  - **Enerji eğrisi:** set boyunca ısınma → zirve → iniş; ani enerji düşüşü ve tekrar eden sanatçı önlenir.
+- [ ] Açıklanabilir: her seçimin nedeni görünür ("124 BPM, 8A → 9A, enerji yükseliyor"); kullanıcı şarkıyı
+      atlatabilir, kilitleyebilir, sıradakini değiştirebilir.
+- [ ] Geçişler Faz 6'nın güvenlik kurallarıyla: şüphede düz geçiş. Drop güveni düşük şarkıda drop'a göre hizalama
+      yapılmaz.
+- [ ] Kalite hedefi: proje sahibinin dinleme denemesinde "elle seçmiş gibi" bulunan geçiş oranı; ölçütler ve
+      ağırlıklar ayarlanabilir, testlerde sentetik kütüphaneyle sınanır.
 
 ## Bekleyen kararlar (proje sahibinde)
 
