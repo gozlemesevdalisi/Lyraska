@@ -87,6 +87,22 @@ impl Converter {
         }
     }
 
+    /// Sıradaki şarkı bu dönüştürücüden kesintisiz geçebilir mi (aynı hız ve kanal sayısı)?
+    /// Geçebiliyorsa iki şarkı tek bir akış gibi dönüştürülür: sınırda dalga kopmaz.
+    pub fn continues(&self, rate_in: u32, channels_in: usize) -> bool {
+        self.rate_in == rate_in && self.channels_in == channels_in.max(1)
+    }
+
+    /// Şimdiye kadar verilen girişin aygıt hızındaki uzunluğu (kare, dönüştürücünün ilk
+    /// çıkış karesinden). Sıradaki şarkı aynı dönüştürücüden geçerse çıkışta tam bu karede
+    /// başlar (yeniden örnekleyicinin gecikmesi başta atıldığı için çıkış girişle hizalıdır).
+    pub fn input_end_frame(&self) -> u64 {
+        if self.resampler.is_none() {
+            return self.frames_in;
+        }
+        (self.frames_in as f64 * f64::from(self.rate_out) / f64::from(self.rate_in)).round() as u64
+    }
+
     /// Bir dilim şarkı örneğini dönüştürür; hazır çıktıyı döndürür (boş olabilir).
     pub fn process(&mut self, chunk: &[Sample]) -> Result<&[Sample], AudioError> {
         self.output.clear();

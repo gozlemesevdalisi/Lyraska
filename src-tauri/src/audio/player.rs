@@ -1091,6 +1091,12 @@ fn decode_loop(
     let mut finished = false;
     let mut decoder = decoder;
     let mut converter = converter;
+    // Dönüştürücünün ilk çıkış karesinin akıştaki yeri: aynı dönüştürücüden geçen sıradaki
+    // şarkının başladığı kare buradan hesaplanır.
+    let mut converter_origin = 0u64;
+    // Hızı ya da kanal sayısı farklı sıradaki şarkı: önceki şarkının kuyruğu yazılınca
+    // kendi dönüştürücüsüyle başlar.
+    let mut waiting: Option<Decoder> = None;
 
     loop {
         if shared.stop.load(Ordering::Acquire) {
@@ -1105,26 +1111,49 @@ fn decode_loop(
         }
         if pos == pending.len() {
             if finished {
-                // Boşluksuz geçiş: sıradaki şarkı aynı akışa eklenir. Önceki şarkının
-                // son örneği tampona yazıldı; yenisinin ilki hemen ardından gelir.
-                match open_next(shared, spec, (pushed / channels) as u64) {
-                    Some((next_decoder, next_converter)) => {
-                        decoder = next_decoder;
-                        converter = next_converter;
-                        finished = false;
-                        continue;
-                    }
-                    None => break,
-                }
+                // Önceki şarkının son örneği tampona yazıldı. Hızı ya da kanalı farklı
+                // sıradaki şarkı kendi dönüştürücüsüyle hemen ardından gelir.
+                let Some(next) = waiting.take() else { break };
+                let first = (pushed / channels) as u64;
+                let info = next.info().clone();
+                let Ok(next_converter) = Converter::new(
+                    info.sample_rate,
+                    info.channels,
+                    spec.sample_rate,
+                    spec.channels,
+                ) else {
+                    break;
+                };
+                attach_next(shared, spec, info, first);
+                decoder = next;
+                converter = next_converter;
+                converter_origin = first;
+                finished = false;
+                continue;
             }
             // Çözülen dilim aygıt biçimine çevrilir; şarkı bitince dönüştürücünün
             // içinde kalanlar da alınır.
             let converted = match decoder.next_chunk() {
                 Ok(Some(chunk)) => converter.process(chunk),
-                Ok(None) => {
-                    finished = true;
-                    converter.finish()
-                }
+                Ok(None) => match open_next(shared, spec) {
+                    // Boşluksuz geçiş, aynı hız ve kanal sayısı: sıradaki şarkı aynı
+                    // dönüştürücüden geçer, iki şarkı tek bir akış gibi dönüştürülür ve
+                    // sınırda dalga kopmaz (#54). Önceki şarkının kuyruğu dönüştürücüde
+                    // bekler; yenisi tam onun bittiği karede başlar.
+                    Some(next)
+                        if converter.continues(next.info().sample_rate, next.info().channels) =>
+                    {
+                        let first = converter_origin + converter.input_end_frame();
+                        attach_next(shared, spec, next.info().clone(), first);
+                        decoder = next;
+                        continue;
+                    }
+                    next => {
+                        waiting = next;
+                        finished = true;
+                        converter.finish()
+                    }
+                },
                 Err(error) => {
                     shared.fail(error.to_string());
                     break;
@@ -1165,16 +1194,12 @@ fn decode_loop(
     shared.decode_done.store(true, Ordering::Release);
 }
 
-/// Sıradaki şarkıyı açar ve oturuma ekler. Sıra yoksa, açılamazsa ya da kanal
-/// sayısı akışa uymuyorsa `None` (şarkı normal biçimde biter).
-fn open_next(
-    shared: &SharedState,
-    spec: OutputSpec,
-    first_output_frame: u64,
-) -> Option<(Decoder, Converter)> {
+/// Sıradaki şarkıyı açar. Sıra yoksa, açılamazsa ya da akışa uymuyorsa `None` (şarkı
+/// normal biçimde biter).
+fn open_next(shared: &SharedState, spec: OutputSpec) -> Option<Decoder> {
     let path = shared.take_next()?;
     let decoder = Decoder::open(&path).ok()?;
-    let info = decoder.info().clone();
+    let info = decoder.info();
     if Converter::output_channels(info.channels) != spec.channels {
         return None;
     }
@@ -1183,13 +1208,11 @@ fn open_next(
     if matches!(spec.mode, OutputMode::Exclusive(_)) && info.sample_rate != spec.sample_rate {
         return None;
     }
-    let converter = Converter::new(
-        info.sample_rate,
-        info.channels,
-        spec.sample_rate,
-        spec.channels,
-    )
-    .ok()?;
+    Some(decoder)
+}
+
+/// Sıradaki şarkıyı oturuma ekler: çıkış akışında `first_output_frame` karesinde başlar.
+fn attach_next(shared: &SharedState, spec: OutputSpec, info: TrackInfo, first_output_frame: u64) {
     shared.push_segment(Segment {
         rate_ratio: f64::from(info.sample_rate) / f64::from(spec.sample_rate),
         info,
@@ -1198,7 +1221,6 @@ fn open_next(
     });
     // Eşitleme kazancı tam bu karede yeni şarkınınkine geçer (ölçümünü oynatıcı yazar).
     shared.controls.levels.begin_track(first_output_frame);
-    Some((decoder, converter))
 }
 
 fn wait_for_fade_out(shared: &SharedState, timeout: Duration) {
@@ -1434,6 +1456,69 @@ mod tests {
         let (track, seconds) = shared.now_playing().unwrap();
         assert_eq!(track.path, b);
         assert!((seconds - 0.05).abs() < 1e-9, "{seconds}");
+        std::fs::remove_file(a).ok();
+        std::fs::remove_file(b).ok();
+    }
+
+    #[test]
+    fn bosluksuz_geciste_yeniden_orneklenen_dalga_sinirda_kopmaz() {
+        // 44,1 kHz kesintisiz albüm, 48 kHz aygıt (#54): iki şarkıya bölünmüş tek bir dalga.
+        // Çıkış, aynı örneklerin tek bir dönüştürücüden geçmiş halinin aynısı olmalı;
+        // şarkı başına ayrı dönüştürücü sınırda dalgayı koparıyor, tık duyuluyordu.
+        let wave = |frame: usize| {
+            0.5 * (2.0 * std::f64::consts::PI * 100.0 * frame as f64 / 44_100.0).sin()
+        };
+        let a = temp_path("kesintisiz-a.wav");
+        let b = temp_path("kesintisiz-b.wav");
+        write_wav(&a, 44_100, 2, 30_000, |f, _| wave(f));
+        write_wav(&b, 44_100, 2, 20_000, |f, _| wave(30_000 + f));
+        let (producer, mut consumer) = RingBuffer::<Sample>::new(4_096);
+        let shared = Arc::new(SharedState::new(
+            false,
+            test_segment(),
+            RenderControls::default(),
+        ));
+        shared.set_next(Some(b.clone()));
+        let thread_shared = Arc::clone(&shared);
+        let decoder = Decoder::open(&a).unwrap();
+        let converter = Converter::new(44_100, 2, 48_000, 2).unwrap();
+        let spec = OutputSpec {
+            sample_rate: 48_000,
+            channels: 2,
+            mode: OutputMode::Shared,
+        };
+        let handle = std::thread::spawn(move || {
+            decode_loop(decoder, converter, spec, producer, &thread_shared, None)
+        });
+        let mut received = Vec::new();
+        while !(shared.decode_done.load(Ordering::Acquire) && consumer.is_empty()) {
+            match consumer.pop() {
+                Ok(sample) => received.push(sample),
+                Err(_) => std::thread::yield_now(),
+            }
+        }
+        handle.join().unwrap();
+
+        let mut whole = Converter::new(44_100, 2, 48_000, 2).unwrap();
+        let mut expected = Vec::new();
+        for path in [&a, &b] {
+            let mut decoder = Decoder::open(path).unwrap();
+            while let Some(chunk) = decoder.next_chunk().unwrap() {
+                expected.extend_from_slice(whole.process(chunk).unwrap());
+            }
+        }
+        expected.extend_from_slice(whole.finish().unwrap());
+        assert_eq!(received.len(), expected.len());
+        let worst = received
+            .iter()
+            .zip(&expected)
+            .map(|(got, want)| (got - want).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 1e-9, "sınırda {worst} sapma");
+        // B, A'nın aygıt hızındaki süresinin bittiği karede başlar.
+        let segments = shared.segments.lock().unwrap().clone();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[1].first_output_frame, 32_653);
         std::fs::remove_file(a).ok();
         std::fs::remove_file(b).ok();
     }
