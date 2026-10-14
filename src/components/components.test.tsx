@@ -217,7 +217,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
 // Testler bileşeni sahte arka uçla birlikte yükler.
 const { default: App } = await import("../App");
 const { stateLabel } = await import("./NowPlaying");
-const { pointerRatio } = await import("./SeekBar");
+const { pointerRatio, SeekBar } = await import("./SeekBar");
 
 const track: TrackInfo = {
   path: "C:\\Müzik\\gece.flac",
@@ -1217,6 +1217,77 @@ describe("sinema görünümü", () => {
     expect(app).toHaveClass("is-cinema");
     await act(async () => fireEvent.pointerMove(window));
     expect(app).not.toHaveClass("is-cinema");
+  });
+
+  it("klavyeyle (Tab) seçilen düğme görünür kalır; fareyle tıklanınca düğmeler yine çekilir (#53)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    backend.desktop = true;
+    backend.status = playing;
+    const { container } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.keyDown(window, { key: "Escape" }));
+    const app = container.querySelector(".app")!;
+    const pause = screen.getByRole("button", { name: "Duraklat" });
+    // Tab ile Duraklat'a gelindi.
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Tab" });
+      pause.focus();
+    });
+    await act(async () => vi.advanceTimersByTime(4300));
+    expect(app).not.toHaveClass("is-cinema");
+    // Fareyle tıklandı: odak düğmede kalsa da düğmeler çekilir.
+    await act(async () => {
+      fireEvent.pointerDown(pause);
+      fireEvent.pointerUp(pause);
+    });
+    await act(async () => vi.advanceTimersByTime(4300));
+    expect(app).toHaveClass("is-cinema");
+  });
+});
+
+describe("ilerleme çubuğunda sürükleme (#53)", () => {
+  const bar = (durationSecs: number | null, onSeek = vi.fn()) => (
+    <SeekBar positionSecs={30} durationSecs={durationSecs} disabled={false} onSeek={onSeek} />
+  );
+
+  it("sürüklerken şarkının süresi bilinmez olsa da bırakınca sürükleme biter", () => {
+    const onSeek = vi.fn();
+    const { container, rerender } = render(bar(180, onSeek));
+    const slider = screen.getByRole("slider");
+    slider.getBoundingClientRect = () => ({ left: 0, width: 180 }) as DOMRect;
+    fireEvent.pointerDown(slider, { button: 0, clientX: 90, pointerId: 1 });
+    // Boşluksuz geçişle süresi bilinmeyen bir şarkıya geçildi.
+    rerender(bar(null, onSeek));
+    fireEvent.pointerUp(slider, { button: 0, clientX: 120, pointerId: 1 });
+    rerender(bar(200, onSeek));
+    expect(container.querySelector(".seekbar")).not.toHaveClass("is-dragging");
+    // Bırakma, sürüklemenin başladığı şarkıda değil: yeni şarkı sarılmaz.
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+
+  it("işaretçi yakalaması kaybolunca sürükleme biter, sarılmaz", () => {
+    const onSeek = vi.fn();
+    const { container } = render(bar(180, onSeek));
+    const slider = screen.getByRole("slider");
+    slider.getBoundingClientRect = () => ({ left: 0, width: 180 }) as DOMRect;
+    fireEvent.pointerDown(slider, { button: 0, clientX: 90, pointerId: 1 });
+    expect(container.querySelector(".seekbar")).toHaveClass("is-dragging");
+    fireEvent.lostPointerCapture(slider, { pointerId: 1 });
+    expect(container.querySelector(".seekbar")).not.toHaveClass("is-dragging");
+    fireEvent.pointerMove(slider, { clientX: 150, pointerId: 1 });
+    expect(container.querySelector(".seekbar")).not.toHaveClass("is-dragging");
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+
+  it("aynı şarkıda bırakınca bırakılan yere atlar", () => {
+    const onSeek = vi.fn();
+    render(bar(180, onSeek));
+    const slider = screen.getByRole("slider");
+    slider.getBoundingClientRect = () => ({ left: 0, width: 180 }) as DOMRect;
+    fireEvent.pointerDown(slider, { button: 0, clientX: 90, pointerId: 1 });
+    fireEvent.pointerMove(slider, { clientX: 120, pointerId: 1 });
+    fireEvent.pointerUp(slider, { button: 0, clientX: 120, pointerId: 1 });
+    expect(onSeek).toHaveBeenCalledWith(120);
   });
 });
 

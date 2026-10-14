@@ -27,6 +27,7 @@ import { useDropToLibrary } from "../hooks/useDropToLibrary";
 import { useEqualizer } from "../hooks/useEqualizer";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
+import { useKeyboardFocusWithin } from "../hooks/useKeyboardFocus";
 import { usePlayback } from "../hooks/usePlayback";
 import { useLivePosition, type PlayerControls } from "../hooks/usePlayer";
 import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
@@ -132,7 +133,9 @@ export function PlayerScreen() {
   }, []);
 
   const idle = useIdle(IDLE_MS);
-  const cinema = idle && playing && !drawer.open && !drop.dragging;
+  // Klavyeyle seçilmiş bir düğme varken düğmeler çekilmez: odak görünmeyen düğmede kalırdı.
+  const keyboardInChrome = useKeyboardFocusWithin(".chrome");
+  const cinema = idle && playing && !drawer.open && !drop.dragging && !keyboardInChrome;
 
   // Son bilinen konum (saniyede birkaç kez güncellenir). Akıcı konum yalnızca `LiveChrome`'da:
   // ekranın geri kalanı her karede yeniden çizilmez.

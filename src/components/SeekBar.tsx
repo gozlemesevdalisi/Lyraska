@@ -40,6 +40,9 @@ export function SeekBar({
   // Çizim için state, olaylar için ref: çok hızlı bas-bırak'ta bırakma olayı
   // yeniden çizimden önce gelse bile sürükleme bilgisi kaybolmaz.
   const dragging = useRef(false);
+  // Sürüklemenin başladığı şarkının süresi: bırakmadan önce şarkı değiştiyse (boşluksuz
+  // geçiş) yeni şarkı sarılmaz.
+  const dragDuration = useRef<number | null>(null);
   const seekable = !disabled && durationSecs !== null && durationSecs > 0;
   const ratio = dragRatio ?? progress(positionSecs, durationSecs);
   // İpucu sürüklerken gidilecek yeri, yoksa fare altındaki noktayı gösterir.
@@ -48,6 +51,10 @@ export function SeekBar({
   const ratioOf = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return pointerRatio(event.clientX, rect.left, rect.width);
+  };
+  const endDrag = () => {
+    dragging.current = false;
+    setDragRatio(null);
   };
 
   return (
@@ -65,6 +72,7 @@ export function SeekBar({
         if (!seekable || event.button !== 0) return;
         event.currentTarget.setPointerCapture?.(event.pointerId);
         dragging.current = true;
+        dragDuration.current = durationSecs;
         setDragRatio(ratioOf(event));
       }}
       onPointerMove={(event) => {
@@ -73,15 +81,15 @@ export function SeekBar({
       }}
       onPointerLeave={() => setHoverRatio(null)}
       onPointerUp={(event) => {
-        if (!dragging.current || !durationSecs) return;
-        dragging.current = false;
-        setDragRatio(null);
-        onSeek(ratioOf(event) * durationSecs);
+        if (!dragging.current) return;
+        // Sürükleme her durumda biter (süre bilinmese de, #53); atlama yalnızca aynı şarkıda.
+        endDrag();
+        if (durationSecs && durationSecs === dragDuration.current) {
+          onSeek(ratioOf(event) * durationSecs);
+        }
       }}
-      onPointerCancel={() => {
-        dragging.current = false;
-        setDragRatio(null);
-      }}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
     >
       <div className="seekbar__track">
         {layout ? (
