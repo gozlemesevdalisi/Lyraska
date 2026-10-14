@@ -1,5 +1,7 @@
-//! Kütüphanenin arka plan analizi: henüz analiz edilmemiş (ya da dosyası veya
-//! analiz sürümü değişmiş) şarkılar tek tek analiz edilip önbelleğe yazılır.
+//! Kütüphanenin arka plan analizi: henüz analiz edilmemiş (ya da dosyası değişmiş)
+//! şarkılar tek tek analiz edilip önbelleğe yazılır. Analizin bir parçası eskimişse
+//! (sürümü artmış) yalnızca o parça yenilenir ([`spectrogram::refresh_paced`]); yalnızca
+//! ritmi eskimiş şarkılar (çözülmeden, milisaniyelerde yenilenir) önce gelir.
 //!
 //! Öncelik sırası: **çalan şarkı**, **sıradaki şarkı**, **geri kalan kütüphane**.
 //! Çalan ve sıradaki şarkıyı oynatıcı kendisi, tam hızla analiz eder (sıradaki,
@@ -190,18 +192,36 @@ fn analyze_one(
     let Some(stamp) = FileStamp::of(path) else {
         return Outcome::Failed;
     };
-    let Ok(decoder) = Decoder::open(path) else {
-        return Outcome::Failed;
-    };
     let target = Spectrogram::new();
     let mut pacer = Pacer::new();
-    spectrogram::analyze_paced(decoder, &target, &mut || {
+    let mut pace = || {
         if shared.stop.load(Ordering::Acquire) {
             target.cancel();
             return;
         }
         pacer.pace(foreground, shared);
-    });
+    };
+    let cached = match cache.load(path, stamp) {
+        Ok(cached) => cached,
+        Err(e) => {
+            diagnostics::error(&e.to_string());
+            None
+        }
+    };
+    match cached {
+        // Yalnızca eskimiş parçalar: ritim karelerden (çözmeden), ses yüksekliği ve bas
+        // tepeleri FFT'siz tek çözmeyle.
+        Some(cached) => {
+            let mut open = || Decoder::open(path).ok();
+            spectrogram::refresh_paced(cached, &mut open, &target, &mut pace);
+        }
+        None => {
+            let Ok(decoder) = Decoder::open(path) else {
+                return Outcome::Failed;
+            };
+            spectrogram::analyze_paced(decoder, &target, &mut pace);
+        }
+    }
     let Some(saved) = target.saved() else {
         return if shared.stop.load(Ordering::Acquire) {
             Outcome::Interrupted
@@ -297,13 +317,49 @@ mod tests {
         for song in &songs {
             let saved = cache.load(song, FileStamp::of(song).unwrap()).unwrap();
             assert!(
-                saved.is_some_and(|s| s.frames() > 100),
+                saved.is_some_and(|s| s.saved.frames() > 100 && !s.stale.any()),
                 "{song:?} önbellekte yok"
             );
         }
         // Bozuk dosya bekleyenlerde kalır ama yeniden denenmez; analiz sayısı artmaz.
         std::thread::sleep(Duration::from_millis(200));
         assert_eq!(background.analyzed(), songs.len());
+        assert_eq!(service.status().unwrap().analyzed, songs.len());
+        background.stop();
+    }
+
+    #[test]
+    fn ritim_hesabi_degisince_yalnizca_ritim_yenilenir() {
+        let (service, cache, songs) = library_with_songs();
+        let foreground = Arc::new(AtomicUsize::new(0));
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), Arc::clone(&foreground));
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        background.stop();
+        let before: Vec<_> = songs
+            .iter()
+            .map(|s| cache.load(s, FileStamp::of(s).unwrap()).unwrap().unwrap())
+            .collect();
+
+        // Yeni sürümde ritim hesabı değişti (ör. drop güveni eklendi): kayıtlar "ritmi eski".
+        cache
+            .lock_for_test()
+            .execute(
+                "UPDATE analyses SET rhythm_version = rhythm_version - 1",
+                [],
+            )
+            .unwrap();
+        assert_eq!(service.status().unwrap().analyzed, 0);
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), foreground);
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        for (song, old) in songs.iter().zip(&before) {
+            let now = cache
+                .load(song, FileStamp::of(song).unwrap())
+                .unwrap()
+                .unwrap();
+            assert!(!now.stale.any(), "{song:?} yenilendi");
+            // Kareler, ses yüksekliği ve bas tepeleri dokunulmadan kaldı; ritim aynı hesaplandı.
+            assert_eq!(now.saved, old.saved, "{song:?}");
+        }
         assert_eq!(service.status().unwrap().analyzed, songs.len());
         background.stop();
     }

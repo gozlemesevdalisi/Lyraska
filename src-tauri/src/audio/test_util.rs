@@ -85,3 +85,25 @@ pub fn fit(signal: &[f64], freq: f64, rate: u32) -> (f64, f64) {
         10.0 * (residual / (amplitude * amplitude / 2.0)).log10(),
     )
 }
+
+/// Kütüphane ve önbellek testleri için şarkı bilgisi (etiketsiz, 44,1 kHz stereo FLAC).
+pub fn track_info(path: &str) -> crate::audio::decode::TrackInfo {
+    let path = PathBuf::from(path);
+    crate::audio::decode::TrackInfo {
+        file_name: path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path,
+        title: None,
+        artist: None,
+        album: None,
+        album_artist: None,
+        track_number: None,
+        disc_number: None,
+        codec: "flac".to_owned(),
+        sample_rate: 44_100,
+        channels: 2,
+        duration_secs: Some(200.0),
+    }
+}

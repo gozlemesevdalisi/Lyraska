@@ -7,7 +7,7 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
 
 use super::{search_key, LibraryError};
-use crate::analysis::cache::ANALYSIS_VERSION;
+use crate::analysis::cache::VERSIONS;
 use crate::audio::decode::TrackInfo;
 
 /// Arama sonucunda dönen en fazla şarkı sayısı.
@@ -171,11 +171,11 @@ impl Library {
         Ok(n as usize)
     }
 
-    /// Geçerli (dosyası ve analiz sürümü değişmemiş) analizi olan şarkı sayısı.
+    /// Analizi tamamen güncel (dosyası değişmemiş, hiçbir parçası eskimemiş) şarkı sayısı.
     pub fn analyzed_count(&self) -> Result<usize, LibraryError> {
         let n: i64 = self.conn.query_row(
-            &format!("SELECT COUNT(*) FROM tracks t {VALID_ANALYSIS_JOIN}"),
-            [ANALYSIS_VERSION],
+            &format!("SELECT COUNT(*) FROM tracks t {VALID_ANALYSIS_JOIN} WHERE {FULLY_CURRENT}"),
+            analysis_versions(),
             |r| r.get(0),
         )?;
         Ok(n as usize)
@@ -266,15 +266,16 @@ impl Library {
             .split_whitespace()
             .map(|w| format!("%{}%", escape_like(w)))
             .collect();
-        // ?1 analiz sürümü; arama kelimeleri ?2'den başlar.
+        // ?1–?4 analiz parçalarının sürümleri; arama kelimeleri ?5'ten başlar.
         let mut sql = format!(
             "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
-                    t.track_number, t.duration_secs, t.codec, a.bpm, a.path IS NOT NULL
+                    t.track_number, t.duration_secs, t.codec, a.bpm,
+                    a.path IS NOT NULL AND {FULLY_CURRENT}
              FROM tracks t LEFT {VALID_ANALYSIS_JOIN}"
         );
         for i in 0..words.len() {
             sql.push_str(if i == 0 { " WHERE " } else { " AND " });
-            sql.push_str(&format!("t.search LIKE ?{} ESCAPE '\\'", i + 2));
+            sql.push_str(&format!("t.search LIKE ?{} ESCAPE '\\'", i + 5));
         }
         sql.push_str(&format!(
             " ORDER BY t.sort_key LIMIT {}",
@@ -282,7 +283,8 @@ impl Library {
         ));
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut values: Vec<rusqlite::types::Value> = vec![ANALYSIS_VERSION.into()];
+        let mut values: Vec<rusqlite::types::Value> =
+            analysis_versions().into_iter().map(Into::into).collect();
         values.extend(words.into_iter().map(rusqlite::types::Value::from));
         let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
             Ok(TrackRow {
@@ -302,9 +304,25 @@ impl Library {
     }
 }
 
-/// Şarkıyı (`t`) geçerli analiziyle (`a`) eşleyen JOIN; `?1` analiz sürümüdür.
+/// Şarkıyı (`t`) kareleri ve ritmi güncel analiziyle (`a`) eşleyen JOIN: BPM buradan gelir.
+/// `?1`–`?4` analiz parçalarının sürümleri ([`analysis_versions`]). Ses yüksekliği ya da bas
+/// tepeleri eskise de BPM gösterilmeye devam eder (onların yenilenmesi saatler sürebilir).
 const VALID_ANALYSIS_JOIN: &str = "JOIN analyses a ON a.path = t.path
-    AND a.file_size = t.file_size AND a.modified = t.modified AND a.version = ?1";
+    AND a.file_size = t.file_size AND a.modified = t.modified
+    AND a.spectrum_version = ?1 AND a.rhythm_version = ?2";
+
+/// Eşlenen analizin geri kalan parçaları da güncel mi?
+const FULLY_CURRENT: &str = "a.loudness_version = ?3 AND a.bass_version = ?4";
+
+/// Sorgulardaki `?1`–`?4`: spektrum, ritim, ses yüksekliği, bas tepeleri sürümleri.
+fn analysis_versions() -> [i64; 4] {
+    [
+        VERSIONS.spectrum,
+        VERSIONS.rhythm,
+        VERSIONS.loudness,
+        VERSIONS.bass,
+    ]
+}
 
 /// LIKE kalıbındaki özel karakterleri kaçırır.
 fn escape_like(word: &str) -> String {
@@ -504,13 +522,25 @@ mod tests {
     #[test]
     fn bpm_yalnizca_gecerli_analizden_gelir() {
         let lib = sample();
-        let analyze = |path: &str, size: i64, version: i64, bpm: Option<f64>| {
+        let v = VERSIONS;
+        // Kayıt: boyut, parça sürümleri (spektrum, ritim, ses yüksekliği, bas), BPM.
+        let analyze = |path: &str, size: i64, parts: [i64; 4], bpm: Option<f64>| {
             lib.conn
                 .execute(
                     "INSERT OR REPLACE INTO analyses
-                         (path, file_size, modified, version, frames, bpm, levels, meters, onset)
-                     VALUES (?1, ?2, ?3, ?4, 0, ?5, x'', x'', x'')",
-                    params![path, size, STAMP.modified, version, bpm],
+                         (path, file_size, modified, version, frames, bpm, levels, meters, onset,
+                          spectrum_version, rhythm_version, loudness_version, bass_version)
+                     VALUES (?1, ?2, ?3, 6, 0, ?4, x'', x'', x'', ?5, ?6, ?7, ?8)",
+                    params![
+                        path,
+                        size,
+                        STAMP.modified,
+                        bpm,
+                        parts[0],
+                        parts[1],
+                        parts[2],
+                        parts[3]
+                    ],
                 )
                 .unwrap();
         };
@@ -521,19 +551,16 @@ mod tests {
                 .find(|t| t.path == path)
                 .unwrap()
         };
+        let current = [v.spectrum, v.rhythm, v.loudness, v.bass];
+        let size = STAMP.size as i64;
         assert_eq!(
             (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
             (None, false)
         );
         assert_eq!(lib.analyzed_count().unwrap(), 0);
 
-        analyze(
-            "/muzik/a.flac",
-            STAMP.size as i64,
-            ANALYSIS_VERSION,
-            Some(128.0),
-        );
-        analyze("/muzik/b.flac", STAMP.size as i64, ANALYSIS_VERSION, None); // ritimsiz
+        analyze("/muzik/a.flac", size, current, Some(128.0));
+        analyze("/muzik/b.flac", size, current, None); // ritimsiz
         assert_eq!(
             (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
             (Some(128.0), true)
@@ -543,20 +570,28 @@ mod tests {
             (None, true)
         );
         assert_eq!(lib.analyzed_count().unwrap(), 2);
-        // Arama da çalışır: kelime parametreleri analiz sürümünden sonra gelir.
+        // Arama da çalışır: kelime parametreleri analiz sürümlerinden sonra gelir.
         assert_eq!(lib.search("mayin", 100).unwrap()[0].bpm, Some(128.0));
 
-        // Dosya değişti ya da analiz sürümü eskidi: BPM gösterilmez.
+        // Yalnızca ses yüksekliği eskidi: BPM görünmeye devam eder, analiz "bekliyor".
         analyze(
             "/muzik/a.flac",
-            STAMP.size as i64 + 1,
-            ANALYSIS_VERSION,
+            size,
+            [v.spectrum, v.rhythm, v.loudness - 1, v.bass],
             Some(128.0),
         );
+        assert_eq!(
+            (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
+            (Some(128.0), false)
+        );
+        assert_eq!(lib.analyzed_count().unwrap(), 1);
+
+        // Dosya değişti ya da ritim eskidi: BPM gösterilmez.
+        analyze("/muzik/a.flac", size + 1, current, Some(128.0));
         analyze(
             "/muzik/b.flac",
-            STAMP.size as i64,
-            ANALYSIS_VERSION - 1,
+            size,
+            [v.spectrum, v.rhythm - 1, v.loudness, v.bass],
             Some(90.0),
         );
         assert_eq!(

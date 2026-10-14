@@ -30,7 +30,7 @@ use super::resample::Converter;
 use super::{AudioError, Sample};
 use crate::analysis::background::ForegroundGuard;
 use crate::analysis::beats::BeatPosition;
-use crate::analysis::cache::{AnalysisCache, FileStamp};
+use crate::analysis::cache::{AnalysisCache, CachedAnalysis, FileStamp};
 use crate::analysis::levels::ChannelLevels;
 use crate::analysis::spectrogram::{self, Spectrogram, BANDS};
 use crate::diagnostics;
@@ -450,13 +450,16 @@ impl Analysis {
         let stamp = FileStamp::of(path);
         if let (Some(cache), Some(stamp)) = (&context.cache, stamp) {
             match cache.load(path, stamp) {
-                Ok(Some(saved)) => {
+                Ok(Some(cached)) if !cached.stale.any() => {
                     return Some(Self {
                         path: path.to_path_buf(),
-                        spectrogram: Spectrogram::from_saved(saved),
+                        spectrogram: Spectrogram::from_saved(cached.saved),
                         thread: None,
                     })
                 }
+                // Bir parçası eskimiş (ör. ritim hesabı değişti): kareler hemen kullanılır,
+                // yalnızca eskiyen parça yeniden hesaplanır.
+                Ok(Some(cached)) => return Self::refresh(path, cached, context, after, stamp),
                 Ok(None) => {}
                 Err(e) => diagnostics::error(&e.to_string()),
             }
@@ -486,6 +489,49 @@ impl Analysis {
                 }
                 spectrogram::analyze(decoder, &target);
                 if let (Some(cache), Some(stamp), Some(saved)) = (cache, stamp, target.saved()) {
+                    if let Err(e) = cache.store(&file, stamp, &saved) {
+                        diagnostics::error(&e.to_string());
+                    }
+                }
+            })
+            .ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            spectrogram,
+            thread: Some(thread),
+        })
+    }
+}
+
+impl Analysis {
+    /// Önbellekteki kaydın eskimiş parçalarını ayrı iş parçacığında yeniler ve saklar
+    /// ([`spectrogram::refresh_paced`]).
+    fn refresh(
+        path: &Path,
+        cached: CachedAnalysis,
+        context: &AnalysisContext,
+        after: Option<Arc<Spectrogram>>,
+        stamp: FileStamp,
+    ) -> Option<Self> {
+        let spectrogram = Spectrogram::new();
+        let target = Arc::clone(&spectrogram);
+        let busy = ForegroundGuard::new(&context.foreground);
+        let cache = context.cache.clone();
+        let file = path.to_path_buf();
+        let thread = std::thread::Builder::new()
+            .name("lyraska-analiz".to_owned())
+            .spawn(move || {
+                let _busy = busy;
+                if let Some(first) = after {
+                    while !first.is_done() && !first.is_cancelled() && !target.is_cancelled() {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+                let mut open = || Decoder::open(&file).ok();
+                if !spectrogram::refresh_paced(cached, &mut open, &target, &mut || {}) {
+                    return;
+                }
+                if let (Some(cache), Some(saved)) = (cache, target.saved()) {
                     if let Err(e) = cache.store(&file, stamp, &saved) {
                         diagnostics::error(&e.to_string());
                     }
@@ -1647,6 +1693,37 @@ mod tests {
         assert!(analysis.spectrogram.is_done());
         assert_eq!(analysis.spectrogram.frame_at(1.0), analyzed.frame_at(1.0));
         assert_eq!(second.foreground_analyses().load(Ordering::Acquire), 0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn eskiyen_parca_acilista_yenilenir_kareler_hemen_hazir() {
+        let path = ramp_song("parca-yenile.wav");
+        let cache = Arc::new(AnalysisCache::open_in_memory().unwrap());
+        let stamp = FileStamp::of(&path).unwrap();
+        let mut first = Player::new();
+        first.set_analysis_cache(Arc::clone(&cache));
+        first.load(&path, false).unwrap();
+        assert!(wait_until(|| cache.load(&path, stamp).unwrap().is_some()));
+        let full = cache.load(&path, stamp).unwrap().unwrap().saved;
+
+        // Program güncellendi: ses yüksekliği hesabı değişti.
+        cache
+            .lock_for_test()
+            .execute("UPDATE analyses SET loudness_version = 0", [])
+            .unwrap();
+        let mut second = Player::new();
+        second.set_analysis_cache(Arc::clone(&cache));
+        second.load(&path, false).unwrap();
+        let spectrogram = Arc::clone(&second.analysis.as_ref().unwrap().spectrogram);
+        // Görseller beklemez: kareler önbellekten hemen okunur.
+        assert_eq!(spectrogram.ready_frames(), full.frames());
+        assert!(wait_until(|| spectrogram.is_done()));
+        assert!(wait_until(|| cache
+            .load(&path, stamp)
+            .unwrap()
+            .is_some_and(|c| !c.stale.any())));
+        assert_eq!(spectrogram.saved().unwrap(), full);
         std::fs::remove_file(path).ok();
     }
 

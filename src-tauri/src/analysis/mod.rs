@@ -7,7 +7,7 @@
 //! - [`structure`]: ölçü başları, bölümler, droplar ve enerji eğrisi.
 //! - [`evaluate`]: analizin doğruluğunu insan işaretlerine göre ölçme (F-ölçüsü).
 //! - [`cache`]: analiz sonuçlarının SQLite önbelleği (yol + boyut + değiştirilme
-//!   zamanı + analiz sürümü).
+//!   zamanı; her parçanın kendi sürümü: spektrum, ritim, ses yüksekliği, bas tepeleri).
 //! - [`background`]: kütüphanenin arka planda, düşük öncelikle analizi.
 //!
 //! Analiz şarkı çalmadan önce yapılır ve sonuç SQLite'ta saklanır; böylece

@@ -52,7 +52,9 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Şarkı haritası önbelleği (0.0.20): analiz sonuçları (spektrum, beat, ölçü başı, bölümler, drop, enerji)
       SQLite'ta; anahtar yol + boyut + değiştirilme zamanı + analiz sürümü (algoritma değişince kendiliğinden yeniden
       hesaplanır). Kütüphane arka planda, düşük öncelikle analiz edilir (önce çalan, sonra sıradaki, sonra geri
-      kalan); kütüphane listesinde BPM sütunu
+      kalan); kütüphane listesinde BPM sütunu. 0.0.34: analiz sürümü dört parçaya ayrıldı (spektrum, ritim, ses
+      yüksekliği, bas tepeleri); bir parça değişince yalnızca o yeniden hesaplanır, ritim şarkı çözülmeden
+      karelerden (4 dakikalık şarkıda ~50 ms; tam analiz ~2,5 sn)
 - [x] Gecikme telafisi ve kalibrasyon (0.0.21): verinin ekrana ulaşma süresi her karede ölçülüp telafi edilir; ses
       aygıtının ek gecikmesi (ör. Bluetooth) "Senkron" sekmesinde ayarlanır ya da tıklama kaydıyla ölçülür; vuruş
       göstergesiyle gözle denetlenir. Gerçek aygıtlarda ±20 ms hedefinin ölçümü proje sahibinin denemesiyle

@@ -2,9 +2,12 @@
 //!
 //! Bir şarkı bir kez analiz edilir; sonraki açılışlarda spektrum, vuruşlar, ölçü
 //! başları, bölümler, droplar ve enerji anında hazırdır. Kayıt anahtarı dosya
-//! yolu + boyut + değiştirilme zamanı + [`ANALYSIS_VERSION`]: dosya değişirse ya
-//! da analiz algoritması değişirse (sürüm artırılınca) kayıt geçersiz sayılır ve
-//! şarkı yeniden analiz edilir.
+//! yolu + boyut + değiştirilme zamanı: dosya değişirse kayıt geçersiz sayılır ve şarkı
+//! yeniden analiz edilir.
+//!
+//! Analiz bağımsız **parçalardan** oluşur ve her parçanın kendi sürümü vardır
+//! ([`VERSIONS`]). Bir parçanın hesabı değişince yalnızca o parçanın sürümü artırılır;
+//! kütüphanede yalnızca o parça yeniden hesaplanır (bkz. [`PartVersions`]).
 //!
 //! Saklama biçimi: bant ve kanal seviyeleri zamanda fark alınarak (ardışık kareler
 //! birbirine çok benzer) sıkıştırılır (deflate); başlangıç gücü ham `f32` olarak
@@ -25,14 +28,68 @@ use super::structure::SongMap;
 use crate::audio::bass::BassPeaks;
 use crate::audio::loudness::Loudness;
 
-/// Analiz algoritmalarının sürümü. Spektrum, beat, ölçü, bölüm, drop ya da enerji
-/// hesabı değiştiğinde **artırılır**: eski kayıtlar kendiliğinden geçersiz olur.
-/// 2: kareler her örnekleme hızında tam 1/60 saniyede (22,05 / 32 kHz'te kayıyordu);
-/// vuruş gecikmesi örnekleme hızına göre düşülüyor.
-/// 3: ses yüksekliği (EBU R128) ve gerçek tepe ölçülüyor.
-/// 4: bas tepeleri ölçülüyor (bas düğmesinin akıllı koruması).
-/// 5: bas tepeleri 27 dB'ye kadar ölçülüyor (bas düğmesi ve vuruş birlikte).
-pub const ANALYSIS_VERSION: i64 = 5;
+/// Analizin bağımsız parçalarının hesap sürümleri.
+///
+/// Bir parçanın hesabı değişince **yalnızca o parçanın** sürümü artırılır; kütüphanede
+/// yalnızca o parça yeniden hesaplanır, geri kalanı önbellekten okunur:
+///
+/// - `spectrum`: kareler (bant ve kanal seviyeleri, başlangıç gücü). Artarsa şarkı baştan
+///   çözülür ve her şey yeniden hesaplanır (ritim de bu karelerden çıkar).
+/// - `rhythm`: vuruşlar, ölçü, bölümler, droplar, enerji. Saklanan karelerden hesaplanır:
+///   şarkı **yeniden çözülmez**, şarkı başına milisaniyeler sürer.
+/// - `loudness`: ses yüksekliği (EBU R128) ve gerçek tepe. Şarkı yeniden çözülür (FFT'siz).
+/// - `bass`: bas tepeleri (bas düğmesinin akıllı koruması). Şarkı yeniden çözülür (FFT'siz).
+///
+/// Tek sürüm döneminin geçmişi (`ANALYSIS_VERSION`): 2 kareler her örnekleme hızında tam
+/// 1/60 sn, vuruş gecikmesi hıza göre düşülüyor; 3 ses yüksekliği; 4 bas tepeleri; 5 bas
+/// tepeleri 27 dB'ye kadar. Göç 5 o kayıtları parça sürümlerine çevirdi (`storage.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartVersions {
+    pub spectrum: i64,
+    pub rhythm: i64,
+    pub loudness: i64,
+    pub bass: i64,
+}
+
+/// Parçaların şu anki sürümleri.
+pub const VERSIONS: PartVersions = PartVersions {
+    spectrum: 1,
+    rhythm: 1,
+    loudness: 1,
+    bass: 1,
+};
+
+/// Eski tek sürüm sütununa (`version`) yazılan değer. Parça sürümlerinden önceki program
+/// sürümleri bu kaydı geçersiz sayar (5 bekler) ve kendi kaydını yazar; onların yazdığı
+/// kayıtta parça sürümleri 0 kalır, bu sürüm de onları yeniden hesaplar.
+const LEGACY_VERSION: i64 = 6;
+
+/// Önbellekteki kaydın yeniden hesaplanması gereken (sürümü eskimiş) parçaları.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StaleParts {
+    pub rhythm: bool,
+    pub loudness: bool,
+    pub bass: bool,
+}
+
+impl StaleParts {
+    pub fn any(self) -> bool {
+        self.rhythm || self.loudness || self.bass
+    }
+
+    /// Şarkının yeniden çözülmesi gerekir mi (ses yüksekliği ya da bas tepeleri eski)?
+    pub fn needs_decoding(self) -> bool {
+        self.loudness || self.bass
+    }
+}
+
+/// Önbellekten okunan kayıt. Eskimiş parçalar `saved` içinde boştur (`None`) ve `stale`
+/// içinde işaretlidir; kareler (spektrum) her zaman günceldir.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CachedAnalysis {
+    pub saved: SavedAnalysis,
+    pub stale: StaleParts,
+}
 
 /// Sıkıştırma düzeyi (0–10): 6 hız ve boyut arasında iyi bir denge.
 const COMPRESSION_LEVEL: u8 = 6;
@@ -111,60 +168,56 @@ impl AnalysisCache {
         self.conn.lock().map_err(|_| CacheError::Lock)
     }
 
-    /// Şarkının geçerli (dosya ve analiz sürümü değişmemiş) kaydı; yoksa `None`.
-    /// Bozuk kayıt da yok sayılır (şarkı yeniden analiz edilir).
-    pub fn load(&self, path: &Path, stamp: FileStamp) -> Result<Option<SavedAnalysis>, CacheError> {
+    /// Testlerde veritabanına doğrudan erişim (ör. bir parçayı eskitmek).
+    #[cfg(test)]
+    pub fn lock_for_test(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap()
+    }
+
+    /// Şarkının kaydı (dosya değişmemişse). Kareleri eski bir sürümle hesaplanmışsa, kayıt
+    /// yoksa ya da bozuksa `None` (şarkı baştan analiz edilir). Diğer parçalardan eskimiş
+    /// olanlar boş döner ve [`CachedAnalysis::stale`] içinde işaretlidir.
+    pub fn load(
+        &self,
+        path: &Path,
+        stamp: FileStamp,
+    ) -> Result<Option<CachedAnalysis>, CacheError> {
         let conn = self.lock()?;
         let row = conn
             .query_row(
                 "SELECT frames, levels, meters, onset, beats, song_map, loudness_lufs, true_peak_dbtp,
-                        bass_peaks
+                        bass_peaks, sample_rate, rhythm_version, loudness_version, bass_version
                  FROM analyses
-                 WHERE path = ?1 AND file_size = ?2 AND modified = ?3 AND version = ?4",
+                 WHERE path = ?1 AND file_size = ?2 AND modified = ?3 AND spectrum_version = ?4",
                 params![
                     path.to_string_lossy(),
                     stamp.size as i64,
                     stamp.modified,
-                    ANALYSIS_VERSION
+                    VERSIONS.spectrum
                 ],
                 |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, Vec<u8>>(1)?,
-                        r.get::<_, Vec<u8>>(2)?,
-                        r.get::<_, Vec<u8>>(3)?,
-                        r.get::<_, Option<String>>(4)?,
-                        r.get::<_, Option<String>>(5)?,
-                        r.get::<_, Option<f64>>(6)?,
-                        r.get::<_, Option<f64>>(7)?,
-                        r.get::<_, Option<String>>(8)?,
-                    ))
+                    Ok(Row {
+                        frames: r.get(0)?,
+                        levels: r.get(1)?,
+                        meters: r.get(2)?,
+                        onset: r.get(3)?,
+                        beats: r.get(4)?,
+                        song_map: r.get(5)?,
+                        lufs: r.get(6)?,
+                        peak: r.get(7)?,
+                        bass_peaks: r.get(8)?,
+                        sample_rate: r.get(9)?,
+                        stale: StaleParts {
+                            rhythm: r.get::<_, i64>(10)? != VERSIONS.rhythm,
+                            loudness: r.get::<_, i64>(11)? != VERSIONS.loudness,
+                            bass: r.get::<_, i64>(12)? != VERSIONS.bass,
+                        },
+                    })
                 },
             )
             .optional()?;
         drop(conn);
-        Ok(row.and_then(
-            |(frames, levels, meters, onset, beats, song_map, lufs, peak, bass_peaks)| {
-                let saved = SavedAnalysis {
-                    levels: undelta(&inflate(&levels)?, BANDS),
-                    meters: undelta(&inflate(&meters)?, VALUES_PER_FRAME),
-                    onset: inflate(&onset)?
-                        .chunks_exact(4)
-                        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                        .collect(),
-                    beats: beats.and_then(|j| serde_json::from_str::<BeatGrid>(&j).ok()),
-                    song_map: song_map.and_then(|j| serde_json::from_str::<SongMap>(&j).ok()),
-                    loudness: lufs
-                        .zip(peak)
-                        .map(|(integrated_lufs, true_peak_dbtp)| Loudness {
-                            integrated_lufs,
-                            true_peak_dbtp,
-                        }),
-                    bass_peaks: bass_peaks.and_then(|j| serde_json::from_str::<BassPeaks>(&j).ok()),
-                };
-                (saved.is_consistent() && saved.frames() as i64 == frames).then_some(saved)
-            },
-        ))
+        Ok(row.and_then(Row::into_cached))
     }
 
     /// Analiz sonucunu saklar (aynı yolun eski kaydının yerini alır).
@@ -191,7 +244,7 @@ impl AnalysisCache {
             path.to_string_lossy(),
             stamp.size as i64,
             stamp.modified,
-            ANALYSIS_VERSION,
+            LEGACY_VERSION,
             saved.frames() as i64,
             saved.beats.as_ref().map(|b| b.bpm),
             deflate(&delta(&saved.levels, BANDS)),
@@ -202,19 +255,29 @@ impl AnalysisCache {
             saved.loudness.map(|l| l.integrated_lufs),
             saved.loudness.map(|l| l.true_peak_dbtp),
             bass_peaks,
+            saved.sample_rate,
+            VERSIONS.spectrum,
+            VERSIONS.rhythm,
+            VERSIONS.loudness,
+            VERSIONS.bass,
         ];
         self.lock()?.execute(
             "INSERT OR REPLACE INTO analyses
                  (path, file_size, modified, version, frames, bpm, levels, meters, onset, beats,
-                  song_map, loudness_lufs, true_peak_dbtp, bass_peaks)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                  song_map, loudness_lufs, true_peak_dbtp, bass_peaks, sample_rate,
+                  spectrum_version, rhythm_version, loudness_version, bass_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                     ?18, ?19)",
             row,
         )?;
         Ok(())
     }
 
-    /// Analizi geçersiz ya da hiç olmayan kütüphane şarkıları ve kütüphanedeki (son
-    /// taramadaki) damgaları (sıralı, en fazla `limit`). Kütüphane tablosu yoksa boş döner.
+    /// Analizi olmayan ya da bir parçası eskimiş kütüphane şarkıları ve kütüphanedeki (son
+    /// taramadaki) damgaları (en fazla `limit`). Kütüphane tablosu yoksa boş döner.
+    ///
+    /// Yalnızca ritmi eskimiş olanlar (şarkı çözülmeden, milisaniyelerde yenilenir) önce
+    /// gelir: ritim hesabı değişince bütün kütüphanenin haritası çabucak güncellenir.
     pub fn pending_library_tracks(
         &self,
         limit: usize,
@@ -233,11 +296,17 @@ impl AnalysisCache {
         let mut stmt = conn.prepare(
             "SELECT t.path, t.file_size, t.modified FROM tracks t
              LEFT JOIN analyses a ON a.path = t.path AND a.file_size = t.file_size
-                 AND a.modified = t.modified AND a.version = ?1
-             WHERE a.path IS NULL
-             ORDER BY t.sort_key LIMIT ?2",
+                 AND a.modified = t.modified
+             WHERE a.path IS NULL OR a.spectrum_version != ?1 OR a.rhythm_version != ?2
+                 OR a.loudness_version != ?3 OR a.bass_version != ?4
+             ORDER BY (a.path IS NULL OR a.spectrum_version != ?1 OR a.loudness_version != ?3
+                       OR a.bass_version != ?4),
+                      t.sort_key
+             LIMIT ?5",
         )?;
-        let rows = stmt.query_map(params![ANALYSIS_VERSION, limit as i64], |r| {
+        let v = VERSIONS;
+        let values = params![v.spectrum, v.rhythm, v.loudness, v.bass, limit as i64];
+        let rows = stmt.query_map(values, |r| {
             Ok((
                 PathBuf::from(r.get::<_, String>(0)?),
                 FileStamp {
@@ -247,6 +316,57 @@ impl AnalysisCache {
             ))
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+}
+
+/// Veritabanındaki bir analiz kaydı (çözülmemiş hâli).
+struct Row {
+    frames: i64,
+    levels: Vec<u8>,
+    meters: Vec<u8>,
+    onset: Vec<u8>,
+    beats: Option<String>,
+    song_map: Option<String>,
+    lufs: Option<f64>,
+    peak: Option<f64>,
+    bass_peaks: Option<String>,
+    sample_rate: Option<u32>,
+    stale: StaleParts,
+}
+
+impl Row {
+    /// Kaydı çözer; bozuksa `None`. Eskimiş parçalar boş bırakılır.
+    fn into_cached(self) -> Option<CachedAnalysis> {
+        let stale = self.stale;
+        let saved = SavedAnalysis {
+            levels: undelta(&inflate(&self.levels)?, BANDS),
+            meters: undelta(&inflate(&self.meters)?, VALUES_PER_FRAME),
+            onset: inflate(&self.onset)?
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect(),
+            beats: self
+                .beats
+                .filter(|_| !stale.rhythm)
+                .and_then(|j| serde_json::from_str::<BeatGrid>(&j).ok()),
+            song_map: self
+                .song_map
+                .filter(|_| !stale.rhythm)
+                .and_then(|j| serde_json::from_str::<SongMap>(&j).ok()),
+            loudness: self.lufs.zip(self.peak).filter(|_| !stale.loudness).map(
+                |(integrated_lufs, true_peak_dbtp)| Loudness {
+                    integrated_lufs,
+                    true_peak_dbtp,
+                },
+            ),
+            bass_peaks: self
+                .bass_peaks
+                .filter(|_| !stale.bass)
+                .and_then(|j| serde_json::from_str::<BassPeaks>(&j).ok()),
+            sample_rate: self.sample_rate,
+        };
+        (saved.is_consistent() && saved.frames() as i64 == self.frames)
+            .then_some(CachedAnalysis { saved, stale })
     }
 }
 
@@ -315,7 +435,26 @@ mod tests {
                 shelf_rise_db: [0.2, 0.5, 1.25, 2.5, 4.0, 6.5, 8.75, 11.0, 13.5],
                 octave_band_db: -7.5,
             }),
+            sample_rate: Some(44_100),
         }
+    }
+
+    /// Kaydın güncel hâli (bütün parçaları geçerliyse).
+    fn fresh(cache: &AnalysisCache, path: &Path, stamp: FileStamp) -> Option<SavedAnalysis> {
+        cache
+            .load(path, stamp)
+            .unwrap()
+            .filter(|c| !c.stale.any())
+            .map(|c| c.saved)
+    }
+
+    /// Bir parçanın sürümünü elle eskitir (o parçanın hesabı değişmiş gibi).
+    fn age(cache: &AnalysisCache, column: &str) {
+        cache
+            .lock()
+            .unwrap()
+            .execute(&format!("UPDATE analyses SET {column} = {column} - 1"), [])
+            .unwrap();
     }
 
     const STAMP: FileStamp = FileStamp {
@@ -329,7 +468,7 @@ mod tests {
         let path = Path::new("C:/Müzik/şarkı.flac");
         let saved = sample(600);
         cache.store(path, STAMP, &saved).unwrap();
-        assert_eq!(cache.load(path, STAMP).unwrap(), Some(saved));
+        assert_eq!(fresh(&cache, path, STAMP), Some(saved));
     }
 
     #[test]
@@ -348,13 +487,106 @@ mod tests {
         assert_eq!(cache.load(path, bigger).unwrap(), None);
         assert_eq!(cache.load(path, newer).unwrap(), None);
         assert_eq!(cache.load(Path::new("/muzik/b.mp3"), STAMP).unwrap(), None);
-        // Eski analiz sürümüyle yazılmış kayıt da geçersiz.
-        cache
-            .lock()
-            .unwrap()
-            .execute("UPDATE analyses SET version = version - 1", [])
-            .unwrap();
+        // Kareleri eski sürümle hesaplanmış kayıt da geçersiz: şarkı baştan analiz edilir.
+        age(&cache, "spectrum_version");
         assert_eq!(cache.load(path, STAMP).unwrap(), None);
+    }
+
+    #[test]
+    fn yalnizca_eskiyen_parca_bos_doner_digerleri_kullanilir() {
+        let cache = AnalysisCache::open_in_memory().unwrap();
+        let path = Path::new("/muzik/a.mp3");
+        let saved = sample(60);
+        cache.store(path, STAMP, &saved).unwrap();
+
+        // Ritim hesabı değişti: kareler, ses yüksekliği ve bas tepeleri kullanılır.
+        age(&cache, "rhythm_version");
+        let cached = cache.load(path, STAMP).unwrap().unwrap();
+        assert_eq!(
+            cached.stale,
+            StaleParts {
+                rhythm: true,
+                ..StaleParts::default()
+            }
+        );
+        assert!(!cached.stale.needs_decoding(), "ritim için şarkı çözülmez");
+        assert_eq!(cached.saved.levels, saved.levels);
+        assert_eq!(cached.saved.onset, saved.onset);
+        assert_eq!((cached.saved.beats, cached.saved.song_map), (None, None));
+        assert_eq!(cached.saved.loudness, saved.loudness);
+        assert_eq!(cached.saved.bass_peaks, saved.bass_peaks);
+        assert_eq!(cached.saved.sample_rate, Some(44_100));
+
+        // Yenilenip saklanınca yeniden tamamen güncel.
+        cache.store(path, STAMP, &saved).unwrap();
+        assert_eq!(fresh(&cache, path, STAMP), Some(saved.clone()));
+
+        // Ses yüksekliği ya da bas tepeleri eskiyince şarkı çözülmeli; ritim kullanılır.
+        age(&cache, "loudness_version");
+        age(&cache, "bass_version");
+        let cached = cache.load(path, STAMP).unwrap().unwrap();
+        assert!(cached.stale.loudness && cached.stale.bass && !cached.stale.rhythm);
+        assert!(cached.stale.needs_decoding());
+        assert_eq!(cached.saved.beats, saved.beats);
+        assert_eq!(
+            (cached.saved.loudness, cached.saved.bass_peaks),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn yalnizca_ritmi_eskiyenler_once_yenilenir() {
+        use crate::library::Library;
+        let db = crate::audio::test_util::temp_path("oncelik.sqlite3");
+        let mut library = Library::open(&db).unwrap();
+        let folder = library.add_folder("/muzik").unwrap();
+        let cache = AnalysisCache::open(&db).unwrap();
+        // Sırayla: analizi olmayan, sesi eskimiş, ritmi eskimiş, güncel.
+        let names = ["a-yok", "b-ses", "c-ritim", "d-guncel"];
+        let tracks: Vec<_> = names
+            .iter()
+            .map(|name| {
+                let mut info = crate::audio::test_util::track_info(&format!("/muzik/{name}.flac"));
+                info.title = Some((*name).to_owned());
+                (info, STAMP)
+            })
+            .collect();
+        library.apply_changes(folder.id, &tracks, &[]).unwrap();
+        for name in &names[1..] {
+            cache
+                .store(
+                    Path::new(&format!("/muzik/{name}.flac")),
+                    STAMP,
+                    &sample(10),
+                )
+                .unwrap();
+        }
+        let set = |name: &str, column: &str| {
+            cache
+                .lock()
+                .unwrap()
+                .execute(
+                    &format!("UPDATE analyses SET {column} = 0 WHERE path = ?1"),
+                    [format!("/muzik/{name}.flac")],
+                )
+                .unwrap();
+        };
+        set("b-ses", "loudness_version");
+        set("c-ritim", "rhythm_version");
+        let pending: Vec<String> = cache
+            .pending_library_tracks(10)
+            .unwrap()
+            .into_iter()
+            .map(|(p, _)| p.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            pending,
+            [
+                "/muzik/c-ritim.flac",
+                "/muzik/a-yok.flac",
+                "/muzik/b-ses.flac"
+            ]
+        );
     }
 
     #[test]
@@ -382,7 +614,7 @@ mod tests {
             ..sample(30)
         };
         cache.store(path, STAMP, &saved).unwrap();
-        assert_eq!(cache.load(path, STAMP).unwrap(), Some(saved));
+        assert_eq!(fresh(&cache, path, STAMP), Some(saved));
     }
 
     #[test]

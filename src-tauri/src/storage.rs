@@ -9,7 +9,8 @@
 //! - Şema değişince listenin **sonuna** yeni adım eklenir (`ALTER TABLE …`, yeni tablo).
 //!   Yayımlanmış adımlar asla değiştirilmez: eski kullanıcıların dosyası açılışta
 //!   sırayla güncellenir, yeni kurulum bütün adımları baştan uygular.
-//! - Analiz sonucunun hesabı değişirse şema değil `ANALYSIS_VERSION` artırılır.
+//! - Analiz sonucunun hesabı değişirse şema değil o parçanın sürümü artırılır
+//!   (`analysis::cache::VERSIONS`).
 //! - Dosya daha yeni bir Lyraska sürümünce oluşturulmuşsa açılmaz (eski sürüm yeni
 //!   şemayı bozabilir); kullanıcıya programı güncellemesi söylenir.
 
@@ -85,8 +86,27 @@ UPDATE tracks SET tags_version = 0
         OR album GLOB '*[ÐÝÞðýþ]*' OR album_artist GLOB '*[ÐÝÞðýþ]*');
 ";
 
+/// 5: analiz parçalarının ayrı sürümleri ([`crate::analysis::cache::VERSIONS`]) ve şarkının
+/// örnekleme hızı (ritim saklanan karelerden yeniden hesaplanırken vuruş gecikmesi için).
+/// Eski tek sürümlü kayıtlar parçalara çevrilir; o sürümde geçerli olan parça geçerli kalır:
+/// kareler ve ritim sürüm 2'den, ses yüksekliği 3'ten, bas tepeleri (27 dB'ye kadar) 5'ten
+/// beri değişmedi. Böylece bu göç hiçbir şarkıyı yeniden analiz ettirmez.
+const V5: &str = "
+ALTER TABLE analyses ADD COLUMN spectrum_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE analyses ADD COLUMN rhythm_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE analyses ADD COLUMN loudness_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE analyses ADD COLUMN bass_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE analyses ADD COLUMN sample_rate INTEGER;
+UPDATE analyses SET
+    spectrum_version = CASE WHEN version >= 2 THEN 1 ELSE 0 END,
+    rhythm_version = CASE WHEN version >= 2 THEN 1 ELSE 0 END,
+    loudness_version = CASE WHEN version >= 3 THEN 1 ELSE 0 END,
+    bass_version = CASE WHEN version >= 5 THEN 1 ELSE 0 END,
+    sample_rate = (SELECT t.sample_rate FROM tracks t WHERE t.path = analyses.path);
+";
+
 /// Sıralı göç adımları (bkz. modül belgesi). Yalnızca sona eklenir.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
 
 /// Bu sürümün bildiği en yeni şema.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -237,6 +257,67 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(stale, ["C:/Müzik/bozuk.mp3", "C:/Müzik/etiketsiz.MP3"]);
+    }
+
+    #[test]
+    fn eski_analiz_kayitlari_parca_surumlerine_cevrilir_yeniden_analiz_gerekmez() {
+        // 0.0.33'ün veritabanı (4. adım): tek sürümlü analiz kayıtları.
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply(&mut conn, &MIGRATIONS[..4]).unwrap();
+        conn.execute("INSERT INTO folders (id, path) VALUES (1, 'C:/Müzik')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (folder_id, path, file_name, codec, sample_rate, channels,
+                 file_size, modified, sort_key, search)
+             VALUES (1, 'C:/Müzik/v5.flac', 'v5', 'flac', 48000, 2, 1, 1, '', '')",
+            [],
+        )
+        .unwrap();
+        for (path, version) in [
+            ("C:/Müzik/v1.flac", 1),
+            ("C:/Müzik/v3.flac", 3),
+            ("C:/Müzik/v4.flac", 4),
+            ("C:/Müzik/v5.flac", 5),
+        ] {
+            conn.execute(
+                "INSERT INTO analyses (path, file_size, modified, version, frames, levels, meters,
+                     onset) VALUES (?1, 1, 1, ?2, 0, x'', x'', x'')",
+                rusqlite::params![path, version],
+            )
+            .unwrap();
+        }
+        migrate(&mut conn).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT path, spectrum_version, rhythm_version, loudness_version, bass_version,
+                        sample_rate
+                 FROM analyses ORDER BY path",
+            )
+            .unwrap();
+        let rows: Vec<(String, i64, i64, i64, i64, Option<i64>)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        // Göç, eski kayıtları parçaların ilk sürümüne (1) çevirir; 0: yeniden hesaplanır.
+        assert_eq!(
+            rows,
+            [
+                ("C:/Müzik/v1.flac".to_owned(), 0, 0, 0, 0, None),
+                ("C:/Müzik/v3.flac".to_owned(), 1, 1, 1, 0, None),
+                ("C:/Müzik/v4.flac".to_owned(), 1, 1, 1, 0, None),
+                ("C:/Müzik/v5.flac".to_owned(), 1, 1, 1, 1, Some(48_000)),
+            ]
+        );
     }
 
     #[test]
