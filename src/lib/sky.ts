@@ -1,3 +1,5 @@
+import { SCENE_CLOCK_PERIOD, foldTime } from "./sceneClock";
+
 /**
  * "Gece göğü" sahnesi için saf hesaplar: kuzey ışıklarını süren enerjiler,
  * hareket hızı, renk ayrıştırma ve Lyra takımyıldızı.
@@ -197,9 +199,10 @@ export function stepSky(
   return {
     energies,
     pulse,
-    flowTime: (prev.flowTime + step * speed * motion) % 10_000,
+    // Saatler sürekli ilerler; çizim katlanmış hâlini kullanır (`skyClocks`).
+    flowTime: (prev.flowTime + step * speed * motion) % SCENE_CLOCK_PERIOD,
     // "Animasyonları azalt" açıkken yıldızlar kırpışmaz.
-    twinkleTime: reducedMotion ? prev.twinkleTime : (prev.twinkleTime + step) % 10_000,
+    twinkleTime: reducedMotion ? prev.twinkleTime : (prev.twinkleTime + step) % SCENE_CLOCK_PERIOD,
     tension,
     bloom,
     palette,
@@ -315,4 +318,12 @@ export function slew(current: number, target: number, maxStep: number): number {
 
 export function clamp01(x: number): number {
   return Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0;
+}
+
+/**
+ * Göğün çizimde kullanılan saatleri (akış ve yıldız kırpışması): saatlerce çalınca da sıçramaz
+ * ([`foldTime`]). Ekran kartı çizimi ve 2D yedek çizim aynı değeri kullanır.
+ */
+export function skyClocks(state: SkyState): { flow: number; twinkle: number } {
+  return { flow: foldTime(state.flowTime), twinkle: foldTime(state.twinkleTime) };
 }

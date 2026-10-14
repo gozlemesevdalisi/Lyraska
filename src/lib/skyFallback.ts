@@ -1,4 +1,4 @@
-import { mixColors, parseHexColor, SKY_THEMES, LYRA_LINES, type SkyState } from "./sky";
+import { mixColors, parseHexColor, skyClocks, SKY_THEMES, LYRA_LINES, type SkyState } from "./sky";
 import { lyraPositions } from "./skyRenderer";
 import { canvasScale } from "./gl";
 
@@ -104,6 +104,7 @@ export function createSkyFallback(canvas: HTMLCanvasElement): SkyFallback | null
 
   return {
     draw(state) {
+      const clocks = skyClocks(state);
       const pixel = canvasScale(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio);
       const width = Math.max(1, Math.round(canvas.clientWidth * pixel));
       const height = Math.max(1, Math.round(canvas.clientHeight * pixel));
@@ -123,7 +124,7 @@ export function createSkyFallback(canvas: HTMLCanvasElement): SkyFallback | null
 
       // Yıldızlar (yavaş kırpışma; parlamaz).
       for (const s of stars) {
-        const twinkle = 0.85 + 0.15 * Math.sin(state.twinkleTime * 1.3 + s.phase);
+        const twinkle = 0.85 + 0.15 * Math.sin(clocks.twinkle * 1.3 + s.phase);
         g.fillStyle = css(star, s.base * twinkle * 0.8);
         g.fillRect(s.x * width, s.y * height, s.size * pixel, s.size * pixel);
       }
@@ -171,9 +172,9 @@ export function createSkyFallback(canvas: HTMLCanvasElement): SkyFallback | null
         const tailPx = tail * height;
         for (let x = 0; x < width; x += strip) {
           const units = (x / width) * aspect * (0.85 + 0.2 * i) + i * 3.7;
-          const center = auroraCenter(units, i, state.flowTime, state.tension, state.bloom);
+          const center = auroraCenter(units, i, clocks.flow, state.tension, state.bloom);
           // Perdenin dikey ışınları: şeritten şeride değişen yoğunluk.
-          const rays = 0.55 + 0.45 * Math.sin(units * 23 + state.flowTime * 0.4 + i * 1.7);
+          const rays = 0.55 + 0.45 * Math.sin(units * 23 + clocks.flow * 0.4 + i * 1.7);
           g.globalAlpha = Math.max(0, Math.min(1, rays));
           g.setTransform(1, 0, 0, tailPx, x, (1 - center) * height);
           g.fillRect(0, -3, strip + 0.5, 3.25);

@@ -4,6 +4,7 @@ import {
   GLOW_BASE,
   HIGHWAY_AT_REST,
   HIGHWAY_MAX_LUMINANCE,
+  highwayClock,
   highwayLuminance,
   stepHighway,
   type HighwayInput,
@@ -193,5 +194,18 @@ describe("gece otoyolu", () => {
     const after = stepHighway(HIGHWAY_AT_REST, music(1, { release: 1 }), 30);
     expect(after.glow).toBeLessThanOrEqual(ENERGY_SLEW_PER_SECOND * 0.25 + 1e-12);
     expect(after.dash).toBeLessThan(2);
+  });
+});
+
+describe("gece otoyolunun saati", () => {
+  it("saatlerce çalınca da yolun kıvrımı sıçramaz", () => {
+    let state: HighwayState = { ...HIGHWAY_AT_REST, time: 9_999.99 };
+    for (let frame = 0; frame < 600; frame++) {
+      const before = highwayClock(state);
+      state = stepHighway(state, null, 1 / 60);
+      const after = highwayClock(state);
+      expect(Math.abs(after - before)).toBeLessThan(0.05);
+      expect(after).toBeLessThanOrEqual(10_000);
+    }
   });
 });
