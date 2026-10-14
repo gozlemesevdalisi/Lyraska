@@ -132,6 +132,7 @@ lyraska/
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
 │   ├── DOGRULAMA.md          # Gerçek cihazda denenecekler listesi ve proje sahibinin bildirdiği sonuçlar
 │   ├── LISANSLAR.md          # Dışarıdan alınan varlıklar (yazı tipleri vb.) ve lisansları
+│   ├── VERITAS.md            # Kayıplı dosyaları kanıtla iyileştirme araştırması (Faz 8); betikleri arastirma/veritas/
 │   └── devlog/               # Oturum devir notları (Türkçe)
 └── .github/                  # CI, test sürümü yayını, hata kaydı formu
 ```
