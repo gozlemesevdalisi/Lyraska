@@ -32,6 +32,8 @@ export interface LibraryControls {
   /** İlk yükleme sürüyor. */
   loading: boolean;
   error: string | null;
+  /** Kütüphane açılamadı (nedeni); program yeniden açılana kadar şarkı eklenemez. */
+  unavailable: string | null;
   addFolder: () => Promise<void>;
   /** Şarkı seçme penceresini açar; seçilen şarkıları tek tek kütüphaneye ekler. */
   addFiles: (extensions: string[]) => Promise<void>;
@@ -52,6 +54,7 @@ export function useLibrary(): LibraryControls {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(available);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const searchSeq = useRef(0);
 
   const refreshStatus = useCallback(async () => {
@@ -62,12 +65,13 @@ export function useLibrary(): LibraryControls {
     }
   }, []);
 
-  // Açılışta durumu al.
+  // Açılışta durumu al. Alınamıyorsa kütüphane açılamamıştır (çekirdek yeniden denemez):
+  // kullanıcıya görünür biçimde söylenir.
   useEffect(() => {
     if (!available) return;
     getLibraryStatus()
       .then(setStatus)
-      .catch((e) => setError(errorMessage(e)))
+      .catch((e) => setUnavailable(errorMessage(e)))
       .finally(() => setLoading(false));
   }, [available]);
 
@@ -77,7 +81,7 @@ export function useLibrary(): LibraryControls {
   // Arama: yazı ya da şarkı sayısı değişince (tarama ilerledikçe) listeyi tazele.
   // Yalnızca en son aramanın sonucu uygulanır.
   useEffect(() => {
-    if (!available) return;
+    if (!available || unavailable) return;
     const seq = ++searchSeq.current;
     const timer = window.setTimeout(() => {
       searchLibrary(query)
@@ -87,7 +91,7 @@ export function useLibrary(): LibraryControls {
         .catch((e) => setError(errorMessage(e)));
     }, SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [available, query, status.trackCount, analysisKey]);
+  }, [available, unavailable, query, status.trackCount, analysisKey]);
 
   // Tarama sürerken ilerlemeyi izle.
   const scanning = status.scan.scanning;
@@ -167,6 +171,7 @@ export function useLibrary(): LibraryControls {
     setQuery,
     loading,
     error,
+    unavailable,
     addFolder,
     addFiles,
     addDropped,
