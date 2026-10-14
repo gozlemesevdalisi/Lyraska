@@ -4,13 +4,18 @@ Bu klasör [docs/VERITAS.md](../../VERITAS.md)'deki sayıları üreten araştır
 parçası değildir: derlenmez, paketlenmez, CI'da çalışmaz. Ses dosyası içermez; deney sesi çalışma anında üretilir
 ve depo dışındaki bir çalışma klasörüne yazılır.
 
-| Dosya                           | Ne yapar                                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `sinyal.py`                     | Müziğe benzer sentetik stereo deney sesi (piyano benzeri, titreşimli yaylı, kick, hi-hat) |
-| `bit_hizi.py`                   | ffmpeg'in LAME'iyle 96–320 kbps: SNR, yan kanal hatası, üst kesim frekansı                |
-| `sartname_dogrulama.py`         | Şartnamenin hesapları: kutu tablosu, Seviye 0 kazancı, 2·MMSE, çoklu kopya, dither        |
-| `lame-3.100-veritas-dump.patch` | LAME 3.100'e ölçüm yaması: nicemlemeden sonra her granülün θ, q ve yan bilgisini döker    |
-| `kapsama.py`                    | F0 kapsama testi: θ çözücünün kurabildiği kutunun içinde mi (ISO, LAME ve bant kuralıyla) |
+| Dosya                           | Ne yapar                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `sinyal.py`                     | Müziğe benzer sentetik stereo deney sesi (piyano benzeri, titreşimli yaylı, kick, hi-hat)      |
+| `bit_hizi.py`                   | ffmpeg'in LAME'iyle 96–320 kbps: SNR, yan kanal hatası, üst kesim frekansı                     |
+| `sartname_dogrulama.py`         | Şartnamenin hesapları: kutu tablosu, Seviye 0 kazancı, 2·MMSE, çoklu kopya, dither             |
+| `lame-3.100-veritas-dump.patch` | LAME 3.100'e ölçüm yaması: nicemlemeden sonra her granülün θ, q ve yan bilgisini döker         |
+| `kapsama.py`                    | F0 kapsama testi: θ çözücünün kurabildiği kutunun içinde mi (ISO, LAME ve bant kuralıyla)      |
+| `hibrit.py`                     | MP3 hibrit süzgeç bankası: çözücünün sentezi S ve eşleniği Sᵀ (ffmpeg'e göre −125 dB)          |
+| `beste.py`                      | R1 deney müziği: programla yazılmış altı MIDI parça, FluidSynth + FluidR3_GM (MIT) ile çalınır |
+| `deney.py`                      | R1 düzeneği: döküm → çözücü görünümü, kutular, yöntemler, SNR ve Zimtohrli MOS                 |
+| `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                      |
+| `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)     |
 
 ## Gerekenler
 
@@ -47,6 +52,27 @@ done
 venv/bin/python $BETIK/kapsama.py dokum_96.bin dokum_128.bin dokum_320.bin dokum_v2.bin
 venv/bin/python $BETIK/sartname_dogrulama.py
 ```
+
+## R1: gerçek dalga biçiminde ölçüm
+
+Ek gerekenler: `fluidsynth` ve `fluid-soundfont-gm` (Ubuntu paketleri; ses bankası MIT), Python'da `mido` ve
+`zimtohrli` (Apache-2.0). Hepsi yalnızca araştırma içindir, programa girmez.
+
+```sh
+venv/bin/pip install mido zimtohrli
+venv/bin/python $BETIK/beste.py $W/muzik            # altı parça, 20 sn, 44,1 kHz, 16 bit
+mkdir -p $W/dokum
+for p in pop akustik piyano elektronik orkestra vurmali; do
+  for m in "64:-b 64 --cbr" "128:-b 128 --cbr"; do
+    n=${m%%:*}; a=${m#*:}
+    VERITAS_DUMP=$W/dokum/${p}_$n.bin lame-3.100/frontend/lame --quiet $a $W/muzik/$p.wav $W/dokum/${p}_$n.mp3
+  done
+done
+cd $BETIK && VERITAS_LAME=$W/lame-3.100 $W/venv/bin/python r1.py $W/dokum pop_64 piyano_64 pop_128
+```
+
+`hibrit.py`'nin polifaz penceresi LAME kaynağındaki `mpglib/tabinit.c`'den çalışma anında okunur (depoya kopyalanmaz).
+LAME 64 kbps stereo'yu 24 kHz'e (MPEG-2), 96 kbps'i 32 kHz'e indirir; çözücümüz ikisini de doğru çözer.
 
 ## Döküm biçimi
 

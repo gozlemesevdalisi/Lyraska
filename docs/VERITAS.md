@@ -1,7 +1,7 @@
 # Veritas: kayıplı dosyaları kanıtla iyileştirme (araştırma, 14 Ekim 2026)
 
-**Durum:** araştırma ve ölçüm. Programda Veritas kodu yok. Uygulama doğrulama haftasından sonra ve proje sahibinin
-onayıyla başlar (bkz. [ROADMAP.md](ROADMAP.md), Faz 8).
+**Durum:** araştırma ve ölçüm; R1 tamamlandı (bölüm 7): klasik yol kapıdan geçmedi. Programda Veritas kodu yok.
+Sıradaki adım proje sahibinin kararıyla başlar (bkz. [ROADMAP.md](ROADMAP.md), Faz 3, "Retriever").
 
 Bu belge üç şeyi bir arada tutar:
 
@@ -304,6 +304,9 @@ hesabı (`sartname_dogrulama.py` ile bağımsız olarak yeniden hesaplandı); se
 Her adımın sonunda ölçülebilir bir kapı var. Kapı geçilmezse durulur ve sonuç bu belgeye yazılır; "biraz daha
 deneyelim" ile ürüne girmez.
 
+> **R1 sonrası güncelleme (bölüm 7):** F1 klasik önsellerle denendi, kapıdan geçmedi. Bu yüzden F0 (Rust bit akışı
+> ayrıştırıcı) ertelendi; öğrenmeli önsel araştırması (R2) ve kör dinleme aracı proje sahibinin kararını bekliyor.
+
 - **F0, bit akışı ve kutular (Rust).** MP3 bit akışı ayrıştırıcı (yan bilgi, ölçek çarpanları, Huffman) → q, Δ,
   blok türü, M/S; LAME etiketini okuma; kutu kuralı (adj43 + bant kuralı; tanınmayan kodlayıcıda genişletilmiş kutu);
   kendi ters nicemleme ve hibrit sentez.
@@ -334,7 +337,82 @@ bir fark beklenmez; bu dosyalar zaten çoğu kişi için şeffaftır. 128 kbps v
 yeri var; tonal içerikte oyuncak testte +3 dB, gerçek dosyada henüz ölçülmedi. Vuruşlu ve gürültülü seslerde (ön
 yankı) ayrı bir yöntem gerekir. Kesim üstü kanıtla geri gelmez.
 
-## 7. Tekrar üretme
+## 7. R1: gerçek dalga biçiminde ölçüm (14 Ekim 2026)
+
+Proje sahibi MP3 için tam inisiyatif verdi ("daha iyi bir çözüm bulmaya zorla"). F1'in sorusu soruldu: kutulara sadık
+bir kestirim **kulağın duyduğu** bir iyileşme getiriyor mu?
+
+### 7.1 Düzenek
+
+- **Çözücü (`hibrit.py`):** MP3 hibrit süzgeç bankası numpy ile yazıldı. Dökümdeki tam sayılardan kurulan ses ffmpeg'in
+  çözümüyle aynı: fark −117 ile −125 dB arası (float hassasiyeti). Bu sonuç MPEG-1 44,1 kHz, MPEG-2 24 kHz, 32 kHz, kısa
+  blok ve M/S için geçerli.
+  - Polifaz penceresinin ISO tablosu, simetrik bir ilk örnek süzgecin her 64 örnekte işaret değiştirmiş hâlidir:
+    D[i] = (−1)^⌊i/64⌋ · p[i]. Bu düzenle ISO analiziyle yeniden kurma hatası −84,5 dB.
+  - Ölçülen yapı: SᵀS = 288·I (uzun blok), 96·I (kısa blok). Analiz operatörü A = Sᵀ/c granül başına kesin.
+- **Deney müziği (`beste.py`):** programla yazılmış altı MIDI parça (pop, akustik, piyano, elektronik, orkestra,
+  kastanyet + klavsen). FluidSynth ve gerçek enstrüman örnekleri içeren FluidR3_GM (MIT) ses bankasıyla çalındı.
+- **Ölçü:** S(θ)'ya göre zaman alanında SNR ve **Zimtohrli** (Google, Apache-2.0) ile tahmini MOS (1–5). MOS bir
+  modeldir, dinleme testi değildir.
+
+### 7.2 Sonuçlar, 64 kbps (LAME 3.100, 24 kHz)
+
+MOS (yüksek iyi); parantez içinde SNR farkı (çözücüye göre). Hiçbir yöntem kutu dışına çıkmadı (ölçüldü: 0).
+
+| Yöntem                                        | pop          | piyano       | akustik      | elektronik   | orkestra     | vurmalı      | Ortalama  |
+| --------------------------------------------- | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | --------- |
+| Standart çözücü (SNR 17,4–20,2 dB)            | 4,349        | 4,722        | 4,604        | 4,763        | 4,504        | 4,825        | 4,628     |
+| Laplace ağırlık merkezi                       | 4,167        | 4,634        | 4,545        | 4,737        | 4,496        | 4,802        | 4,564     |
+| Wiener + kesik Gauss (en küçük hata)          | 4,171 (+0,8) | 4,749 (+1,3) | 4,552 (+0,8) | 4,750 (+0,9) | 4,500 (+0,6) | 4,821 (+0,5) | 4,591     |
+| **Wiener + kesik Gauss + enerji koruma**      | 4,354 (+0,5) | 4,754 (+1,1) | 4,603 (+0,6) | 4,770 (+0,7) | 4,502 (+0,5) | 4,828 (+0,4) | **4,635** |
+| **Faz-tutarlı tonal delik doldurma**          | 4,370        | 4,738        | 4,607        | 4,766        | 4,504        | 4,828        | **4,636** |
+| Bit akışından enerjiyle gürültü doldurma      | 3,765        | 4,167        | 4,547        | 4,715        | 4,227        | 4,752        | 4,362     |
+| Kâhin: Wiener (gerçek güç biliniyor)          | 4,314        | 4,827        | 4,672        | 4,826        | 4,620        | 4,859        | 4,686     |
+| Kâhin: deliklerin gerçek enerjisi, gürültü    | 4,553        | 4,652        | 4,682        | 4,782        | 4,552        | 4,796        | 4,670     |
+| Kâhin: q ≠ 0 katsayılar gerçek                | 4,296        | 4,864        | 4,691        | 4,849        | 4,635        | 4,912        | 4,708     |
+| **Kâhin: q = 0 katsayılar (delikler) gerçek** | 4,872        | 4,867        | 4,876        | 4,883        | 4,857        | 4,894        | **4,875** |
+
+### 7.3 Bulgular
+
+1. **En küçük hata kulağa daha kötü gelir.** Sonsal ortalama (Laplace, Wiener) SNR'ı artırıyor ama enerjiyi kısıyor:
+   MOS düşüyor. Bu, algı–bozulma ödünleşiminin (Blau ve Michaeli, 2018) ölçülmüş hâlidir. Her bandın enerjisi
+   korunursa SNR kazancının çoğu kalıyor (+0,4–1,1 dB) ve MOS çözücüye eşit ya da biraz üstünde.
+2. **Genliğe bakan önsellerin tavanı alçak.** Gerçek sinyalin gücünü bilen kâhin Wiener bile 128 kbps'te +1,8 dB SNR,
+   64 kbps'te ortalama +0,06 MOS veriyor. MP3 gürültüsü sinyalin bulunduğu yerde durduğu için (nicemleyici |θ|^(3/4)
+   kuralıyla çalışır) genlik maskeleri onu ayıramaz.
+3. **Algısal kayıp tizdeki deliklerde.** Yalnızca q = 0 katsayıları gerçek değerle doldurulunca ortalama MOS +0,25
+   artıyor (5 kHz üstü tek başına bunun çoğunu açıklıyor). Buna karşılık q ≠ 0 katsayıların hepsi kusursuz yapılınca
+   SNR +4–6 dB artıyor ama MOS yalnızca +0,08 artıyor.
+4. **Deliklerin yalnızca enerjisi yetmez; tutarlı ince yapı gerekir.** Gerçek enerjiyle gürültü doldurmak gürültülü
+   parçalarda yardım ediyor (pop +0,20), tonal parçalarda zarar veriyor (piyano −0,07); ortalama +0,04. Rastgele
+   işaretle gerçek genlik de aynı sonucu veriyor.
+5. **Bu bilgi bit akışında yok.** Canlı bantlardaki deliklerin enerjisi Laplace modeliyle doğru kestiriliyor
+   (+0,7 / +1,8 dB sapma). Bütün bandı sıfırlanmış granüllerde ise komşu granüllerden kestirim 11–18 dB fazla çıkıyor;
+   o granülde enerji gerçekten düşük ve dosya bunu kanıtlamıyor (yalnızca |θ| < Δ_genel/2). Faz-tutarlı tonal doldurma
+   küçük ama hep olumlu kazanç veriyor: tiz tonlar granüllerin çoğunda tamamen silinmiş.
+6. **Yerel komşulardan doğrusal kestirim de yetmiyor.** Bir deliğin değerini komşu 5 granül × 7 frekanstaki çözülmüş
+   değerlerden öğrenen doğrusal kestirici (12 frekans bölgesi, birini dışarıda bırakarak sınandı), deliklerin hatasını
+   yalnızca +0,02 dB azaltıyor; MOS değişmiyor (`r2_dogrusal.py`). Delik değerleri komşu verilerde basitçe yakalanacak
+   biçimde bulunmuyor; bunu ancak doğrusal olmayan, gerçek müzikten öğrenmiş bir üretici model yapabilir.
+
+### 7.4 Karar
+
+- F1'in kapısı geçilmedi: SNR ölçütü (≥ +1 dB) yalnızca piyanoda sağlandı; algısal ölçüde iyileşme yok denecek
+  kadar küçük (+0,007 MOS). **Kutulara sadık klasik yöntemler ürüne alınmaz.** MP3 bit akışı ayrıştırıcısı (F0) da bu
+  yüzden şimdilik yazılmaz: duyulur bir kazanç getirmeyen işi programa koymak, ses yolunu karmaşıklaştırır.
+- Kâhin tavanı (+0,25 MOS) bilginin nerede eksik olduğunu gösteriyor: tizdeki deliklerin tutarlı ince yapısı. Bunu
+  ancak gerçek müzikten öğrenmiş bir önsel tahmin edebilir; kutular da onun dosyayla çelişmesini engeller
+  ("kutu bekçisi": herhangi bir iyileştiricinin çıktısı A ile katsayılara çevrilip kutulara kırpılırsa, dosyada kanıtı
+  olan her şey korunur, uydurma yalnızca deliklerde ve |θ| < Δ/2 sınırında kalır).
+- Öneri (proje sahibinin kararı):
+  1. **Kör dinleme aracı (ABX):** ses mühendisiyle tartışmayı kulakla, kanıtla bitirir ("320 kbps ile FLAC'ı
+     ayırabiliyor muyum?").
+  2. **R2, öğrenmeli önsel araştırması:** kutularla sınırlanmış, delikleri dolduran küçük bir model.
+     - Eğitim verisi lisans sorunu olmadan üretilebilir: programla yazılmış parçalar ve MIT lisanslı ses bankası; ayrıca
+       proje sahibinin kendi kayıpsız arşivi, yalnızca kendi bilgisayarında.
+     - Risk: gerçek kayıtlara ve vokale genelleme burada ölçülemez.
+
+## 8. Tekrar üretme
 
 Adımlar ve döküm biçimi: [arastirma/veritas/README.md](arastirma/veritas/README.md). LAME yalnızca ölçüm için,
 depo dışında yamalı derlenir; programa girmez.

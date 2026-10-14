@@ -116,6 +116,12 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       vuruşunun ilk anı 8 dB'ye kadar güçlenir, bas şişmez)
 - [ ] Crossfeed
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
+  - Araştırma ve ölçüm: [VERITAS.md](VERITAS.md) (14 Ekim 2026). MP3 her katsayı için gerçek değerin hangi aralıkta
+    (kutu) olduğunu kesin olarak taşır; gerçek LAME 3.100 ile doğru kutu kuralı (adj43 + bant kuralı) kapsama %100.
+  - R1 sonucu (gerçek dalga biçimi, algısal ölçü): kutulara sadık klasik yöntemler SNR'ı 0,2–1,3 dB artırıyor ama
+    duyulur bir iyileşme vermiyor; algısal kayıp tizdeki deliklerde ve onları dolduracak bilgi bit akışında yok.
+    Klasik yol kapıdan geçmedi, ürüne alınmaz.
+  - Sıradaki (proje sahibinin kararı): kör dinleme aracı (ABX); kutularla sınırlanmış öğrenmeli önsel araştırması (R2).
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
       kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
       aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
@@ -195,34 +201,15 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
 - [ ] Kalite hedefi: proje sahibinin dinleme denemesinde "elle seçmiş gibi" bulunan geçiş oranı; ölçütler ve
       ağırlıklar ayarlanabilir, testlerde sentetik kütüphaneyle sınanır.
 
-## Faz 8 — Veritas: kayıplı dosyaları kanıtla iyileştirme (plan, 14 Ekim 2026)
-
-Araştırma ve ölçüm: [VERITAS.md](VERITAS.md). Doğrulama haftasından önce başlamaz; zamanı proje sahibinin kararı.
-
-MP3 her katsayı için gerçek değerin hangi aralıkta (kutu) olduğunu kesin olarak taşır; standart çözücü bu aralıktan tek
-bir nokta seçer. Veritas aralığın dışına çıkmadan müziğin yapısına en uygun noktayı seçer; düzeltilen katsayılar aynı
-adımlarla yeniden nicemlenirse dosyadaki tam sayıların aynısı çıkar. Gerçek LAME 3.100 ile ölçüldü: doğru kutu kuralıyla (adj43 + bant kuralı) kapsama %100.
-
-- [ ] F0: MP3 bit akışı ayrıştırıcı (Rust), kodlayıcı tanıma, kutu kuralı; kendi çözümümüz symphonia'yla aynı
-- [ ] F1: Seviye 2 (sinüzoidal model + kutu + kendini doğrulayan kapı) gerçek dosyalarda; kapı: 128 kbps'te
-      ≥ +1 dB SNR, objektif ölçüde iyileşme, hiçbir karede kötüleşme yok
-- [ ] F2: kör dinleme aracı (ABX); kapı: 128 kbps'te anlamlı tercih
-- [ ] F3: ürüne alma ("MP3 iyileştirme (Sadık)" ayarı, çözme tarafında; bit-perfect modda kapalı)
-- [ ] F4: AAC (M4A)
-- Kesim üstü tiz tamamlama kanıta dayanmaz: ayrı, varsayılan kapalı, "tahmin" diye adlandırılır; patent
-  incelemesinden sonra.
-- Kalite hedefi: kapı geçilmezse durulur ve sonuç belgeye yazılır. Dürüst beklenti: 256–320 kbps'te duyulur fark
-  beklenmez; kazancın yeri 128 kbps ve altıdır.
-
 ## Bekleyen kararlar (proje sahibinde)
 
 - **Ses iş parçacığına Windows ses önceliği (MMCSS, "Pro Audio")**: ağır yükte takılmaya karşı daha sağlam;
   `unsafe` kod gerektirdiği için onay şart. Öneri: şimdilik yapılmasın, takılma görülürse ilk bu açılsın.
 - **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
-- **Veritas (Faz 8) ne zaman başlasın** ([VERITAS.md](VERITAS.md)): öneri, doğrulama haftası kapanınca önce F0 ve
-  kör dinleme aracı (ABX). ABX tek başına da değerli: "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla
-  cevaplar.
+- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): öneri, önce kör dinleme aracı (ABX); "320 kbps
+  ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. Öğrenmeli önsel araştırması (R2) daha büyük bir iş; ayrı
+  karar.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)
