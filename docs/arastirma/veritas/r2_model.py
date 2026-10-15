@@ -127,11 +127,16 @@ class Net(nn.Module):
         return self.head(h)
 
 
+def soft_logsig(x):
+    """log σ ∈ (−7, 2), yumuşak sınırlı: sert kırpma gradyanı sıfırlayıp modeli düzgün dağılımda kilitliyordu."""
+    return -2.5 + 4.5 * torch.tanh(x / 4.5)
+
+
 def mixture_logp(out, u):
     """Kesik Gauss karışımının log yoğunluğu (doğal log) [−½, ½] üzerinde; out (B, 3K, 576), u (B, 576)."""
     B, _, L = out.shape
     o = out.view(B, 3, K_MIX, L)
-    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, o[:, 2].clamp(-7, 2)
+    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, soft_logsig(o[:, 2])
     sig = logsig.exp()
     logw = F.log_softmax(logit, 1)
     uu = u[:, None, :]
@@ -146,7 +151,7 @@ def mixture_sample(out, gen):
     """Karışımdan örnek: bileşen seç, kesik Gauss'tan ters CDF ile çek."""
     B, _, L = out.shape
     o = out.view(B, 3, K_MIX, L)
-    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, o[:, 2].clamp(-7, 2)
+    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, soft_logsig(o[:, 2])
     sig = logsig.exp()
     nd = torch.distributions.Normal(0.0, 1.0)
     a, b = nd.cdf((-U_MAX - mu) / sig), nd.cdf((U_MAX - mu) / sig)
@@ -159,19 +164,28 @@ def mixture_sample(out, gen):
     return (mu_c + sig_c * nd.icdf(p.clamp(1e-6, 1 - 1e-6))).clamp(-U_MAX, U_MAX)
 
 
-def mixture_mean(out):
-    """Kesik karışımın beklenen değeri (en küçük ortalama kare hata; enerjiyi kısar)."""
+def mixture_moments(out):
+    """Kesik karışımın beklenen değeri ve ikinci momenti E[u²] (bileşen başına kesik Gauss momentleri)."""
     B, _, L = out.shape
     o = out.view(B, 3, K_MIX, L)
-    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, o[:, 2].clamp(-7, 2)
+    logit, mu, logsig = o[:, 0], torch.tanh(o[:, 1]) * U_MAX, soft_logsig(o[:, 2])
     sig = logsig.exp()
     nd = torch.distributions.Normal(0.0, 1.0)
     al, be = (-U_MAX - mu) / sig, (U_MAX - mu) / sig
     mass = (nd.cdf(be) - nd.cdf(al)).clamp_min(1e-12)
     pdf = lambda z: torch.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
-    tmean = mu + sig * (pdf(al) - pdf(be)) / mass
+    d1 = (pdf(al) - pdf(be)) / mass
+    tmean = mu + sig * d1
+    tvar = sig * sig * (1 + (al * pdf(al) - be * pdf(be)) / mass - d1 * d1)
     w = F.softmax(F.log_softmax(logit, 1) + mass.log(), 1)
-    return (w * tmean).sum(1).clamp(-U_MAX, U_MAX)
+    mean = (w * tmean).sum(1)
+    e2 = (w * (tvar + tmean * tmean)).sum(1)
+    return mean.clamp(-U_MAX, U_MAX), e2.clamp(0, U_MAX * U_MAX)
+
+
+def mixture_mean(out):
+    """Kesik karışımın beklenen değeri (en küçük ortalama kare hata; enerjiyi kısar)."""
+    return mixture_moments(out)[0]
 
 
 SIGMA0 = 0.3  # akış başlangıç gürültüsü (u birimi)

@@ -17,6 +17,12 @@ ve depo dışındaki bir çalışma klasörüne yazılır.
 | `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                      |
 | `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)     |
 | `R2_GOREV.md`                   | R2 görev tanımı: devralacak model için kendi başına anlaşılır, kanıtlı olgular ve kapılarla    |
+| `r2_beste.py`                   | R2 eğitim/sınama müziği: tohumdan rastgele ton, tempo, çalgı, ritim; FluidR3_GM ile çalınır   |
+| `r2_veri.py`                    | R2 veri hazırlığı: dökümleri `deney.Track` ile çözücü görünümüne çevirip sıkışık .npz yazar   |
+| `r2_model.py`                   | R2 model: delikler için kesik Gauss karışımı (bilgi ölçümü) ve akış eşleme örnekleyici; CPU   |
+| `r2_degerlendir.py`             | R2 ölçüm: bit kazancı, enerji hatası, örnekleyiciler (SNR, MOS, kutu dışı), bilgi–algı eğrisi |
+| `r2_tonal.py`                   | R2 / S3: kâhin ayrıştırması, tonal tavan (gerçek sinyalin tepeleri) ve tonal POCS             |
+| `r2_tablo.py`                   | R2 JSON sonuçlarını VERITAS.md için Markdown tablolarına çevirir                              |
 
 ## Gerekenler
 
@@ -71,6 +77,37 @@ for p in pop akustik piyano elektronik orkestra vurmali; do
 done
 cd $BETIK && VERITAS_LAME=$W/lame-3.100 $W/venv/bin/python r1.py $W/dokum pop_64 piyano_64 pop_128
 ```
+
+## R2: öğrenmeli önsel (bölüm 9)
+
+Ek gerekenler: `venv/bin/pip install torch` (işlemci sürümü yeter; GPU kullanılmaz). Eğitim müziği R1'in altı
+parçasını içermez; onlar yalnızca sınamada kullanılır.
+
+```sh
+cd $BETIK
+# 1. Eğitim (160 parça × 12 sn) ve sınama (16 parça) müziği, 64 ve 96 kbps dökümleri
+$W/venv/bin/python r2_beste.py $W/egitim 0 160 12
+$W/venv/bin/python r2_beste.py $W/sinama 500 16 12
+for d in egitim sinama; do mkdir -p $W/dokum_$d; for f in $W/$d/*.wav; do p=$(basename $f .wav)
+  for m in "64:-b 64 --cbr" "96:-b 96 --cbr"; do n=${m%%:*}; a=${m#*:}
+    VERITAS_DUMP=$W/dokum_$d/${p}_$n.bin $W/lame-3.100/frontend/lame --quiet $a $f $W/dokum_$d/${p}_$n.mp3
+  done; done; done
+# 2. Sıkışık veri (R1 dökümleri de, sınama için)
+export VERITAS_LAME=$W/lame-3.100
+for d in dokum dokum_egitim dokum_sinama; do $W/venv/bin/python r2_veri.py $W/$d $W/veri_${d#dokum_} 3; done
+# 3. Modeller (her biri 4 çekirdekte 15–30 dk)
+$W/venv/bin/python r2_model.py egit $W/veri_egitim $W/m_yog_cozucu.pt --bas yogunluk --baglam cozucu --adim 4000
+$W/venv/bin/python r2_model.py egit $W/veri_egitim $W/m_yog_yok.pt    --bas yogunluk --baglam yok    --adim 2500
+$W/venv/bin/python r2_model.py egit $W/veri_egitim $W/m_yog_kahin.pt  --bas yogunluk --baglam kahin  --adim 4000
+$W/venv/bin/python r2_model.py egit $W/veri_egitim $W/m_akis_cozucu.pt --bas akis    --baglam cozucu --adim 6000
+# 4. Ölçüm (R1'in altı parçası, 64 ve 96 kbps) ve tablolar
+$W/venv/bin/python r2_degerlendir.py $W/dokum $W/veri_dokum $W/r2_64.json pop_64 piyano_64 akustik_64 elektronik_64 orkestra_64 vurmali_64 \
+  --model "bağlamsız=$W/m_yog_yok.pt" --model "koşullu=$W/m_yog_cozucu.pt" --model "kâhin bağlam=$W/m_yog_kahin.pt" --akis $W/m_akis_cozucu.pt --egri
+$W/venv/bin/python r2_tonal.py $W/dokum pop_64 piyano_64 akustik_64 elektronik_64 orkestra_64 vurmali_64
+$W/venv/bin/python r2_tablo.py $W/r2_64.json
+```
+
+Model ağırlıkları depoya konmaz (kapı geçilmedi; bkz. VERITAS.md bölüm 9).
 
 `hibrit.py`'nin polifaz penceresi LAME kaynağındaki `mpglib/tabinit.c`'den çalışma anında okunur (depoya kopyalanmaz).
 LAME 64 kbps stereo'yu 24 kHz'e (MPEG-2), 96 kbps'i 32 kHz'e indirir; çözücümüz ikisini de doğru çözer.

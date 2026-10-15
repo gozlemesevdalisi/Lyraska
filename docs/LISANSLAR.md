@@ -43,3 +43,13 @@ kuralları). Kod bağımlılıklarının lisanslarını CI denetler (`npm run ch
   yazılır; hiçbir hazır şarkı kullanılmaz.
 - **FluidSynth:** Ubuntu paketi `fluidsynth` 2.3.4; LGPL-2.1 ya da sonrası. Yalnızca çalıştırılır.
 - **Zimtohrli:** Google, PyPI `zimtohrli` 0.2.1; Apache-2.0 (kaynak dosya başlığı). Yalnızca ölçüm için.
+
+### R2 öğrenmeli önsel araştırması
+
+- **Ne için:** Veritas R2 ([VERITAS.md](VERITAS.md) bölüm 9): delik katsayıları için koşullu yoğunluk ve akış
+  örnekleyici eğitimi. Programa girmez, dağıtılmaz; yalnızca araştırma betiklerinde (`r2_model.py`,
+  `r2_degerlendir.py`) kullanılır.
+- **PyTorch:** PyPI `torch` 2.14.1 (işlemci kullanımı); lisans BSD-3-Clause (`LICENSE`), paket üst verisi bileşenler
+  için Apache-2.0, MIT, BSD-2-Clause ve BSL-1.0 da sayar. AGPL ya da ticari kullanım yasağı yok.
+- **Eğitim müziği:** `r2_beste.py` ile programla yazılan rastgele parçalar, yine FluidR3_GM (MIT) ile çalınır. Hazır
+  şarkı, MUSDB18, MoisesDB ya da telifli kayıt kullanılmadı. Eğitilen ağırlıklar depoya konmadı (kapı geçilmedi).

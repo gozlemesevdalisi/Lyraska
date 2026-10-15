@@ -48,6 +48,7 @@ def model_bits_and_fill(net, td, hole, kind, gen, steps=32):
     bits = np.zeros(hole.shape)
     sample = np.zeros(hole.shape)
     mean = np.zeros(hole.shape)
+    e2 = np.zeros(hole.shape)
     with torch.no_grad():
         for ch in range(2):
             for t0 in range(0, td.g, 128):
@@ -59,10 +60,46 @@ def model_bits_and_fill(net, td, hole, kind, gen, steps=32):
                     u = torch.from_numpy(td.u[ch, ts])
                     bits[ch, ts] = (-M.mixture_logp(out, u) / math.log(2)).numpy()
                     sample[ch, ts] = M.mixture_sample(out, gen).numpy()
-                    mean[ch, ts] = M.mixture_mean(out).numpy()
+                    m1, m2 = M.mixture_moments(out)
+                    mean[ch, ts], e2[ch, ts] = m1.numpy(), m2.numpy()
                 else:
                     sample[ch, ts] = M.flow_sample(net, feats, h, steps, gen).numpy()
-    return bits, sample, mean
+    return bits, sample, mean, e2
+
+
+def band_energy_error(tr, pred_ms, mask):
+    """Delik enerjisi kestiriminin bant başına hatası (dB, kestirim − gerçek): ortanca ve %10/%90, canlı ve sıfır
+    bantlar ayrı. pred_ms: katsayı başına kestirilen θ² (θ biriminde)."""
+    out = {}
+    for label, m in (("canlı bant", mask & ~tr.zero_band), ("sıfır bant", mask & tr.zero_band)):
+        errs = []
+        for ch in range(2):
+            for t in range(tr.g):
+                for sl in tr.bands(ch, t):
+                    h = m[ch, t, sl]
+                    if h.sum() >= 2:
+                        e_true, e_pred = np.sum(tr.theta[ch, t, sl][h] ** 2), np.sum(pred_ms[ch, t, sl][h])
+                        if e_true > 0 and e_pred > 0:
+                            errs.append(10 * np.log10(e_pred / e_true))
+        errs = np.array(errs)
+        out[label] = {"ortanca dB": float(np.median(errs)), "%10": float(np.percentile(errs, 10)), "%90": float(np.percentile(errs, 90)), "bant": int(len(errs))}
+    return out
+
+
+def scale_to_energy(tr, est, target_ms, hole):
+    """Deliklerdeki kestirimi bant başına hedef enerjiye (Σ target_ms) ölçekle, kutuya kırp; yapı kalır."""
+    out = est.copy()
+    for ch in range(2):
+        for t in range(tr.g):
+            for sl in tr.bands(ch, t):
+                h = hole[ch, t, sl]
+                if h.any():
+                    e1, e0 = np.sum(est[ch, t, sl][h] ** 2), np.sum(target_ms[ch, t, sl][h])
+                    if e1 > 0 and e0 > 0:
+                        v = out[ch, t, sl]
+                        v[h] = est[ch, t, sl][h] * np.sqrt(e0 / e1)
+                        out[ch, t, sl] = v
+    return np.clip(out, tr.lo, tr.hi)
 
 
 def entropy_bits(x, bins=512):
@@ -94,16 +131,22 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
     for label, (net, ck) in models.items():
         td = M.TrackData(d, ck["baglam"])
         t0 = time.time()
-        bits, sample, mean = model_bits_and_fill(net, td, hole, "yogunluk", gen)
+        bits, sample, mean, e2 = model_bits_and_fill(net, td, hole, "yogunluk", gen)
         res.setdefault("süre", {})[label] = time.time() - t0
         res["bit"][label] = summarize(-bits)  # kazanılan bit = −NLL
+        pred_ms = e2 * s * s
+        res.setdefault("enerji hatası", {})[label] = band_energy_error(tr, pred_ms, hole)
         ests[f"{label}: örnek"] = np.where(hole, sample * s, tr.r)
         ests[f"{label}: ortalama (MMSE)"] = np.where(hole, mean * s, tr.r)
+        ests[f"{label}: ortalama, model enerjisine ölçekli"] = scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, hole)
+        ests[f"{label}: model enerjisiyle gürültü"] = D.noise_fill(tr, pred_ms, seed)
+    res["enerji hatası"] = res.get("enerji hatası", {})
+    res["enerji hatası"]["R1 Laplace / komşu granül (hole_energy)"] = band_energy_error(tr, D.hole_energy(tr), hole)
     if akis is not None:
         net, ck = akis
         td = M.TrackData(d, ck["baglam"])
         t0 = time.time()
-        _, sample, _ = model_bits_and_fill(net, td, hole, "akis", gen)
+        _, sample, _, _ = model_bits_and_fill(net, td, hole, "akis", gen)
         res.setdefault("süre", {})["akış"] = time.time() - t0
         ests["akış: örnek"] = np.where(hole, sample * s, tr.r)
         ests["akış: örnek + bant enerjisi koruma"] = D.energy_match(tr, ests["akış: örnek"])
@@ -161,6 +204,8 @@ def main():
         print(f"\n== {name} ({tr.rate} Hz) delik payı {res['delik payı']:.3f}", flush=True)
         for k, v in res["bit"].items():
             print("  bit  " + f"{k:40s}" + "  ".join(f"{r}: {b:+.3f}" for r, b in v.items()), flush=True)
+        for k, v in res.get("enerji hatası", {}).items():
+            print("  enerji " + f"{k:38s}" + "  ".join(f"{r}: {e['ortanca dB']:+.1f} dB [{e['%10']:+.1f}, {e['%90']:+.1f}]" for r, e in v.items()), flush=True)
         for k, v in res["yöntem"].items():
             print(f"  {k:46s} SNR {v['SNR']:6.2f}  MOS {v['MOS']:.3f}  kutu dışı {v['kutu dışı']:.0e}", flush=True)
         for e in res.get("eğri", []):
