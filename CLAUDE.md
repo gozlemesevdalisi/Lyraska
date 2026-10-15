@@ -65,16 +65,17 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri: PlayerScreen (sahne tüm pencere; üstünde cam katmanlar:
 │   │                         # NowPlaying büyük başlık, InfoStack drop sayacı ve sıradaki, SeekBar şarkı haritası
-│   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, ayarlar;
-│   │                         # her panel ve sahne bir ErrorBoundary içinde: hata yalnızca o bölümü kapatır)
+│   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, kör test,
+│   │                         # ayarlar; her panel ve sahne bir ErrorBoundary içinde: hata yalnızca o bölümü kapatır)
 │   ├── hooks/                # usePlayback (oynatıcı + çalma sırası), useLibrary, useEqualizer, useHeadphone,
 │   │                         # useMarker (işaretleme), useSync (ses–görüntü senkronu), useVisualFeed (görsel
 │   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
 │   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
 │   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
-│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak)
+│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak),
+│   │                         # useAbx (kör test)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # timeline, cover, abx), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
@@ -99,6 +100,7 @@ lyraska/
 │   │   │   ├── output.rs     #   çıkış soyutlaması, özel mod tamsayı biçimi; output/wasapi.rs = Windows WASAPI
 │   │   │   │                 #   (paylaşımlı; ayarla özel mod = bit-perfect), output/simulated.rs = testlerde
 │   │   │   │                 #   aygıtsız sanal çıkış
+│   │   │   ├── abx.rs        #   kör dinleme testi: iki sürümü hizalama, ses yüksekliği eşitleme, işlemsiz A/B/X
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
 │   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama, BPM

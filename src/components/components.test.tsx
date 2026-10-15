@@ -50,6 +50,9 @@ const backend = vi.hoisted(() => ({
   coverAsked: vi.fn(),
   /** Kütüphane panelinin kaç kez çizildiği (her karede yeniden çizilmemeli). */
   libraryPanelRenders: 0,
+  /** Kör test: süren testin durumu ve dosya seçicinin vereceği yollar. */
+  abx: null as import("../lib/backend").AbxStatus | null,
+  abxPicks: [] as string[],
 }));
 
 // Kütüphane paneli aynen çizilir; yalnızca çizim sayılır.
@@ -211,6 +214,27 @@ vi.mock("../lib/backend", async (importOriginal) => {
       backend.headphone = null;
       return actual.NO_HEADPHONE;
     },
+    // Kör test, gerçek çekirdek gibi: başlarken çalan oturum kapanır, bitince şarkı kaldığı
+    // yerde duraklatılmış geri gelir.
+    pickAbxFile: async () => backend.abxPicks.shift() ?? null,
+    abxStatus: async () => backend.abx ?? actual.ABX_INACTIVE,
+    abxStart: async () => {
+      backend.abx = {
+        ...actual.ABX_INACTIVE,
+        active: true,
+        aName: "gece.flac",
+        bName: "gece.mp3",
+        clipSecs: 20,
+        total: 16,
+      };
+      backend.status = null;
+      return backend.abx;
+    },
+    abxStop: async () => {
+      backend.abx = null;
+      backend.status = { ...playing, state: "paused" };
+      return actual.ABX_INACTIVE;
+    },
   };
 });
 
@@ -258,6 +282,8 @@ beforeEach(() => {
   backend.annotation = null;
   backend.covers = {};
   backend.libraryPanelRenders = 0;
+  backend.abx = null;
+  backend.abxPicks = [];
   clearCoverCache();
   window.localStorage.clear();
   vi.clearAllMocks();
@@ -1103,6 +1129,35 @@ describe("senkron", () => {
     expect(screen.getByRole("img", { name: "Vuruş göstergesi" })).toBeInTheDocument();
     // Tarayıcı önizlemesinde ses çalınamaz: ölçüm başlatılamaz.
     expect(screen.getByRole("button", { name: "Ölçümü başlat" })).toBeDisabled();
+  });
+});
+
+describe("kör test", () => {
+  it("başlayınca çalan şarkı ekrandan kalkar, bitince kaldığı yerde geri gelir", async () => {
+    backend.desktop = true;
+    backend.pick.mockResolvedValue("C:\\Müzik\\gece.flac");
+    render(<App />);
+    const open = screen.getByRole("button", { name: /Dosya aç/ });
+    await waitFor(() => expect(open).toBeEnabled());
+    backend.status = playing;
+    await act(async () => fireEvent.click(open));
+    const title = { level: 1, name: "Gece Otoyolu" } as const;
+    await screen.findByRole("heading", title);
+
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Kör test" })));
+    backend.abxPicks = ["C:\\Müzik\\gece.flac", "C:\\Müzik\\gece.mp3"];
+    fireEvent.click(screen.getByRole("button", { name: "A dosyasını seç" }));
+    await screen.findByText("gece.flac");
+    fireEvent.click(screen.getByRole("button", { name: "B dosyasını seç" }));
+    await screen.findByText("gece.mp3");
+    fireEvent.click(screen.getByRole("button", { name: "Testi başlat" }));
+    await screen.findByText(/Deneme 1 \/ 16/);
+    await waitFor(() => expect(screen.queryByRole("heading", title)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Testi bitir" }));
+    await screen.findByRole("button", { name: "Testi başlat" });
+    await screen.findByRole("heading", title, { timeout: 2000 });
+    expect(screen.getByRole("button", { name: /Çal/ })).toBeEnabled();
   });
 });
 

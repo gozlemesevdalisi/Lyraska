@@ -121,7 +121,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
   - R1 sonucu (gerçek dalga biçimi, algısal ölçü): kutulara sadık klasik yöntemler SNR'ı 0,2–1,3 dB artırıyor ama
     duyulur bir iyileşme vermiyor; algısal kayıp tizdeki deliklerde ve onları dolduracak bilgi bit akışında yok.
     Klasik yol kapıdan geçmedi, ürüne alınmaz.
-  - Sıradaki (proje sahibinin kararı): kör dinleme aracı (ABX); kutularla sınırlanmış öğrenmeli önsel araştırması (R2).
+  - [x] Kör dinleme aracı (ABX, 0.0.40, proje sahibinin kararı): çekmecede **Kör test**. Aynı şarkının iki sürümü
+        örnek düzeyinde hizalanır, ses yükseklikleri eşitlenir, işlenmeden çalınır; A/B/X aynı konumda tıksız
+        değişir, sonuç binom sınamasıyla en sonda verilir.
+  - Sıradaki: kutularla sınırlanmış öğrenmeli önsel araştırması (R2); görev devredildi, sonucu bekleniyor.
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
       kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
       aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
@@ -207,9 +210,9 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
   `unsafe` kod gerektirdiği için onay şart. Öneri: şimdilik yapılmasın, takılma görülürse ilk bu açılsın.
 - **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
-- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): öneri, önce kör dinleme aracı (ABX); "320 kbps
-  ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. Öğrenmeli önsel araştırması (R2) daha büyük bir iş; ayrı
-  karar.
+- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): kör dinleme aracı (ABX) 0.0.40'ta geldi;
+  "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. Öğrenmeli önsel araştırmasının (R2) sonucu
+  gelince burada ölçülür; ürüne alınıp alınmayacağı ayrı karar.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)

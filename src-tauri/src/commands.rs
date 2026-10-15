@@ -17,6 +17,7 @@ use crate::analysis::annotation::{AnnotatedTrack, Annotation, AnnotationStore};
 use crate::analysis::background::BackgroundAnalysis;
 use crate::analysis::cache::AnalysisCache;
 use crate::analysis::evaluate;
+use crate::audio::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus};
 use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
@@ -590,6 +591,61 @@ fn reveal(path: &std::path::Path) -> std::io::Result<()> {
         .arg(dir)
         .spawn()
         .map(|_| ())
+}
+
+/// Kör dinleme testini kurar: iki dosyanın aynı bölümü belleğe çözülür, hizalanır, ses yüksekliği
+/// eşitlenir. Çalan şarkı durur; test bitince kaldığı yerde duraklatılmış açılır.
+#[tauri::command]
+pub async fn abx_start(
+    a: PathBuf,
+    b: PathBuf,
+    start_secs: f64,
+    clip_secs: f64,
+    trials: usize,
+    player: State<'_, PlayerState>,
+) -> Result<AbxStatus, String> {
+    let request = AbxRequest {
+        a,
+        b,
+        start_secs,
+        clip_secs,
+        trials,
+    };
+    player.lock()?.abx_start(&request).map_err(reported)
+}
+
+/// Testte A, B ya da X'i çalar (aynı konumdan).
+#[tauri::command]
+pub async fn abx_select(
+    choice: AbxChoice,
+    player: State<'_, PlayerState>,
+) -> Result<AbxStatus, String> {
+    Ok(player.lock()?.abx_select(choice))
+}
+
+#[tauri::command]
+pub async fn abx_pause(player: State<'_, PlayerState>) -> Result<AbxStatus, String> {
+    Ok(player.lock()?.abx_pause())
+}
+
+/// "X, A'dır" ya da "X, B'dir".
+#[tauri::command]
+pub async fn abx_answer(
+    guess: AbxSource,
+    player: State<'_, PlayerState>,
+) -> Result<AbxStatus, String> {
+    Ok(player.lock()?.abx_answer(guess))
+}
+
+#[tauri::command]
+pub async fn abx_status(player: State<'_, PlayerState>) -> Result<AbxStatus, String> {
+    Ok(player.lock()?.abx_status())
+}
+
+/// Testi kapatır.
+#[tauri::command]
+pub async fn abx_stop(player: State<'_, PlayerState>) -> Result<AbxStatus, String> {
+    Ok(player.lock()?.abx_stop())
 }
 
 /// Konum, durum ve şarkı bilgisi. Arayüz bunu düzenli aralıklarla sorar.

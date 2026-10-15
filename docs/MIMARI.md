@@ -24,15 +24,16 @@ PlayerScreen ── usePlayback ── invoke ──▶ commands.rs (ince) ─�
 
 ## İş parçacıkları
 
-| İş parçacığı            | Ne yapar                                         | Kural                                      |
-| ----------------------- | ------------------------------------------------ | ------------------------------------------ |
-| Tauri komutları         | Arayüzün isteklerini karşılar                    | Kısa sürer; ağır işi arka plana verir      |
-| Çözme (`player.rs`)     | Dosyayı çözer, boşluksuz geçiş, hız dönüştürme   | Halka tampona (rtrb) yazar                 |
-| **Ses çıkışı**          | Halka tampondan okur, EQ, eşitleme, aygıta yazar | **Gerçek zamanlı:** ayırma/kilit/panik yok |
-| Analiz (şarkı açılınca) | Spektrum, seviye, vuruş, şarkı haritası, LUFS    | Sonuç önbelleğe yazılır                    |
-| Hızlı ölçüm             | Yalnızca ses yüksekliği (EBU R128), FFT'siz      | İlk sesten önce bitsin diye ayrı ve hızlı  |
-| Arka plan analizi       | Kütüphaneyi düşük öncelikle analiz eder          | Çalan → sıradaki → geri kalan              |
-| Kütüphane taraması      | Klasörleri tarar, etiketleri okur                | Değişmeyeni atlar                          |
+| İş parçacığı                | Ne yapar                                                   | Kural                                       |
+| --------------------------- | ---------------------------------------------------------- | ------------------------------------------- |
+| Tauri komutları             | Arayüzün isteklerini karşılar                              | Kısa sürer; ağır işi arka plana verir       |
+| Çözme (`player.rs`)         | Dosyayı çözer, boşluksuz geçiş, hız dönüştürme             | Halka tampona (rtrb) yazar                  |
+| **Ses çıkışı**              | Halka tampondan okur, EQ, eşitleme, aygıta yazar           | **Gerçek zamanlı:** ayırma/kilit/panik yok  |
+| Analiz (şarkı açılınca)     | Spektrum, seviye, vuruş, şarkı haritası, LUFS              | Sonuç önbelleğe yazılır                     |
+| Hızlı ölçüm                 | Yalnızca ses yüksekliği (EBU R128), FFT'siz                | İlk sesten önce bitsin diye ayrı ve hızlı   |
+| Arka plan analizi           | Kütüphaneyi düşük öncelikle analiz eder                    | Çalan → sıradaki → geri kalan               |
+| Kütüphane taraması          | Klasörleri tarar, etiketleri okur                          | Değişmeyeni atlar                           |
+| Kör test besleme (`abx.rs`) | Bellekteki iki bölümden A, B ya da X'i halka tampona yazar | Gerçek zamanlı değil; çıkış işlemsiz yoldan |
 
 ## Ses yolu
 
@@ -83,6 +84,21 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
   - Boşluksuz geçişte hızı farklı şarkı dönüştürülmez: oturum biter, sıradaki şarkı kendi hızında açılır.
 - Ses çıkışı 64-bit örnek verir; aygıtın biçimine (32-bit kayan nokta ya da tamsayı) çevirme yalnızca
   `output`'ta yapılır.
+- **Kör test (ABX, `audio/abx.rs`):** aynı şarkının iki sürümünü (ör. FLAC ve MP3) hangisinin çaldığını bilmeden
+  karşılaştırma.
+  - Önce iki dosya hazırlanır; bu sırada şarkı çalmayı sürdürür, test kurulamazsa hiçbir şey değişmez. Sonra çalan
+    oturum kapanır (şarkı ve konum saklanır); test bitince şarkı kaldığı yerde duraklatılmış açılır ve arayüz
+    oynatıcının durumunu yeniden sorar. Test sürerken bir şarkı açılırsa test kapanır.
+  - İki dosyanın seçilen bölümü (2–60 sn) belleğe çözülür ve aygıtın hızına çevrilir. B, 0,5 sn önceden çözülür;
+    kayma (MP3 kodlayıcı gecikmesi gibi), A'nın tek kanala indirilmiş ilk 10 saniyesi B içinde FFT çapraz
+    ilintisiyle aranarak ±0,5 sn içinde bulunur. Normalleştirilmiş ilinti 0,5'in altındaysa iki dosya aynı kayıt sayılmaz.
+  - Ses yükseklikleri (EBU R128) yalnızca kısarak eşitlenir; eşitlemeden sonra iki bölüm aynı oranda kısılarak
+    tepe 0,99'un altında tutulur (taşma koruması bu testte yoktur, gerekmez).
+  - Besleme iş parçacığı A, B ya da X'i aynı konumdan çalar: değişim 10 ms çapraz geçişle, bölüm sonu 15 ms
+    kısma/açmayla. Halka tampon 80 ms: seçim ~100 ms içinde duyulur. Ses çıkışı `RenderControls.bit_perfect` ile
+    kulaklık düzeltmesini, ekolayzeri, bas motorunu ve eşitlemeyi atlar.
+  - X her denemede rastgele (işletim sisteminin rastgele tohumu) A ya da B'dir. Sonuç yalnızca sonda verilir: tek
+    yönlü binom sınaması (16 denemede 12 doğru ≈ %3,8).
 
 ## Görsel yolu
 
@@ -101,7 +117,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
     - `NowPlaying`: büyük başlık.
     - `InfoStack`: drop sayacı, bilgi kartları, sıradaki.
     - `Dock`: şarkı haritası şeridi ve düğmeler.
-  - Çekmece: kütüphane, ekolayzer, işaretleme, senkron, ayarlar. Yalnızca bir şey değişince (ses motorunun
+  - Çekmece: kütüphane, ekolayzer, işaretleme, senkron, kör test, ayarlar. Yalnızca bir şey değişince (ses motorunun
     saniyede 4 bildirimi, kullanıcı) yeniden çizilir.
 - Durum ve davranış hook'lardadır:
   - `usePlayback`: oynatıcı ve çalma sırası.
@@ -110,6 +126,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
   - `useDropToLibrary`: sürükle-bırak.
   - `useIdle`: sinema görünümü.
   - `useSongMap`: çalan şarkının haritası.
+  - `useAbx`: kör test (panel kapanınca süren test duraklatılır).
 - Hesaplar saf fonksiyonlardadır (`src/lib/`) ve ayrı ayrı test edilir.
 - Renkler `src/styles/global.css` içindeki `:root` değişkenlerinden gelir.
 
@@ -128,47 +145,52 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 
 Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanması gereken kural yoktur.
 
-| Kural                                                        | Denetleyen                                                       |
-| ------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Ses çıkışında bellek ayırma yok                              | `audio::render` testi `ses_yolu_bellek_ayirmaz`                  |
-| Ses yüksekliği ölçümü EBU R128'e uyar                        | `audio::loudness` testleri (EBU Tech 3341 durumları 1–5)         |
-| Eşitleme ve ekolayzer kapalıyken ses bit bit aynı            | `audio::render` ve `audio::normalize` testleri                   |
-| Bit-perfect'te dosyadaki tamsayılar aygıta aynen gider       | `audio::player` testi `bit_perfect_zinciri_…`, `output` testleri |
-| Ses yolu ≤ −140 dB bozulma + gürültü ekler                   | `audio::render` testi `ses_yolu_bozulma_ve_gurultu_eklemez`      |
-| Bas düğmesi bası yükseltir, ortaya dokunmaz, tık yok         | `audio::bass` testleri                                           |
-| Bas motorunun korumaya bildirdiği pay tepeleri karşılar      | `audio::bass` testi `yukseltme_payi_tepeleri_karsilar`           |
-| Ölçülen bas tepeleri gerçek artışı karşılar, gereksiz kısmaz | `audio::bass` testi `olculen_bas_tepeleri_…`                     |
-| Vuruş ilk anı güçlendirir; sürekli basa ve ortaya dokunmaz   | `audio::punch` testleri, `audio::bass` testi `vurus_…`           |
-| Boşluksuz geçişte yeniden örneklenen dalga sınırda kopmaz    | `audio::player` testi `bosluksuz_geciste_yeniden_…`              |
-| Şarkı sınırında yeni şarkı ilk karesinden kendi seviyesinde  | `audio::normalize` testi `sessizden_yuksege_…`                   |
-| Ekolayzer koruması kazançtan önce kalkmaz, ilk kare korumalı | `audio::normalize` testi `esitleme_acilinca_…`                   |
-| Sahne denetiminin sahte çekirdeği arayüzün tipleriyle aynı   | `src/lib/sceneCheck.test.ts` (üretilen tipe bağlı)               |
-| Bir panelin ya da sahnenin hatası pencereyi karartmaz        | `ErrorBoundary` testleri, bileşen testi "hata sınırları"         |
-| Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır         | `audio::resample` testleri                                       |
-| Windows'a özel kod (WASAPI) temiz                            | Clippy, `--target x86_64-pc-windows-gnu` (yerel) ve Windows CI   |
-| Kütüphane kodunda `unwrap`/`expect`/`panic!` yok             | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`      |
-| `unsafe` yok                                                 | `unsafe_code = "deny"`                                           |
-| Rust ↔ arayüz veri tipleri aynı                              | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı          |
-| Arayüzün çağırdığı komut ve argümanlar çekirdekte var        | `npm run check:commands` (CI)                                    |
-| Veritabanı yapısı değişince eski dosyalar güncellenir        | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)      |
-| Her eski sürümün dosyası yeni kurulumla aynı şemaya ulaşır   | `storage.rs` testleri `her_eski_dosya_…`, `surum_0_0_19_…`       |
-| Analiz önbelleği bozuksa kütüphane açılır, şarkılar kalır    | `storage.rs` `analiz_tablosu_…`, `kutuphane_tablosunda_…`        |
-| Kütüphane açılamazsa ekranda uyarı çıkar (günlükte kalmaz)   | Bileşen testi "kütüphane açılamazsa …"                           |
-| Analiz hesabı değişince eski sonuçlar kullanılmaz            | `cache::VERSIONS` ve önbellek testleri                           |
-| Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı   | `analysis::spectrogram` testi `eskiyen_ritim_…`                  |
-| Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez      | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)             |
-| Güveni düşük drop hiçbir yerde drop sayılmaz (tek eşik)      | `analysis::structure`, `director` testleri, bileşen testleri     |
-| Hiçbir sahne saniyede 3'ten fazla parlamaz                   | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)    |
-| Parlama sınırı her renk temasında ve her gök manzarasında    | `npm run check:scenes` (temaya göre renklenen sahneler, CI)      |
-| Yasaklı lisans yok                                           | `npm run check:licenses`, `cargo deny` (CI)                      |
-| Depoda ses dosyası yok                                       | `npm run check:audio` (CI)                                       |
-| Biçim ve lint temiz, tür hatası yok                          | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                |
-| Çalarken paneller her karede yeniden çizilmez                | Bileşen testi "çizim yükü" (kütüphane panelinin çizim sayısı)    |
-| Durum sorguları birikmez (yanıt gelmeden yenisi gitmez)      | `src/hooks/usePlayer.test.ts`                                    |
-| İşaretler ses aygıtının gecikmesi düşülerek kaydedilir       | `src/hooks/useMarker.test.ts`                                    |
-| Sahne saatleri saatlerce çalınca sıçramaz (katlanır)         | `src/lib/sceneClock.test.ts`, sky ve highway testleri            |
-| "Önceki" ve açılırken yapılan seçim çalma sırasını bozmaz    | `src/hooks/usePlayback.test.ts`                                  |
-| Etiket okuma kuralı değişince eski kayıtlar yeniden okunur   | `library::db` `TAGS_VERSION`, göç 4 ve tarama testleri           |
+| Kural                                                                   | Denetleyen                                                                    |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Ses çıkışında bellek ayırma yok                                         | `audio::render` testi `ses_yolu_bellek_ayirmaz`                               |
+| Ses yüksekliği ölçümü EBU R128'e uyar                                   | `audio::loudness` testleri (EBU Tech 3341 durumları 1–5)                      |
+| Eşitleme ve ekolayzer kapalıyken ses bit bit aynı                       | `audio::render` ve `audio::normalize` testleri                                |
+| Bit-perfect'te dosyadaki tamsayılar aygıta aynen gider                  | `audio::player` testi `bit_perfect_zinciri_…`, `output` testleri              |
+| Ses yolu ≤ −140 dB bozulma + gürültü ekler                              | `audio::render` testi `ses_yolu_bozulma_ve_gurultu_eklemez`                   |
+| Bas düğmesi bası yükseltir, ortaya dokunmaz, tık yok                    | `audio::bass` testleri                                                        |
+| Bas motorunun korumaya bildirdiği pay tepeleri karşılar                 | `audio::bass` testi `yukseltme_payi_tepeleri_karsilar`                        |
+| Ölçülen bas tepeleri gerçek artışı karşılar, gereksiz kısmaz            | `audio::bass` testi `olculen_bas_tepeleri_…`                                  |
+| Vuruş ilk anı güçlendirir; sürekli basa ve ortaya dokunmaz              | `audio::punch` testleri, `audio::bass` testi `vurus_…`                        |
+| Boşluksuz geçişte yeniden örneklenen dalga sınırda kopmaz               | `audio::player` testi `bosluksuz_geciste_yeniden_…`                           |
+| Şarkı sınırında yeni şarkı ilk karesinden kendi seviyesinde             | `audio::normalize` testi `sessizden_yuksege_…`                                |
+| Ekolayzer koruması kazançtan önce kalkmaz, ilk kare korumalı            | `audio::normalize` testi `esitleme_acilinca_…`                                |
+| Sahne denetiminin sahte çekirdeği arayüzün tipleriyle aynı              | `src/lib/sceneCheck.test.ts` (üretilen tipe bağlı)                            |
+| Bir panelin ya da sahnenin hatası pencereyi karartmaz                   | `ErrorBoundary` testleri, bileşen testi "hata sınırları"                      |
+| Yeniden örneklemede Nyquist üstü ≥ 140 dB bastırılır                    | `audio::resample` testleri                                                    |
+| Windows'a özel kod (WASAPI) temiz                                       | Clippy, `--target x86_64-pc-windows-gnu` (yerel) ve Windows CI                |
+| Kütüphane kodunda `unwrap`/`expect`/`panic!` yok                        | Clippy (`Cargo.toml` `[lints.clippy]`), CI'da `-D warnings`                   |
+| `unsafe` yok                                                            | `unsafe_code = "deny"`                                                        |
+| Rust ↔ arayüz veri tipleri aynı                                         | ts-rs ile üretilir; CI "Arayüz tipleri güncel mi" adımı                       |
+| Arayüzün çağırdığı komut ve argümanlar çekirdekte var                   | `npm run check:commands` (CI)                                                 |
+| Veritabanı yapısı değişince eski dosyalar güncellenir                   | `storage.rs` testleri (göç, eski dosya, yeni sürüm dosyası)                   |
+| Her eski sürümün dosyası yeni kurulumla aynı şemaya ulaşır              | `storage.rs` testleri `her_eski_dosya_…`, `surum_0_0_19_…`                    |
+| Analiz önbelleği bozuksa kütüphane açılır, şarkılar kalır               | `storage.rs` `analiz_tablosu_…`, `kutuphane_tablosunda_…`                     |
+| Kütüphane açılamazsa ekranda uyarı çıkar (günlükte kalmaz)              | Bileşen testi "kütüphane açılamazsa …"                                        |
+| Kör testte iki bölüm örnek düzeyinde hizalı ve eşit yükseklikte         | `audio::abx` testi `hazirlik_hizalar_ve_ses_yuksekligini_esitler`             |
+| Kör testte A/B/X geçişi aynı konumda, tıksız; başa dönüş yumuşak        | `audio::abx` testleri `gecis_…`, `bolum_basa_donerken_…`                      |
+| Kör test farklı kayıtları karşılaştırmaz                                | `audio::abx` testi `farkli_kayitlar_reddedilir`                               |
+| Kör test bitince önceki şarkı kaldığı yerde geri gelir, ekranda görünür | `audio::player` testi `kor_test_sarkiyi_durdurur_…`, bileşen testi "kör test" |
+| Kör test kurulamazsa çalan şarkı kesilmez                               | `audio::player` testi `kor_test_kurulamazsa_calan_sarki_durmaz`               |
+| Analiz hesabı değişince eski sonuçlar kullanılmaz                       | `cache::VERSIONS` ve önbellek testleri                                        |
+| Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı              | `analysis::spectrogram` testi `eskiyen_ritim_…`                               |
+| Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez                 | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)                          |
+| Güveni düşük drop hiçbir yerde drop sayılmaz (tek eşik)                 | `analysis::structure`, `director` testleri, bileşen testleri                  |
+| Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)                 |
+| Parlama sınırı her renk temasında ve her gök manzarasında               | `npm run check:scenes` (temaya göre renklenen sahneler, CI)                   |
+| Yasaklı lisans yok                                                      | `npm run check:licenses`, `cargo deny` (CI)                                   |
+| Depoda ses dosyası yok                                                  | `npm run check:audio` (CI)                                                    |
+| Biçim ve lint temiz, tür hatası yok                                     | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                             |
+| Çalarken paneller her karede yeniden çizilmez                           | Bileşen testi "çizim yükü" (kütüphane panelinin çizim sayısı)                 |
+| Durum sorguları birikmez (yanıt gelmeden yenisi gitmez)                 | `src/hooks/usePlayer.test.ts`, kör test paneli testleri                       |
+| İşaretler ses aygıtının gecikmesi düşülerek kaydedilir                  | `src/hooks/useMarker.test.ts`                                                 |
+| Sahne saatleri saatlerce çalınca sıçramaz (katlanır)                    | `src/lib/sceneClock.test.ts`, sky ve highway testleri                         |
+| "Önceki" ve açılırken yapılan seçim çalma sırasını bozmaz               | `src/hooks/usePlayback.test.ts`                                               |
+| Etiket okuma kuralı değişince eski kayıtlar yeniden okunur              | `library::db` `TAGS_VERSION`, göç 4 ve tarama testleri                        |
 
 ## Nasıl eklenir?
 

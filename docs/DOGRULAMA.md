@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.39 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.40 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -137,6 +137,22 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Neye bakılır: "Önceki"de ilk şarkı çalar, altta "1 / …" yazar ve şarkı bitince ikinciye geçer. İkinci denemede son
   çift tıkladığınız şarkı çalar ve sıra yazısı ona göredir.
 
+**B9. Kör test (ABX, 0.0.40)**
+
+- Önce: aynı şarkının iki sürümü gerekir, ör. bir FLAC ve ondan yapılmış bir MP3 (ya da iki farklı MP3: 128 ve
+  320 kbps). İkisi aynı kayıttan olmalı.
+- Nasıl: çekmecede **Kör test** sekmesini açın. **A** ve **B** satırlarındaki **Seç** ile iki dosyayı seçin;
+  **Testi başlat**. Kulaklıkla **A**, **B** ve **X**'i istediğiniz kadar dinleyin, **X = A** ya da **X = B** deyin.
+  16 deneme sürer; istediğiniz an **Testi bitir** ile çıkabilirsiniz.
+- Neye bakılır:
+  - A, B ve X arasında geçerken ses **aynı yerden** sürer; tık ya da boşluk yok, ses yüksekliği sıçramaz.
+  - Bölümün sonunda ses yumuşakça başa döner.
+  - Üstte "seviye farkı … dB eşitlendi · kayma … ms düzeltildi" yazabilir; bu normaldir.
+  - Sonunda kaç doğru yaptığınız ve bunun şansla çıkma olasılığı yazar.
+  - Test bitince ya da **Testi bitir**'e basınca önceden çalan şarkı kaldığı yerde (duraklatılmış) geri gelir.
+  - İki farklı şarkı seçerseniz "aynı kayda benzemiyor" der, test başlamaz; çalan şarkı kesilmez.
+- Bildirin: hangi iki dosyayla denediniz ve sonuç (ör. "FLAC – MP3 320: 16'da 9, ayırt edilemedi").
+
 ## C. Ekolayzer ve bas
 
 **C1. Bas ve Derinlik (0.0.29)**
@@ -251,3 +267,4 @@ Sonuçları bana yazdıkça buraya işlenir.
 | ------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | — (0.0.33'te) | ❌ Kütüphane hiç açılmıyordu: `no such table: analyses` | #49. 0.0.5–0.0.19'un kütüphane dosyası 0.0.28'den beri açılmıyordu. 0.0.35'te düzeltildi (testli); A0 ile sizin yedeğinizle denenecek. |
 | A0 (0.0.35)   | ✅ Oldu: eski yedek geri konunca kütüphane açıldı       | #49 kapandı (14 Ekim).                                                                                                                 |
+| — (0.0.39)    | ✅ Denendi, sorun çıkmadı                               | 15 Ekim. Hangi maddelerin denendiği yazılmadı; madde madde sonuçlar gelince tabloya ayrı ayrı işlenecek.                               |
