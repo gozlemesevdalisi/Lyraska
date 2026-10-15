@@ -140,6 +140,9 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
         ests[f"{label}: ortalama (MMSE)"] = np.where(hole, mean * s, tr.r)
         ests[f"{label}: ortalama, model enerjisine ölçekli"] = scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, hole)
         ests[f"{label}: model enerjisiyle gürültü"] = D.noise_fill(tr, pred_ms, seed)
+        # Sıfır bantların seviyesi bit akışında yok ve modelin oradaki hatası büyük: yalnızca canlı bant deliklerini
+        # örnekle, sıfır bantları 0'da bırak (kâhin tavanı "yalnız canlı bant delikleri").
+        ests[f"{label}: örnek, yalnız canlı bant"] = np.where(live, sample * s, tr.r)
     res["enerji hatası"] = res.get("enerji hatası", {})
     res["enerji hatası"]["R1 Laplace / komşu granül (hole_energy)"] = band_energy_error(tr, D.hole_energy(tr), hole)
     if akis is not None:
