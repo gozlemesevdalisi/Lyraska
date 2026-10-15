@@ -359,9 +359,7 @@ pub(crate) fn prepare(
     rate: u32,
     channels: usize,
 ) -> Result<Clips, AudioError> {
-    let clip_secs = request
-        .clip_secs
-        .clamp(MIN_CLIP_SECONDS, MAX_CLIP_SECONDS);
+    let clip_secs = request.clip_secs.clamp(MIN_CLIP_SECONDS, MAX_CLIP_SECONDS);
     let start = if request.start_secs.is_finite() {
         request.start_secs.max(0.0)
     } else {
@@ -547,7 +545,8 @@ impl Playback {
             channels: clips.channels,
             mode: OutputMode::Shared,
         };
-        let capacity = ((RING_SECONDS * f64::from(spec.sample_rate)) as usize).max(BLOCK_FRAMES * 2)
+        let capacity = ((RING_SECONDS * f64::from(spec.sample_rate)) as usize)
+            .max(BLOCK_FRAMES * 2)
             * spec.channels;
         let (producer, consumer) = RingBuffer::new(capacity);
         // Ses işlenmez: ekolayzer, kulaklık düzeltmesi ve eşitleme atlanır.
@@ -640,16 +639,51 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-impl AbxTest {
-    /// Testi kurar (iki dosya çözülür, hizalanır, eşitlenir); ses duraklatılmış başlar.
-    pub fn start(request: &AbxRequest) -> Result<Self, AudioError> {
-        Self::start_with(request, random_coin())
+/// Hazırlanmış (çözülmüş, hizalanmış, eşitlenmiş) ama henüz ses aygıtını açmamış test. Hazırlık
+/// uzun sürebilir ve başarısız olabilir; çalan şarkı ancak hazırlık bitince kapatılır.
+pub struct PreparedAbx {
+    clips: Clips,
+    a_name: String,
+    b_name: String,
+    start_secs: f64,
+    trials: usize,
+}
+
+impl PreparedAbx {
+    /// Ses aygıtını açar; ses duraklatılmış başlar.
+    pub fn start(self) -> Result<AbxTest, AudioError> {
+        self.start_with(random_coin())
     }
 
     pub(crate) fn start_with(
-        request: &AbxRequest,
+        self,
         coin: Box<dyn FnMut() -> bool + Send>,
-    ) -> Result<Self, AudioError> {
+    ) -> Result<AbxTest, AudioError> {
+        let rate = self.clips.rate;
+        let clip_secs = self.clips.frames as f64 / f64::from(rate);
+        let level_diff_db = self.clips.level_diff_db;
+        let offset_ms = self.clips.offset_frames as f64 * 1000.0 / f64::from(rate);
+        let similarity = self.clips.similarity;
+        let playback = Playback::start(self.clips)?;
+        Ok(AbxTest {
+            playback,
+            trials: Trials::new(self.trials, coin),
+            choice: None,
+            a_name: self.a_name,
+            b_name: self.b_name,
+            start_secs: self.start_secs,
+            clip_secs,
+            level_diff_db,
+            offset_ms,
+            similarity,
+            sample_rate: rate,
+        })
+    }
+}
+
+impl AbxTest {
+    /// Testi hazırlar: iki dosya çözülür, hizalanır, eşitlenir. Ses aygıtına dokunmaz.
+    pub fn prepare(request: &AbxRequest) -> Result<PreparedAbx, AudioError> {
         // İki dosya da stereo çalınır (mono iki kanala çoğaltılır); kanal sayısı farklıysa
         // karşılaştırma anlamsızdır.
         let ca = Converter::output_channels(Decoder::open(&request.a)?.info().channels);
@@ -663,24 +697,12 @@ impl AbxTest {
             Some(device) => device.sample_rate,
             None => Decoder::open(&request.a)?.info().sample_rate,
         };
-        let clips = prepare(request, rate, ca)?;
-        let clip_secs = clips.frames as f64 / f64::from(rate);
-        let level_diff_db = clips.level_diff_db;
-        let offset_ms = clips.offset_frames as f64 * 1000.0 / f64::from(rate);
-        let similarity = clips.similarity;
-        let playback = Playback::start(clips)?;
-        Ok(Self {
-            playback,
-            trials: Trials::new(request.trials, coin),
-            choice: None,
+        Ok(PreparedAbx {
+            clips: prepare(request, rate, ca)?,
             a_name: file_name(&request.a),
             b_name: file_name(&request.b),
             start_secs: request.start_secs.max(0.0),
-            clip_secs,
-            level_diff_db,
-            offset_ms,
-            similarity,
-            sample_rate: rate,
+            trials: request.trials,
         })
     }
 
@@ -856,10 +878,19 @@ mod tests {
         let mut mixer = Mixer::new(clips(a.clone(), a, rate));
         let mut out = vec![0.0; 2 * n];
         mixer.fill(&mut out, AbxSource::A);
-        assert!(out[n - 1].abs() < 0.05 && out[n].abs() < 0.05, "sınırda sessiz");
+        assert!(
+            out[n - 1].abs() < 0.05 && out[n].abs() < 0.05,
+            "sınırda sessiz"
+        );
         assert!((out[n / 2] - 0.5).abs() < 1e-12, "ortada tam");
-        let jump = out.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f64::max);
-        assert!(jump < 0.5 / (LOOP_FADE_SECONDS * f64::from(rate)) * 1.5, "{jump}");
+        let jump = out
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(
+            jump < 0.5 / (LOOP_FADE_SECONDS * f64::from(rate)) * 1.5,
+            "{jump}"
+        );
     }
 
     fn test_files(delay_frames: usize, b_gain: f64) -> (PathBuf, PathBuf, Vec<f64>) {
@@ -868,9 +899,15 @@ mod tests {
         let signal = noise(frames + delay_frames, 7);
         let a = temp_path("a.wav");
         let b = temp_path("b.wav");
-        write_wav(&a, rate, 2, frames, |i, c| signal[i] * if c == 0 { 1.0 } else { 0.8 });
+        write_wav(&a, rate, 2, frames, |i, c| {
+            signal[i] * if c == 0 { 1.0 } else { 0.8 }
+        });
         write_wav(&b, rate, 2, frames + delay_frames, |i, c| {
-            let x = if i < delay_frames { 0.0 } else { signal[i - delay_frames] };
+            let x = if i < delay_frames {
+                0.0
+            } else {
+                signal[i - delay_frames]
+            };
             b_gain * x * if c == 0 { 1.0 } else { 0.8 }
         });
         (a, b, signal)
@@ -890,7 +927,11 @@ mod tests {
         let clips = prepare(&request, 44_100, 2).unwrap();
         assert_eq!(clips.offset_frames, 1_105);
         assert!(clips.similarity > 0.999, "{}", clips.similarity);
-        assert!((clips.level_diff_db - 6.02).abs() < 0.1, "{}", clips.level_diff_db);
+        assert!(
+            (clips.level_diff_db - 6.02).abs() < 0.1,
+            "{}",
+            clips.level_diff_db
+        );
         // Eşitlenmiş ve hizalanmış iki bölüm örnek düzeyinde aynı (16 bit yuvarlama kadar).
         let diff = clips
             .a
@@ -914,8 +955,11 @@ mod tests {
             clip_secs: 4.0,
             trials: 16,
         };
-        let error = AbxTest::start_with(&request, coin_from(vec![false])).err().unwrap();
-        assert!(error.to_string().contains("aynı kayda benzemiyor"), "{error}");
+        let error = AbxTest::prepare(&request).err().unwrap();
+        assert!(
+            error.to_string().contains("aynı kayda benzemiyor"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -930,16 +974,29 @@ mod tests {
             trials: 4,
         };
         // X sırası: B, A, A, B.
-        let mut test = AbxTest::start_with(&request, coin_from(vec![true, false, false, true])).unwrap();
+        let mut test = AbxTest::prepare(&request)
+            .unwrap()
+            .start_with(coin_from(vec![true, false, false, true]))
+            .unwrap();
         let status = test.status();
         assert!(status.active && status.playing.is_none());
         assert_eq!(status.sample_rate, 48_000);
         assert!((status.clip_secs - 3.0).abs() < 0.01);
-        assert!((status.offset_ms - 500.0 / 44.1).abs() < 0.2, "{}", status.offset_ms);
+        assert!(
+            (status.offset_ms - 500.0 / 44.1).abs() < 0.2,
+            "{}",
+            status.offset_ms
+        );
         test.select(AbxChoice::X);
-        assert_eq!(test.playback.selected.load(Ordering::Acquire), AbxSource::B.to_u8());
+        assert_eq!(
+            test.playback.selected.load(Ordering::Acquire),
+            AbxSource::B.to_u8()
+        );
         test.answer(AbxSource::B); // doğru; X artık A
-        assert_eq!(test.playback.selected.load(Ordering::Acquire), AbxSource::A.to_u8());
+        assert_eq!(
+            test.playback.selected.load(Ordering::Acquire),
+            AbxSource::A.to_u8()
+        );
         test.select(AbxChoice::B);
         test.answer(AbxSource::B); // yanlış (X = A)
         test.answer(AbxSource::A); // doğru

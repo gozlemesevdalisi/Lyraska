@@ -46,9 +46,14 @@ function message(error: unknown): string {
 
 /**
  * Kör dinleme testi. `visible`: panel açık mı; değilse süren test duraklatılır (ses arkada
- * çalmasın) ve durum sorulmaz.
+ * çalmasın) ve durum sorulmaz. `onPlayerChange`: test başlayınca ya da kapanınca çağrılır;
+ * çekirdek bu anlarda çalan şarkıyı kapatır ya da kaldığı yerde geri açar.
  */
-export function useAbx(extensions: string[], visible: boolean): AbxControls {
+export function useAbx(
+  extensions: string[],
+  visible: boolean,
+  onPlayerChange?: () => void,
+): AbxControls {
   const [status, setStatus] = useState<AbxStatus>(ABX_INACTIVE);
   const [a, setA] = useState<string | null>(null);
   const [b, setB] = useState<string | null>(null);
@@ -58,6 +63,10 @@ export function useAbx(extensions: string[], visible: boolean): AbxControls {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  // İsteklerin sıra numarası: geç gelen eski yanıt (ör. yanıttan önce gönderilmiş bir durum
+  // sorgusu) yenisinin üstüne yazıp denemeyi geri almasın.
+  const issued = useRef(0);
+  const applied = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -66,8 +75,9 @@ export function useAbx(extensions: string[], visible: boolean): AbxControls {
     };
   }, []);
 
-  const apply = useCallback((next: AbxStatus) => {
-    if (!alive.current) return;
+  const apply = useCallback((id: number, next: AbxStatus) => {
+    if (!alive.current || id < applied.current) return;
+    applied.current = id;
     setStatus(next);
     setError(next.error);
   }, []);
@@ -75,26 +85,55 @@ export function useAbx(extensions: string[], visible: boolean): AbxControls {
     if (alive.current) setError(message(e));
   }, []);
   const run = useCallback(
-    (action: () => Promise<AbxStatus>) => action().then(apply).catch(fail),
+    (action: () => Promise<AbxStatus>) => {
+      const id = ++issued.current;
+      return action()
+        .then((next) => apply(id, next))
+        .catch(fail);
+    },
     [apply, fail],
   );
 
+  // Test başlayınca ya da kapanınca (yanıtla, sorguyla ya da hatayla) oynatıcı da güncellensin.
+  const playerChange = useRef(onPlayerChange);
+  useEffect(() => {
+    playerChange.current = onPlayerChange;
+  }, [onPlayerChange]);
+  const wasActive = useRef(status.active);
+  useEffect(() => {
+    if (wasActive.current === status.active) return;
+    wasActive.current = status.active;
+    playerChange.current?.();
+  }, [status.active]);
+
   // Panel açılınca güncel durum (ör. başka yerden şarkı açıldıysa test kapanmıştır).
   useEffect(() => {
-    if (visible) abxStatus().then(apply).catch(fail);
-  }, [visible, apply, fail]);
+    if (visible) void run(abxStatus);
+  }, [visible, run]);
 
   // Panelden ayrılınca ses arkada çalmasın.
   useEffect(() => {
-    if (!visible && status.active && status.playing) abxPause().then(apply).catch(fail);
-  }, [visible, status.active, status.playing, apply, fail]);
+    if (!visible && status.active && status.playing) void run(abxPause);
+  }, [visible, status.active, status.playing, run]);
 
-  // Test sürerken konum ve durum.
+  // Test sürerken konum ve durum. Yanıt gelmeden yenisi gönderilmez (çekirdek meşgulken
+  // sorgular birikmesin); geçici hata gösterilmez, bir sonraki turda yeniden denenir.
   useEffect(() => {
     if (!visible || !status.active) return;
-    const timer = window.setInterval(() => void run(abxStatus), POLL_MS);
+    let inFlight = false;
+    const timer = window.setInterval(() => {
+      if (inFlight) return;
+      inFlight = true;
+      const id = ++issued.current;
+      abxStatus()
+        .then((next) => apply(id, next))
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+        });
+    }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [visible, status.active, run]);
+  }, [visible, status.active, apply]);
 
   const pick = useCallback(
     async (label: "A" | "B", set: (path: string) => void) => {

@@ -688,6 +688,16 @@ impl Player {
     /// kaldığı yerde duraklatılmış açılır.
     pub fn abx_start(&mut self, request: &AbxRequest) -> Result<AbxStatus, AudioError> {
         self.abx = None;
+        // Önce hazırlık (uzun sürebilir, başarısız olabilir): bu sırada şarkı çalmayı sürdürür;
+        // kurulamazsa şarkı kesilmez. Süren bir test yeniden kuruluyorduysa o test kapanır ve
+        // sakladığı şarkı kaldığı yerde geri gelir.
+        let prepared = match AbxTest::prepare(request) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.abx_stop();
+                return Err(error);
+            }
+        };
         if self.abx_resume.is_none() {
             self.abx_resume = self.session.as_ref().map(|s| {
                 let (track, position) = s.now_playing();
@@ -695,10 +705,18 @@ impl Player {
             });
         }
         self.close_session();
-        let test = AbxTest::start(request)?;
-        let status = test.status();
-        self.abx = Some(test);
-        Ok(status)
+        match prepared.start() {
+            Ok(test) => {
+                let status = test.status();
+                self.abx = Some(test);
+                Ok(status)
+            }
+            Err(error) => {
+                // Ses aygıtı açılamadı: şarkı kaldığı yerde geri gelir.
+                self.abx_stop();
+                Err(error)
+            }
+        }
     }
 
     /// Testte A, B ya da X'i çalar.
@@ -1825,6 +1843,47 @@ mod tests {
         player.abx_start(&request).unwrap();
         player.load(&song, false).unwrap();
         assert!(!player.abx_status().active);
+        std::fs::remove_file(song).ok();
+    }
+
+    #[test]
+    fn kor_test_kurulamazsa_calan_sarki_durmaz() {
+        let song = ramp_song("kor-test-kurulamaz.wav");
+        let a = abx_song("kor-kurulamaz-a.wav");
+        let mut player = Player::new();
+        player.load(&song, true).unwrap();
+        assert!(wait_until(|| player.status().position_secs > 0.3));
+        // B başka bir kayıt: test kurulamaz.
+        let request = AbxRequest {
+            a,
+            b: song.clone(),
+            start_secs: 0.0,
+            clip_secs: 2.0,
+            trials: 8,
+        };
+        let error = player.abx_start(&request).unwrap_err();
+        assert!(
+            error.to_string().contains("aynı kayda benzemiyor"),
+            "{error}"
+        );
+        // Çalan şarkı hiç kesilmeden sürer; test yarım kalmaz.
+        assert_eq!(player.state(), PlaybackState::Playing);
+        assert!(player.abx_resume.is_none());
+        assert!(!player.abx_status().active);
+        let before = player.status().position_secs;
+        assert!(wait_until(|| player.status().position_secs > before + 0.1));
+
+        // Süren bir test yeniden kurulamazsa test kapanır, şarkı kaldığı yerde geri gelir.
+        let good = AbxRequest {
+            b: abx_song("kor-kurulamaz-b.wav"),
+            ..request.clone()
+        };
+        player.abx_start(&good).unwrap();
+        assert_eq!(player.state(), PlaybackState::Idle);
+        assert!(player.abx_start(&request).is_err());
+        assert!(!player.abx_status().active);
+        assert_eq!(player.state(), PlaybackState::Paused);
+        assert!(player.abx_resume.is_none());
         std::fs::remove_file(song).ok();
     }
 

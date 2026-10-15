@@ -305,7 +305,8 @@ Her adımın sonunda ölçülebilir bir kapı var. Kapı geçilmezse durulur ve 
 deneyelim" ile ürüne girmez.
 
 > **R1 sonrası güncelleme (bölüm 7):** F1 klasik önsellerle denendi, kapıdan geçmedi. Bu yüzden F0 (Rust bit akışı
-> ayrıştırıcı) ertelendi; öğrenmeli önsel araştırması (R2) ve kör dinleme aracı proje sahibinin kararını bekliyor.
+> ayrıştırıcı) ertelendi. Kör dinleme aracı 0.0.40'ta eklendi (çekmecede **Kör test**); öğrenmeli önsel araştırması
+> (R2) devredildi, sonucu bekleniyor.
 
 - **F0, bit akışı ve kutular (Rust).** MP3 bit akışı ayrıştırıcı (yan bilgi, ölçek çarpanları, Huffman) → q, Δ,
   blok türü, M/S; LAME etiketini okuma; kutu kuralı (adj43 + bant kuralı; tanınmayan kodlayıcıda genişletilmiş kutu);

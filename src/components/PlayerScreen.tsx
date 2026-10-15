@@ -103,8 +103,13 @@ export function PlayerScreen() {
     [setRecording, finishCalibration],
   );
   const drawer = useDrawer({ onLeave, escapeBusy: marker.recording });
-  // Kör test: panel açık değilken süren test duraklatılır.
-  const abx = useAbx(info.supportedExtensions, drawer.open && drawer.panel === "abx");
+  // Kör test: panel açık değilken süren test duraklatılır. Test çalan şarkıyı kapatır, bitince
+  // kaldığı yerde geri açar: oynatıcı ekranı da güncellenir.
+  const abx = useAbx(
+    info.supportedExtensions,
+    drawer.open && drawer.panel === "abx",
+    player.refresh,
+  );
 
   // Çalmaya başlayınca sahne ortaya çıksın; kütüphane düğmesiyle geri açılır.
   const { close: closeDrawer } = drawer;

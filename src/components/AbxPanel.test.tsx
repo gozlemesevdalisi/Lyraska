@@ -13,6 +13,10 @@ const core = vi.hoisted(() => ({
   pause: vi.fn(),
   stop: vi.fn(),
   startError: null as string | null,
+  /** Durum sorguları: kaç kez soruldu; `hold` açıkken yanıtlar bekletilir. */
+  statusCalls: 0,
+  hold: false,
+  held: [] as (() => void)[],
 }));
 
 vi.mock("../lib/backend", async (importOriginal) => {
@@ -21,7 +25,12 @@ vi.mock("../lib/backend", async (importOriginal) => {
   return {
     ...actual,
     pickAbxFile: async () => core.picks.shift() ?? null,
-    abxStatus: async () => now(),
+    abxStatus: () => {
+      core.statusCalls++;
+      const snapshot = now();
+      if (!core.hold) return Promise.resolve(snapshot);
+      return new Promise<AbxStatus>((resolve) => core.held.push(() => resolve(snapshot)));
+    },
     abxStart: async (request: import("../lib/backend").AbxRequest) => {
       core.start(request);
       if (core.startError) throw core.startError;
@@ -80,6 +89,9 @@ beforeEach(() => {
   core.status = null;
   core.picks = [];
   core.startError = null;
+  core.statusCalls = 0;
+  core.hold = false;
+  core.held = [];
   for (const fn of [core.start, core.select, core.answer, core.pause, core.stop]) fn.mockClear();
 });
 
@@ -159,6 +171,29 @@ describe("Kör test paneli", () => {
     fireEvent.click(screen.getByRole("button", { name: "Testi başlat" }));
     await screen.findByText(/aynı kayda benzemiyor/);
     expect(screen.getByRole("button", { name: "Testi başlat" })).toBeTruthy();
+  });
+
+  it("durum sorguları birikmez, geç gelen eski yanıt denemeyi geri almaz", async () => {
+    core.status = running();
+    render(<Harness />);
+    await screen.findByText(/Deneme 1 \/ 16/);
+
+    // Çekirdek meşgul: yanıt gelmeden yeni sorgu gönderilmez.
+    core.hold = true;
+    await waitFor(() => expect(core.held.length).toBe(1));
+    const calls = core.statusCalls;
+    await act(() => new Promise((resolve) => setTimeout(resolve, 700)));
+    expect(core.statusCalls).toBe(calls);
+
+    // Bu arada yanıt verildi; bekleyen eski sorgunun yanıtı sonra gelir.
+    core.hold = false;
+    fireEvent.click(screen.getByRole("button", { name: "X = A" }));
+    await screen.findByText(/Deneme 2 \/ 16/);
+    await act(async () => {
+      core.held.shift()?.();
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/Deneme 2 \/ 16/)).toBeTruthy();
   });
 
   it("panelden ayrılınca çalan test duraklatılır", async () => {
