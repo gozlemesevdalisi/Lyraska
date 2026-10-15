@@ -10,6 +10,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SceneStage } from "./SceneStage";
 import { SettingsPanel } from "./SettingsPanel";
 import { SyncPanel } from "./SyncPanel";
+import { AbxPanel } from "./AbxPanel";
 import { CloseIcon, LibraryIcon, LyraMark, SettingsIcon, SlidersIcon } from "./icons";
 import {
   BROWSER_FALLBACK,
@@ -39,12 +40,14 @@ import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
 import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
+import { useAbx } from "../hooks/useAbx";
 
 const PANELS: [Panel, string][] = [
   ["library", "Kütüphane"],
   ["eq", "Ekolayzer"],
   ["marker", "İşaretle"],
   ["sync", "Senkron"],
+  ["abx", "Kör test"],
   ["settings", "Ayarlar"],
 ];
 
@@ -100,6 +103,8 @@ export function PlayerScreen() {
     [setRecording, finishCalibration],
   );
   const drawer = useDrawer({ onLeave, escapeBusy: marker.recording });
+  // Kör test: panel açık değilken süren test duraklatılır.
+  const abx = useAbx(info.supportedExtensions, drawer.open && drawer.panel === "abx");
 
   // Çalmaya başlayınca sahne ortaya çıksın; kütüphane düğmesiyle geri açılır.
   const { close: closeDrawer } = drawer;
@@ -367,6 +372,17 @@ export function PlayerScreen() {
         >
           <ErrorBoundary name="Senkron">
             <SyncPanel sync={sync} playing={playing} available={player.available} />
+          </ErrorBoundary>
+        </div>
+        <div
+          className="drawer__panel"
+          role="tabpanel"
+          id="drawer-panel-abx"
+          aria-labelledby="drawer-tab-abx"
+          hidden={drawer.panel !== "abx"}
+        >
+          <ErrorBoundary name="Kör test">
+            <AbxPanel abx={abx} available={player.available} />
           </ErrorBoundary>
         </div>
         <div

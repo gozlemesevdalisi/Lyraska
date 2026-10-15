@@ -17,11 +17,13 @@
 //!   Gerçek zamanlı iş parçacığında çalışır: bellek ayırmaz, kilit beklemez.
 //! - [`output`]: Windows WASAPI çıkışı (paylaşımlı mod; ayarla özel mod, bit-perfect).
 //! - [`player`]: yukarıdakileri bir araya getiren, arayüzün kullandığı oynatıcı.
+//! - [`abx`]: kör dinleme testi (iki dosyanın aynı bölümü, A/B/X; ses işlenmez).
 //!
 //! Bütün iç işlem [`Sample`] türüyle (64-bit) yapılır; yalnızca çıkışta aygıtın
 //! biçimine (paylaşımlı modda 32-bit kayan nokta, özel modda aygıtın tamsayısı)
 //! dönüştürülür.
 
+pub mod abx;
 pub mod bass;
 pub mod biquad;
 pub mod decode;
@@ -64,6 +66,9 @@ pub enum AudioError {
     /// Özel mod (bit-perfect) açılamadı; oynatıcı paylaşımlı moda geçer.
     #[error("Bit-perfect açılamadı: {0}")]
     Exclusive(String),
+    /// Kör dinleme testi kurulamadı (ör. iki dosya aynı kayıt değil).
+    #[error("Kör test başlatılamadı: {0}")]
+    Abx(String),
 }
 
 impl From<symphonia::core::errors::Error> for AudioError {

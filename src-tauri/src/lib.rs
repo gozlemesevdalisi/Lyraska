@@ -135,6 +135,12 @@ pub fn run() {
             commands::audio_delay_get,
             commands::audio_delay_set,
             commands::calibration_track,
+            commands::abx_start,
+            commands::abx_select,
+            commands::abx_pause,
+            commands::abx_answer,
+            commands::abx_status,
+            commands::abx_stop,
         ])
         .build(tauri::generate_context!());
     let app = match built {

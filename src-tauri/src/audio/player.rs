@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use rtrb::{Producer, RingBuffer};
 use serde::Serialize;
 
+use super::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus, AbxTest};
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{protection_db, Design, EqControl, EqSettings, EqState};
 use super::normalize::{LoudnessControl, TrackLevels};
@@ -45,7 +46,7 @@ const PREFILL_TIMEOUT: Duration = Duration::from_secs(3);
 const DECODE_IDLE: Duration = Duration::from_millis(5);
 /// Şarkı değiştirirken, sararken ya da durdururken sesin kısılmasının hoparlöre
 /// ulaşması için en fazla bu kadar beklenir (aygıt arabelleği ~100 ms + geçiş).
-const FADE_OUT_TIMEOUT: Duration = Duration::from_millis(300);
+pub(crate) const FADE_OUT_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// İş parçacıkları arasında paylaşılan durum. Yalnızca atomik değişkenler
 /// gerçek zamanlı yolda kullanılır; `error` kilidi yalnızca hata anında alınır.
@@ -85,6 +86,16 @@ impl SharedState {
         let state = Self {
             controls,
             segments: Mutex::new(vec![first]),
+            ..Self::default()
+        };
+        state.paused.store(paused, Ordering::Release);
+        state
+    }
+
+    /// Şarkı bilgisi olmayan bir oturum için (ör. kör dinleme testi).
+    pub(crate) fn with_controls(paused: bool, controls: RenderControls) -> Self {
+        let state = Self {
+            controls,
             ..Self::default()
         };
         state.paused.store(paused, Ordering::Release);
@@ -584,6 +595,10 @@ pub struct Player {
     /// Görsellere uygulanan ekolayzer tepkisi (dB, spektrum bantları için) ve en büyük
     /// yükseltme, hangi ayar sürümü ve örnekleme hızı için hesaplandığıyla birlikte.
     visual_eq: Option<(u64, u32, [f64; BANDS], f64, super::bass::BassBoost)>,
+    /// Kurulu kör dinleme testi. Ses aygıtını kullanırken şarkı çalmaz.
+    abx: Option<AbxTest>,
+    /// Kör test başlarken çalan şarkı ve konumu: test bitince orada duraklatılmış açılır.
+    abx_resume: Option<(PathBuf, f64)>,
 }
 
 impl Player {
@@ -603,19 +618,10 @@ impl Player {
         autoplay: bool,
         start_secs: Option<f64>,
     ) -> Result<TrackInfo, AudioError> {
-        // Çalan sesi önce yumuşakça kıs, kısılma hoparlöre ulaşınca oturumu kapat:
-        // "tık" sesi olmasın. (Aygıt arabelleği sesi ~100 ms önden tutar.)
-        if let Some(session) = &self.session {
-            if matches!(
-                session.state(),
-                PlaybackState::Playing | PlaybackState::Paused
-            ) {
-                session.shared.paused.store(true, Ordering::Release);
-                wait_for_fade_out(&session.shared, FADE_OUT_TIMEOUT);
-            }
-        }
-        // Önceki oturumu kapat: ses aygıtı serbest kalsın, iki şarkı üst üste çalmasın.
-        self.session = None;
+        // Kör test açıksa kapanır: ses aygıtı şarkıya geçer.
+        self.abx = None;
+        self.abx_resume = None;
+        self.close_session();
         self.last_error = None;
         // Sıradaki şarkı açılan şarkının kendisiyse (boşluksuz geçiş sonrası) artık sırada değil.
         if self.next_path.as_deref() == Some(path) {
@@ -660,6 +666,78 @@ impl Player {
                 Err(error)
             }
         }
+    }
+
+    /// Çalan oturumu kapatır. Ses önce yumuşakça kısılır, kısılma hoparlöre ulaşınca oturum
+    /// kapanır: "tık" sesi olmasın (aygıt arabelleği sesi ~100 ms önden tutar). Ses aygıtı
+    /// serbest kalır; iki şarkı üst üste çalmaz.
+    fn close_session(&mut self) {
+        if let Some(session) = &self.session {
+            if matches!(
+                session.state(),
+                PlaybackState::Playing | PlaybackState::Paused
+            ) {
+                session.shared.paused.store(true, Ordering::Release);
+                wait_for_fade_out(&session.shared, FADE_OUT_TIMEOUT);
+            }
+        }
+        self.session = None;
+    }
+
+    /// Kör dinleme testini kurar. Çalan şarkı durur (ses aygıtı teste geçer); test bitince
+    /// kaldığı yerde duraklatılmış açılır.
+    pub fn abx_start(&mut self, request: &AbxRequest) -> Result<AbxStatus, AudioError> {
+        self.abx = None;
+        if self.abx_resume.is_none() {
+            self.abx_resume = self.session.as_ref().map(|s| {
+                let (track, position) = s.now_playing();
+                (track.path, position)
+            });
+        }
+        self.close_session();
+        let test = AbxTest::start(request)?;
+        let status = test.status();
+        self.abx = Some(test);
+        Ok(status)
+    }
+
+    /// Testte A, B ya da X'i çalar.
+    pub fn abx_select(&mut self, choice: AbxChoice) -> AbxStatus {
+        if let Some(test) = &mut self.abx {
+            test.select(choice);
+        }
+        self.abx_status()
+    }
+
+    pub fn abx_pause(&mut self) -> AbxStatus {
+        if let Some(test) = &mut self.abx {
+            test.pause();
+        }
+        self.abx_status()
+    }
+
+    /// "X, A'dır" ya da "X, B'dir".
+    pub fn abx_answer(&mut self, guess: AbxSource) -> AbxStatus {
+        if let Some(test) = &mut self.abx {
+            test.answer(guess);
+        }
+        self.abx_status()
+    }
+
+    /// Testi kapatır; test başlarken çalan şarkı kaldığı yerde duraklatılmış açılır.
+    pub fn abx_stop(&mut self) -> AbxStatus {
+        self.abx = None;
+        if let Some((path, position)) = self.abx_resume.take() {
+            // Açılamazsa (ör. dosya silindi) hata durumu gösterilir; test yine kapanır.
+            let _ = self.restart(&path, false, Some(position));
+        }
+        AbxStatus::inactive()
+    }
+
+    pub fn abx_status(&self) -> AbxStatus {
+        self.abx
+            .as_ref()
+            .map_or_else(AbxStatus::inactive, AbxTest::status)
     }
 
     /// Boşluksuz geçiş için sıradaki şarkıyı bildirir (`None`: sıra yok).
@@ -1223,14 +1301,14 @@ fn attach_next(shared: &SharedState, spec: OutputSpec, info: TrackInfo, first_ou
     shared.controls.levels.begin_track(first_output_frame);
 }
 
-fn wait_for_fade_out(shared: &SharedState, timeout: Duration) {
+pub(crate) fn wait_for_fade_out(shared: &SharedState, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !shared.faded_out.load(Ordering::Acquire) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(2));
     }
 }
 
-fn wait_for_prefill(shared: &SharedState, timeout: Duration) {
+pub(crate) fn wait_for_prefill(shared: &SharedState, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !shared.prefilled.load(Ordering::Acquire) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(2));
@@ -1698,6 +1776,56 @@ mod tests {
         assert!(old.faded_out.load(Ordering::Acquire));
         assert!(old.stop.load(Ordering::Acquire));
         std::fs::remove_file(path).ok();
+    }
+
+    /// Kör test için geniş bantlı, tekrarlanabilir bir kayıt (aynı kaydın iki kopyası).
+    fn abx_song(name: &str) -> PathBuf {
+        let path = temp_path(name);
+        let mut state = 12_345u64;
+        let noise: Vec<f64> = (0..40_000)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                0.3 * ((state >> 33) as f64 / f64::from(1u32 << 30) - 1.0)
+            })
+            .collect();
+        write_wav(&path, 8_000, 2, noise.len(), |frame, _| noise[frame]);
+        path
+    }
+
+    #[test]
+    fn kor_test_sarkiyi_durdurur_bitince_kaldigi_yerde_acar() {
+        let song = ramp_song("kor-test-calan.wav");
+        let a = abx_song("kor-a.wav");
+        let b = abx_song("kor-b.wav");
+        let mut player = Player::new();
+        player.load(&song, true).unwrap();
+        assert!(wait_until(|| player.status().position_secs > 0.5));
+        let request = AbxRequest {
+            a,
+            b,
+            start_secs: 0.0,
+            clip_secs: 3.0,
+            trials: 8,
+        };
+        let status = player.abx_start(&request).unwrap();
+        assert!(status.active);
+        // Ses aygıtı teste geçti: şarkı oturumu kapandı.
+        assert_eq!(player.state(), PlaybackState::Idle);
+        let position = player.abx_resume.as_ref().unwrap().1;
+        assert!(position > 0.4, "{position}");
+        assert_eq!(player.abx_select(AbxChoice::X).playing, Some(AbxChoice::X));
+        assert_eq!(player.abx_answer(AbxSource::A).answered, 1);
+        // Test kapanınca şarkı kaldığı yerde, duraklatılmış.
+        assert!(!player.abx_stop().active);
+        assert_eq!(player.state(), PlaybackState::Paused);
+        assert!((player.status().position_secs - position).abs() < 0.2);
+        // Yeniden kurulup şarkı açılınca test kendiliğinden kapanır.
+        player.abx_start(&request).unwrap();
+        player.load(&song, false).unwrap();
+        assert!(!player.abx_status().active);
+        std::fs::remove_file(song).ok();
     }
 
     #[test]
