@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.40 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.41 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -213,11 +213,14 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Neye bakılır: nakarata geçince gökyüzüyle birlikte sürgülerin ve ışıkların rengi 2–3 saniyede yumuşakça değişir;
   ani parlama yok.
 
-**D6. Diğer sahneler ve Görsel Yönetmen**
+**D6. Diğer sahneler ve Görsel Yönetmen (VU ve spektrum 0.0.41)**
 
 - Nasıl: **Gece otoyolu** (2), **VU ibreleri** (3), **Spektrum** (4) sahnelerinde drop'lu bir şarkı çalın.
 - Neye bakılır: otoyolda çizgiler vuruşla, lambalar ölçü başıyla akar; drop'tan önce ufka çekilip drop'ta açılır.
   VU ibreleri ve spektrum sesle birlikte oynar.
+- VU ve spektrumda ölçerlerin arkasında hafif bir ışık halesi var: rengi alttaki şeritte o bölümün rengi; sakin
+  bölümde kısık, yoğun bölümde canlı. Drop'tan önce hale daralır (spektrumda tepe noktaları havada asılı kalır),
+  drop'ta açılır. Değişimler yumuşak olmalı; ani parlama yok.
 
 **D7. Epilepsi güvenli modu ve "animasyonları azalt"**
 

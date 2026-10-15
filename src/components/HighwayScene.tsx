@@ -78,6 +78,7 @@ export function highwayInput(frame: VisualFrame): HighwayInput {
           barPhase: d.rhythm.barPhase,
           anticipation: d.rhythm.anticipation,
           release: d.rhythm.release,
+          motion: d.texture.motion,
         }
       : null,
   };

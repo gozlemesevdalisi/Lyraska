@@ -62,9 +62,12 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Gecikme telafisi ve kalibrasyon (0.0.21): verinin ekrana ulaşma süresi her karede ölçülüp telafi edilir; ses
       aygıtının ek gecikmesi (ör. Bluetooth) "Senkron" sekmesinde ayarlanır ya da tıklama kaydıyla ölçülür; vuruş
       göstergesiyle gözle denetlenir. Gerçek aygıtlarda ±20 ms hedefinin ölçümü proje sahibinin denemesiyle
-- [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
+- [x] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
       bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu
-      bağlandı (0.0.19). Sıradaki: spektrum ve VU sahneleri, doku katmanı
+      bağlandı (0.0.19). 0.0.41: VU ve spektrum sahneleri "sahne ışığı"yla bağlandı (hale bölüm renginde, ruh
+      hâliyle güçlenir, droptan önce daralır, drop'ta açılır; spektrumda tepe noktaları droptan önce asılı
+      kalır); doku katmanı bütün sahnelerde (vuruş yoğunluğu akışı, tizlerin canlılığı kırpışmayı ve tepe
+      noktalarını hızlandırır)
 - [x] "Gece otoyolu" sahnesi (0.0.19): şerit çizgileri vuruşlara, sokak lambaları ölçü başlarına kilitli; ufuk
       parıltısı bölüm temasıyla renklenir; drop öncesi ufka çekilir, drop'ta yükselir ve yol iki kat hızlanır
 - [x] Epilepsi güvenli modu (0.0.18): her zaman saniyede en fazla 3 parlama (testle sınanır); güvenli modda

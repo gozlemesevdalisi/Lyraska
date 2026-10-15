@@ -111,5 +111,7 @@ function directorInput(frame: VisualFrame): DirectorInput | null {
     accent: d.rhythm.accent,
     anticipation: d.rhythm.anticipation,
     release: d.rhythm.release,
+    detail: d.texture.detail,
+    motion: d.texture.motion,
   };
 }
