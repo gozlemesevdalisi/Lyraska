@@ -107,6 +107,15 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 - Görsel Yönetmen (`director`) şarkı haritasından her an için bir not çıkarır (atmosfer, ritim, doku).
 - Arayüz her ekran karesinde `visual_frame` ister; `visual_bridge` çalma konumuna (ekran ve aygıt
   gecikmesi telafi edilerek) karşılık gelen kareyi verir. Görseller ses yolundan veri çekmez.
+- Her sahne yönetmen notunun üç katmanını kullanır:
+  - Gece göğü (`sky.ts`) ve gece otoyolu (`highway.ts`): bölüm teması, ruh hâli, drop öncesi gerilim ve drop
+    açılımı, ölçü başı. Doku: vuruş yoğunluğu akışı (otoyolda kıvrılmayı ve şehri), tizlerin canlılığı yıldızların
+    kırpışmasını hızlandırır; yalnızca hız, parlaklık değil.
+  - VU ibreleri ve spektrum: ölçerler müziği olduğu gibi gösterir; arkalarındaki ışık "sahne ışığı"dır
+    (`stageLight.ts`). Rengi bölüm teması (`--aurora`), gücü ruh hâli; droptan önce hale daralır, drop'ta
+    açılır, ölçü başında kabarır (yalnızca boyut). Spektrumda tepe noktaları droptan önce asılı kalır, tizler
+    canlıyken çevik düşer.
+  - Parlaklığı değiştiren her değer hız sınırlıdır (güvenli modda yarı hız); her sahnenin kendi parlama testi var.
 
 ## Arayüz yapısı
 
@@ -180,7 +189,7 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı              | `analysis::spectrogram` testi `eskiyen_ritim_…`                               |
 | Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez                 | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)                          |
 | Güveni düşük drop hiçbir yerde drop sayılmaz (tek eşik)                 | `analysis::structure`, `director` testleri, bileşen testleri                  |
-| Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri + `npm run check:scenes` (Windows'ta Edge, CI)                 |
+| Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri (`sky`, `highway`, `stageLight`) + `npm run check:scenes` (CI) |
 | Parlama sınırı her renk temasında ve her gök manzarasında               | `npm run check:scenes` (temaya göre renklenen sahneler, CI)                   |
 | Yasaklı lisans yok                                                      | `npm run check:licenses`, `cargo deny` (CI)                                   |
 | Depoda ses dosyası yok                                                  | `npm run check:audio` (CI)                                                    |

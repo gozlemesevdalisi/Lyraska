@@ -12,6 +12,9 @@ import { SCENE_CLOCK_PERIOD, foldTime } from "./sceneClock";
  *   (gece göğüyle aynı temalar). Droptan önce parıltı ufka çekilip daralır
  *   (gerilim), drop'ta yükselip genişler (açılım).
  *
+ * - Doku katmanı: vuruş yoğunluğu yolun kıvrılmasını ve şehir pencerelerinin değişimini
+ *   hızlandırır (yoğun bölümde şehir daha canlı).
+ *
  * Epilepsi güvenliği: ekranın parlaklığını değiştiren tek değer (parıltı ve
  * açılım) saniyede en fazla `ENERGY_SLEW_PER_SECOND` kadar değişir (güvenli
  * modda yarısı). Vuruşlar parlaklığa değil, yolun akışına yansır.
@@ -23,6 +26,7 @@ import {
   clamp01,
   slew,
   smooth,
+  smoothTexture,
   stepPalette,
   type Energies,
   type Palette,
@@ -42,6 +46,8 @@ export interface HighwayState {
   palette: Palette;
   /** Sahne saati (saniye; yolun kıvrılması ve şehir pencereleri için). */
   time: number;
+  /** Doku: vuruş yoğunluğu (0..1; yumuşak; 0,5 = olağan). */
+  motion: number;
 }
 
 export const HIGHWAY_AT_REST: HighwayState = {
@@ -52,6 +58,7 @@ export const HIGHWAY_AT_REST: HighwayState = {
   bloom: 0,
   palette: { from: 0, to: 0, mix: 1 },
   time: 0,
+  motion: 0.5,
 };
 
 /** O anın müziği: bant enerjileri, vuruş ve Görsel Yönetmen'in notu. */
@@ -66,6 +73,8 @@ export interface HighwayInput {
     barPhase: number;
     anticipation: number;
     release: number;
+    /** Doku katmanının vuruş yoğunluğu (yoksa olağan hız). */
+    motion?: number;
   } | null;
 }
 
@@ -154,6 +163,7 @@ export function stepHighway(
     (safe ? SAFE_LAMP_RATE : MAX_LAMP_RATE) * step,
   );
 
+  const textureMotion = smoothTexture(prev.motion, input ? director?.motion : undefined, step);
   return {
     glow,
     dash,
@@ -162,7 +172,10 @@ export function stepHighway(
     bloom,
     palette: stepPalette(prev.palette, director?.theme ?? null, step),
     // "Animasyonları azalt" açıkken pencereler yanıp sönmez, yol kıvrılmaz.
-    time: reducedMotion ? prev.time : (prev.time + step) % SCENE_CLOCK_PERIOD,
+    time: reducedMotion
+      ? prev.time
+      : (prev.time + step * (0.8 + 0.4 * textureMotion)) % SCENE_CLOCK_PERIOD,
+    motion: textureMotion,
   };
 }
 

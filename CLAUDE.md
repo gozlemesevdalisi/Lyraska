@@ -75,7 +75,7 @@ lyraska/
 │   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak),
 │   │                         # useAbx (kör test)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover, abx), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # timeline, cover, abx, stageLight), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)

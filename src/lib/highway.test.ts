@@ -197,6 +197,20 @@ describe("gece otoyolu", () => {
   });
 });
 
+describe("gece otoyolunun doku katmanı", () => {
+  it("vuruş yoğunluğu yolun kıvrılmasını ve şehri hızlandırır; parlaklık ve vuruş kilidi aynı", () => {
+    const calm = drive(HIGHWAY_AT_REST, 6, (t) => music(t, { motion: 0 }));
+    const busy = drive(HIGHWAY_AT_REST, 6, (t) => music(t, { motion: 1 }));
+    const step = (from: HighwayState, motion: number) =>
+      drive(from, 1, (t) => music(t, { motion }), false, 6).time - from.time;
+    expect(step(busy, 1)).toBeGreaterThan(step(calm, 0) * 1.3);
+    expect(busy.glow).toBeCloseTo(calm.glow, 9);
+    expect(phaseDistance(busy.dash, calm.dash)).toBeLessThan(0.02);
+    // Doku yoksa olağan hız.
+    expect(drive(HIGHWAY_AT_REST, 6, (t) => music(t)).motion).toBeCloseTo(0.5, 6);
+  });
+});
+
 describe("gece otoyolunun saati", () => {
   it("saatlerce çalınca da yolun kıvrımı sıçramaz", () => {
     let state: HighwayState = { ...HIGHWAY_AT_REST, time: 9_999.99 };

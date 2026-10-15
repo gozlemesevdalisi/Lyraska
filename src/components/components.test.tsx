@@ -15,6 +15,8 @@ const backend = vi.hoisted(() => ({
   stop: vi.fn(),
   seek: vi.fn(),
   bands: null as number[] | null,
+  /** Görsel karedeki Görsel Yönetmen notu (yoksa analiz bitmemiş gibi). */
+  director: null as import("../lib/backend").DirectorFrame | null,
   library: null as import("../lib/backend").LibraryStatus | null,
   /** Kütüphane açılamadıysa çekirdeğin her kütüphane komutunda verdiği hata. */
   libraryFailure: null as string | null,
@@ -94,7 +96,16 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return current();
     },
     getVisualFrame: async () =>
-      backend.bands ? { positionSecs: current().positionSecs, bands: backend.bands } : null,
+      backend.bands
+        ? {
+            positionSecs: current().positionSecs,
+            bands: backend.bands,
+            rmsDb: [-20, -20],
+            peakDb: [-6, -6],
+            vuReferenceDb: -14,
+            director: backend.director,
+          }
+        : null,
     openTrack: async (path: string) => {
       backend.open(path);
       return current().track;
@@ -272,6 +283,7 @@ beforeEach(() => {
   backend.desktop = false;
   backend.status = null;
   backend.bands = null;
+  backend.director = null;
   backend.library = null;
   backend.libraryFailure = null;
   backend.tracks = [];
@@ -456,6 +468,39 @@ describe("sarma ve spektrum", () => {
       expect(lit).toBeGreaterThan(100);
     });
   });
+});
+
+describe("VU ve spektrum sahnelerinin ışığı", () => {
+  const director = (mood: number) => ({
+    atmosphere: { section: 0, theme: 0, mood, warmth: 0.5 },
+    rhythm: { pulse: 0, accent: 0, beatPhase: 0, barPhase: 0, anticipation: 0, release: 0 },
+    texture: { detail: 0.5, motion: 0.5 },
+  });
+  const glowOf = (element: Element | null) =>
+    Number((element as HTMLElement | null)?.style.getPropertyValue("--stage-glow") || 0);
+
+  for (const [scene, selector] of [
+    ["Spektrum", ".vfd-frame"],
+    ["VU ibreleri", ".vu-scene"],
+  ] as const) {
+    it(`${scene}: Görsel Yönetmen'in ruh hâliyle ışır, not yoksa kısık kalır`, async () => {
+      backend.desktop = true;
+      backend.status = playing;
+      backend.bands = new Array<number>(32).fill(0.5);
+      backend.director = director(1);
+      const { container } = render(<App />);
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: scene })));
+      await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+      await waitFor(() => expect(glowOf(container.querySelector(selector))).toBeGreaterThan(0.3), {
+        timeout: 3000,
+      });
+      // Analiz yok (not gelmiyor): ışık yumuşakça söner.
+      backend.director = null;
+      await waitFor(() => expect(glowOf(container.querySelector(selector))).toBeLessThan(0.05), {
+        timeout: 4000,
+      });
+    });
+  }
 });
 
 describe("kütüphane", () => {
@@ -1054,7 +1099,7 @@ describe("sahneler", () => {
           anticipation: 0.4,
           release: 0,
         },
-        texture: { detail: 0.5, motion: 0.5 },
+        texture: { detail: 0.5, motion: 0.6 },
       },
     });
     expect(input.beat).toEqual({ bpm: 128, phase: 0.25 });
@@ -1064,6 +1109,7 @@ describe("sahneler", () => {
       barPhase: 0.81,
       anticipation: 0.4,
       release: 0,
+      motion: 0.6,
     });
     expect(input.energies[0]).toBeCloseTo(1, 5);
   });

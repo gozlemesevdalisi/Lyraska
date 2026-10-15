@@ -24,7 +24,7 @@ export function SceneStage({ scene, playing, hasTrack, safe, skyLook }: SceneSta
   return (
     <div className="stage" data-scene={scene}>
       {scene === "vu" ? (
-        <VuScene playing={playing} />
+        <VuScene playing={playing} safe={safe} />
       ) : scene === "highway" ? (
         <HighwayScene playing={playing} safe={safe} />
       ) : scene === "spectrum" ? (
@@ -35,6 +35,7 @@ export function SceneStage({ scene, playing, hasTrack, safe, skyLook }: SceneSta
               bands={SPECTRUM_BANDS}
               rows={SPECTRUM_ROWS}
               playing={playing}
+              safe={safe}
               className="vfd vfd--primary"
             />
           ) : (

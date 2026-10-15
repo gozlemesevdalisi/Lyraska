@@ -56,7 +56,10 @@ const fakeCore = (level = null, theme = 1) => `
       case "headphone_get": return { enabled: false, profile: null, curveHz: [], curveDb: [] };
       case "visual_safe_get": return false;
       case "audio_delay_get": return 0;
-      case "song_map": case "annotation_get": return null;
+      // Tek bölümlük harita: arayüzün vurgu rengi (VU ve spektrum sahnelerinin halesi) de temada.
+      case "song_map": return { meter: 4, downbeatPhase: 0, downbeats: [], drops: [], dropConfidence: [],
+        energy: [], sections: [{ start: 0, end: 240, energy: 0.8, label: ${theme} }] };
+      case "annotation_get": return null;
       case "visual_frame": return {
         positionSecs: 60 + t,
         bands: Array.from({ length: 32 }, (_, i) =>
@@ -395,8 +398,9 @@ function variants(scene) {
 
 /** Parlama sınırı ölçülen sahneler (hepsi). */
 const ALL_SCENES = [
-  { id: "spectrum", name: "Nokta matris spektrum" },
-  { id: "vu", name: "VU ibreleri" },
+  // Halesi bölüm temasının renginde (`--aurora`).
+  { id: "spectrum", name: "Nokta matris spektrum", themed: true },
+  { id: "vu", name: "VU ibreleri", themed: true },
   ...SCENES,
 ];
 

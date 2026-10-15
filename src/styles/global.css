@@ -1354,6 +1354,17 @@ kbd {
 
 /* ---------- VU ibreleri sahnesi ---------- */
 
+/* Sahne ışığı (src/lib/stageLight.ts): `--stage-glow` ışığın gücü (hız sınırlı; parlaklığı yalnızca
+   o değiştirir), `--stage-spread` halenin genişliği (gerilimde daralır, açılımda genişler, ölçü
+   başında kabarır), `--stage-sway` süzülmesi. Rengi bölüm teması (`--aurora`, yumuşak geçişli). */
+.vu-scene,
+.vfd-frame {
+  --stage-glow: 0;
+  --stage-spread: 1;
+  --stage-sway: 0%;
+  --stage-tension: 0;
+}
+
 .vu-scene {
   position: absolute;
   inset: 0;
@@ -1364,6 +1375,12 @@ kbd {
   /* İbreler alttaki başlığın ve düğmelerin üstünde kalır. */
   padding: 92px 6vw 48vh;
   background:
+    radial-gradient(
+      calc(70% * var(--stage-spread)) calc(60% * var(--stage-spread)) at
+        calc(50% + var(--stage-sway)) 38%,
+      color-mix(in srgb, var(--aurora) calc(3% + 9% * var(--stage-glow)), transparent),
+      transparent 70%
+    ),
     radial-gradient(60% 55% at 50% 40%, rgba(255, 170, 80, 0.1), transparent 70%),
     linear-gradient(180deg, #08080b, #020203);
 }
@@ -1371,6 +1388,9 @@ kbd {
 .vu-scene .vu-meter {
   flex: 0 1 min(36vw, 480px);
   max-height: 100%;
+  /* Arkadan aydınlatılmış yüz ışıkla birlikte hafifçe güçlenir. */
+  filter: drop-shadow(0 0 14px rgba(255, 190, 90, 0.18))
+    brightness(calc(0.92 + 0.12 * var(--stage-glow)));
 }
 
 .vu-meter {
@@ -1541,18 +1561,53 @@ kbd {
 /* Epilepsi güvenliği: tam ekranda büyük ve parlak bir nokta matris, sessizden tam sese
    geçerken geniş bir alanın parlaklığını birden değiştirir (parlama sayılır). Matris
    ortada bir ekran boyunda kalır, noktalar kısık yanar; sahne denetimi farkı ölçer. */
-.spectrum-scene .dot-matrix {
+.spectrum-scene .vfd-frame {
+  position: relative;
+  isolation: isolate;
   width: min(100%, 760px);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ekranın arkasındaki hale: sahne ışığıyla (bkz. VU sahnesi). */
+.spectrum-scene .vfd-frame::before {
+  content: "";
+  position: absolute;
+  inset: -30% -40%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    calc(50% * var(--stage-spread)) calc(45% * var(--stage-spread)) at calc(50% + var(--stage-sway))
+      50%,
+    color-mix(in srgb, var(--aurora) calc(2% + 7% * var(--stage-glow)), transparent),
+    transparent 70%
+  );
+}
+
+.spectrum-scene .dot-matrix {
+  width: 100%;
   height: auto;
   max-height: 100%;
 }
 
-.spectrum-scene .dot-matrix__lit {
+/* Noktaların rengi fosfor turkuazı, bölüm temasına doğru biraz çekilir. */
+.spectrum-scene .vfd--primary .dot-matrix__lit {
+  fill: color-mix(in srgb, var(--vfd) 78%, var(--aurora));
   fill-opacity: 0.62;
 }
 
+/* Droptan önce sönük noktalar kaybolur: göz yanan çubuklarda toplanır. */
+.spectrum-scene .vfd--primary .dot-matrix__ghost {
+  fill-opacity: calc(1 - 0.6 * var(--stage-tension));
+}
+
 .spectrum-scene .vfd--primary {
-  filter: drop-shadow(0 0 6px var(--vfd-glow));
+  filter: drop-shadow(
+    0 0 calc(4px + 4px * var(--stage-glow) * var(--stage-spread))
+      color-mix(in srgb, var(--vfd-glow) calc(70% + 30% * var(--stage-glow)), transparent)
+  );
 }
 
 /* ---------- Kütüphane ---------- */
