@@ -22,6 +22,11 @@ const OUTPUT = join(ROOT, "public", "lisanslar", "UCUNCU-TARAF.txt");
 const TARGET = "x86_64-pc-windows-msvc";
 const LICENSE_FILE = /^(LICEN[CS]E|COPYING|NOTICE)(\.|-|_|$)/i;
 
+/** Yerel ayardan bağımsız sıralama (kod noktası): çıktı her makinede aynı olsun. */
+function byCodePoint(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Rust crate'leri: ad, sürüm, lisans ifadesi, depo. */
 function rustPackages() {
   const out = execFileSync(
@@ -52,7 +57,7 @@ function rustPackages() {
     seen.set(`${name} ${version}`, { name, version, license: license || "BİLİNMİYOR", repository });
   }
   return [...seen.values()].sort(
-    (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version),
+    (a, b) => byCodePoint(a.name, b.name) || byCodePoint(a.version, b.version),
   );
 }
 
@@ -113,7 +118,7 @@ function npmPackages() {
       texts,
     });
   }
-  return found.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+  return found.sort((a, b) => byCodePoint(a.name, b.name) || byCodePoint(a.version, b.version));
 }
 
 function normalize(text) {
@@ -222,6 +227,19 @@ if (process.argv.includes("--check")) {
     console.error(
       `${OUTPUT} güncel değil. 'node scripts/third-party-notices.mjs' ile üretip commit edin.`,
     );
+    // İlk farkı göster: CI günlüğünden neden anlaşılsın (makineye bağlı bir fark varsa yeri belli olsun).
+    const have = current.split("\n");
+    const want = content.split("\n");
+    const limit = Math.min(have.length, want.length);
+    let i = 0;
+    while (i < limit && have[i] === want[i]) i += 1;
+    console.error(
+      `Satır sayısı: depoda ${have.length}, üretilen ${want.length}; ilk fark ${i + 1}. satırda:`,
+    );
+    for (let k = Math.max(0, i - 2); k < Math.min(limit, i + 6); k += 1) {
+      console.error(`  depoda   ${k + 1}: ${have[k] ?? ""}`);
+      console.error(`  üretilen ${k + 1}: ${want[k] ?? ""}`);
+    }
     process.exit(1);
   }
   console.log("Üçüncü taraf lisans bildirimleri güncel.");
