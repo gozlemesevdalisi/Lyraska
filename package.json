@@ -18,6 +18,8 @@
     "check:licenses": "node scripts/check-licenses.mjs",
     "check:commands": "node scripts/check-commands.mjs",
     "check:audio": "node scripts/check-no-audio.mjs",
+    "notices": "node scripts/third-party-notices.mjs",
+    "check:notices": "node scripts/third-party-notices.mjs --check",
     "check:scenes": "node scripts/check-scenes.mjs"
   },
   "dependencies": {

@@ -23,7 +23,7 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Paneli kapat"],
 ];
 
-/** Ayarlar: gece göğünün görünümü, görsel güvenlik, ses, sesin yolu, kısayollar, program bilgisi ve hata günlüğü. */
+/** Ayarlar: gece göğünün görünümü, görsel güvenlik, ses, sesin yolu, kısayollar, program bilgisi, hata günlüğü, lisanslar. */
 export function SettingsPanel({
   info,
   status,
@@ -33,6 +33,7 @@ export function SettingsPanel({
   skyLook,
 }: SettingsPanelProps) {
   const [logError, setLogError] = useState<string | null>(null);
+  const [noticesOpen, setNoticesOpen] = useState(false);
   const signalPath = signalPathText(status);
   const notice = status.output?.notice ?? null;
 
@@ -173,6 +174,30 @@ export function SettingsPanel({
           </button>
         )}
         {logError && <p className="settings__warn">{logError}</p>}
+      </div>
+
+      <div className="settings__group">
+        <h2 className="settings__title">Lisanslar</h2>
+        <p className="settings__text">
+          Lyraska özgür yazılımdır (GNU GPL 3.0). Kaynak kodu: github.com/gozlemesevdalisi/Lyraska
+        </p>
+        <p className="settings__hint">
+          Program açık kaynak kütüphaneler içerir; telif sahipleri ve lisans metinleri aşağıda.
+        </p>
+        {/* 450 KB'lik metin yalnızca açılınca yüklenir; programın içinde paketlidir. */}
+        <details
+          className="settings__notices"
+          onToggle={(event) => setNoticesOpen(event.currentTarget.open)}
+        >
+          <summary className="glass-button">Üçüncü taraf lisans bildirimleri</summary>
+          {noticesOpen && (
+            <iframe
+              className="settings__notices-frame"
+              src="/lisanslar/UCUNCU-TARAF.txt"
+              title="Üçüncü taraf lisans bildirimleri"
+            />
+          )}
+        </details>
       </div>
     </section>
   );

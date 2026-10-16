@@ -4,6 +4,22 @@ Programa kod dışında eklenen veri ve varlıkların (yazı tipleri, profiller,
 kayıtlıdır. Her yeni varlığın lisansı eklenmeden önce doğrulanır ve buraya yazılır (bkz. `CLAUDE.md`, lisans
 kuralları). Kod bağımlılıklarının lisanslarını CI denetler (`npm run check:licenses`, `cargo deny`).
 
+## Kod bağımlılıklarının bildirimleri (üçüncü taraf lisansları)
+
+- **Ne için:** programa giren açık kaynak kütüphanelerin (Rust crate'leri: symphonia, rubato, rusqlite, tauri vb.;
+  npm: React, Tauri API, Inter) lisansları MIT, BSD, Apache-2.0, ISC gibi lisanslardır; bunlar ikili dağıtımda
+  telif ve izin metninin verilmesini şart koşar.
+- **Dosya:** `public/lisanslar/UCUNCU-TARAF.txt` programla paketlenir; Ayarlar > Lisanslar'dan açılır. Her paket
+  için ad, sürüm, lisans ifadesi, kaynak deposu ve telif satırları; sonda bütün lisans metinleri (aynı metin tek
+  kez).
+- **Üretim:** `npm run notices` (`scripts/third-party-notices.mjs`). Rust tarafı Windows hedefinde çalıştırılabilir
+  dosyaya giren crate'lerdir (`cargo tree`, yalnızca normal bağımlılıklar; derleme betikleri ve proc-macro'lar
+  programa girmediği için hariç); metinler crate'in kendi paketinden (`~/.cargo/registry/cache`) okunur. npm tarafı
+  `package-lock.json`'daki dev olmayan paketlerdir. Çıktı belirlenimcidir; CI `npm run check:notices` ile
+  depodakiyle karşılaştırır.
+- **Sınır:** lisans dosyası taşımayan birkaç crate (ör. `realfft`, `webview2-com`) için lisans ifadesi ve kaynak
+  deposu yazılır; metin aynı deponun başka paketindeyse ona yollanır.
+
 ## Inter yazı tipi
 
 - **Ne için:** arayüzün yazı tipi (başlıklar, düğmeler, paneller). Büyük boyutlarda yazı tipinin "Display"

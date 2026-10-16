@@ -351,6 +351,17 @@ describe("oynatıcı ekranı", () => {
     // Program bilgisi ayarlar panelinde.
     await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
     await waitFor(() => expect(screen.getByText(/Faz 1 · Sürüm/)).toBeInTheDocument());
+    // Lisanslar: GPL ve kaynak kodu bağlantısı; üçüncü taraf bildirimleri açılınca yüklenir (C3).
+    expect(screen.getByText(/GNU GPL 3.0/)).toBeInTheDocument();
+    expect(screen.queryByTitle("Üçüncü taraf lisans bildirimleri")).not.toBeInTheDocument();
+    const details = screen.getByText("Üçüncü taraf lisans bildirimleri").closest("details");
+    expect(details).not.toBeNull();
+    details!.open = true;
+    await act(async () => fireEvent(details!, new Event("toggle")));
+    expect(screen.getByTitle("Üçüncü taraf lisans bildirimleri")).toHaveAttribute(
+      "src",
+      "/lisanslar/UCUNCU-TARAF.txt",
+    );
   });
 
   it("dosya seçilince şarkıyı açar ve süreyi gösterir", async () => {

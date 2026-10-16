@@ -129,7 +129,7 @@ lyraska/
 │   ├── tauri.conf.json       # Pencere, güvenlik, Windows NSIS kurulum ayarları
 │   └── deny.toml             # cargo-deny lisans kuralları
 ├── scripts/                  # Yardımcı betikler (npm lisans denetimi, depoda ses dosyası denetimi, sahne denetimi,
-│                             # komut sözleşmesi denetimi)
+│                             # komut sözleşmesi denetimi, üçüncü taraf lisans bildirimlerini üretme)
 ├── docs/
 │   ├── ROADMAP.md            # Yol haritası
 │   ├── MIMARI.md             # Mimari ve kuralları denetleyen testler
@@ -169,23 +169,24 @@ Kurallar:
 
 Hepsi depo kökünde çalıştırılır.
 
-| İş                             | Komut                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Bağımlılıkları kur             | `npm ci`                                                                                              |
-| Programı geliştirme modunda aç | `npm run tauri dev`                                                                                   |
-| Yalnızca arayüz (tarayıcıda)   | `npm run dev`                                                                                         |
-| Arayüz testleri                | `npm test`                                                                                            |
-| Arayüz lint / tür / biçim      | `npm run lint`, `npm run typecheck`, `npm run format:check`                                           |
-| Biçimlendir                    | `npm run format` ve `cd src-tauri && cargo fmt`                                                       |
-| Rust testleri                  | `cd src-tauri && cargo test` (arayüz veri tiplerini de `src/lib/bindings/`'e üretir)                  |
-| Komut sözleşmesi               | `npm run check:commands` (arayüzün çağrıları ↔ çekirdeğin komutları)                                  |
-| Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                                           |
-| Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources`                  |
-| Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)                      |
-| Sahneler gerçek tarayıcıda     | `npm run check:scenes` (önce `npm run build`; CI'da Windows Edge)                                     |
-| Windows'a özel kodu denetle    | `cd src-tauri && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` (bkz. not) |
-| Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                                    |
-| Kurulum dosyası (Windows)      | `npm run tauri build`                                                                                 |
+| İş                             | Komut                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Bağımlılıkları kur             | `npm ci`                                                                                               |
+| Programı geliştirme modunda aç | `npm run tauri dev`                                                                                    |
+| Yalnızca arayüz (tarayıcıda)   | `npm run dev`                                                                                          |
+| Arayüz testleri                | `npm test`                                                                                             |
+| Arayüz lint / tür / biçim      | `npm run lint`, `npm run typecheck`, `npm run format:check`                                            |
+| Biçimlendir                    | `npm run format` ve `cd src-tauri && cargo fmt`                                                        |
+| Rust testleri                  | `cd src-tauri && cargo test` (arayüz veri tiplerini de `src/lib/bindings/`'e üretir)                   |
+| Komut sözleşmesi               | `npm run check:commands` (arayüzün çağrıları ↔ çekirdeğin komutları)                                   |
+| Rust lint                      | `cd src-tauri && cargo clippy --all-targets -- -D warnings`                                            |
+| Lisans denetimi                | `npm run check:licenses` ve `cd src-tauri && cargo deny check licenses bans sources`                   |
+| Depoda ses dosyası yok mu      | `npm run check:audio` (telif: yalnızca `src-tauri/tests/data/` sentetik sesleri)                       |
+| Lisans bildirimleri            | `npm run notices` üretir (`public/lisanslar/UCUNCU-TARAF.txt`), `npm run check:notices` CI'da denetler |
+| Sahneler gerçek tarayıcıda     | `npm run check:scenes` (önce `npm run build`; CI'da Windows Edge)                                      |
+| Windows'a özel kodu denetle    | `cd src-tauri && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` (bkz. not)  |
+| Gerçek ses aygıtıyla deneme    | `cd src-tauri && cargo run --example ses_denemesi`                                                     |
+| Kurulum dosyası (Windows)      | `npm run tauri build`                                                                                  |
 
 Not: Rust derlemesi için önce `npm run build` ile `dist/` oluşturulmuş olmalıdır.
 Windows'a özel kodun (WASAPI) Linux'tan denetimi için bir kez `rustup target add x86_64-pc-windows-gnu` ve
@@ -246,6 +247,9 @@ Görsel güvenlik (zorunlu):
 - Dışarıdan alınan veri ve varlıkların (AutoEq profilleri, MilkDrop presetleri, örnek şarkılar, yazı tipleri)
   lisansı eklemeden önce doğrulanır ve kaynağıyla birlikte `docs/LISANSLAR.md` içinde not edilir. Lisans metni
   dağıtım gerektiriyorsa `public/lisanslar/` altına konur (programla birlikte paketlenir).
+- Pakete giren kod bağımlılıklarının (Rust crate'leri, npm paketleri) telif ve lisans metinleri
+  `public/lisanslar/UCUNCU-TARAF.txt` dosyasında dağıtılır; dosya `npm run notices` ile üretilir, elle düzenlenmez.
+  Bağımlılık ekleyen ya da güncelleyen her iş bu dosyayı yeniden üretip commit eder (CI denetler).
 - Marka adları ve varlıkları (özellikle Pioneer) kullanılmaz; nostalji tasarımları özgün çizilir.
 - **Ses dosyaları depoya asla girmez** (işaretleme için kullanılan şarkılar dahil). Tek istisna projenin
   ffmpeg ile ürettiği sentetik test sesleri (`src-tauri/tests/data/`). `.gitignore` ve CI (`check:audio`) denetler.
