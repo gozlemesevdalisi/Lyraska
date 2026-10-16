@@ -30,7 +30,8 @@
     "targets": ["nsis"],
     "category": "Music",
     "shortDescription": "Görselleri şarkıyı önceden bilen müzik çalar",
-    "copyright": "GPL-3.0",
+    "publisher": "Lyraska",
+    "copyright": "© 2026 Lyraska katkıcıları. GPL-3.0-only",
     "license": "GPL-3.0-only",
     "licenseFile": "../LICENSE",
     "icon": [
