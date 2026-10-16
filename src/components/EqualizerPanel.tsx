@@ -1,6 +1,8 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { EqualizerControls } from "../hooks/useEqualizer";
 import type { HeadphoneControls } from "../hooks/useHeadphone";
+import type { ParametricControls } from "../hooks/useParametric";
+import { ParametricEq } from "./ParametricEq";
 import {
   BASS_CLUB_DB,
   BASS_MAX_DB,
@@ -137,6 +139,8 @@ export interface EqualizerPanelProps {
   equalizer: EqualizerControls;
   /** Kulaklık düzeltmesi (verilmezse bölüm gösterilmez). */
   headphone?: HeadphoneControls;
+  /** Elle parametrik ekolayzer (verilmezse yalnızca grafik ekolayzer). */
+  parametric?: ParametricControls;
   /** Bit-perfect çalıyor: ses işlenmiyor, ayarlar şimdilik etkisiz. */
   bypassed?: boolean;
 }
@@ -332,8 +336,57 @@ function BassStrip({ equalizer }: { equalizer: EqualizerControls }) {
   );
 }
 
+/** Ekolayzer paneli: üstte görünüm seçimi (grafik ya da parametrik), kulaklık düzeltmesi ortak. */
+export function EqualizerPanel({
+  equalizer,
+  headphone,
+  parametric,
+  bypassed = false,
+}: EqualizerPanelProps) {
+  const [view, setView] = useState<"graphic" | "parametric">("graphic");
+  if (!parametric) {
+    return <GraphicEqualizer equalizer={equalizer} headphone={headphone} bypassed={bypassed} />;
+  }
+  return (
+    <div className="eq-views">
+      <div className="eq-views__tabs" role="tablist" aria-label="Ekolayzer türü">
+        {(
+          [
+            ["graphic", "Grafik (10 bant)", equalizer.active],
+            ["parametric", "Parametrik", parametric.active],
+          ] as const
+        ).map(([id, label, on]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            className={`eq-views__tab${view === id ? " is-selected" : ""}`}
+            onClick={() => setView(id)}
+          >
+            {label}
+            <span className={`led${on && !bypassed ? " is-on" : ""}`} aria-hidden />
+          </button>
+        ))}
+      </div>
+      {view === "graphic" ? (
+        <GraphicEqualizer equalizer={equalizer} headphone={headphone} bypassed={bypassed} />
+      ) : (
+        <>
+          {headphone && <HeadphoneStrip headphone={headphone} />}
+          <ParametricEq parametric={parametric} bypassed={bypassed} />
+        </>
+      )}
+    </div>
+  );
+}
+
 /** 10 bantlı ekolayzer: bas, hazır ayarlar, sürgüler ve gerçekten uygulanan eğri. */
-export function EqualizerPanel({ equalizer, headphone, bypassed = false }: EqualizerPanelProps) {
+function GraphicEqualizer({
+  equalizer,
+  headphone,
+  bypassed = false,
+}: Omit<EqualizerPanelProps, "parametric">) {
   const { settings, state, error } = equalizer;
   // Kulaklık düzeltmesinin biçimi (ön kazanç çıkarılmış: sıfır çizgisi etrafında).
   const correction = headphone?.active ? headphone.state : null;

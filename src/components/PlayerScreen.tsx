@@ -27,6 +27,7 @@ import { timelineLayout, type TimelineLayout } from "../lib/timeline";
 import { useDrawer, type Panel } from "../hooks/useDrawer";
 import { useDropToLibrary } from "../hooks/useDropToLibrary";
 import { useEqualizer } from "../hooks/useEqualizer";
+import { useParametric } from "../hooks/useParametric";
 import { useHeadphone } from "../hooks/useHeadphone";
 import { useIdle } from "../hooks/useIdle";
 import { useKeyboardFocusWithin } from "../hooks/useKeyboardFocus";
@@ -72,6 +73,7 @@ export function PlayerScreen() {
   const library = useLibrary();
   const equalizer = useEqualizer();
   const headphone = useHeadphone();
+  const parametric = useParametric();
   const visualSafe = useVisualSafe();
   const playbackOptions = usePlaybackOptions();
   const [scene, chooseScene] = useScene();
@@ -83,7 +85,9 @@ export function PlayerScreen() {
   // Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyorsa ekolayzer ışığı yanar.
   // Bit-perfect çalarken ikisi de sese uygulanmaz.
   const bitPerfect = status.output?.bitPerfect ?? false;
-  const soundShaped = (equalizer.active || headphone.active) && !bitPerfect;
+  const soundShaped =
+    (equalizer.active || headphone.active || (parametric.active && !parametric.comparing)) &&
+    !bitPerfect;
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
@@ -358,7 +362,12 @@ export function PlayerScreen() {
           hidden={drawer.panel !== "eq"}
         >
           <ErrorBoundary name="Ekolayzer">
-            <EqualizerPanel equalizer={equalizer} headphone={headphone} bypassed={bitPerfect} />
+            <EqualizerPanel
+              equalizer={equalizer}
+              headphone={headphone}
+              parametric={parametric}
+              bypassed={bitPerfect}
+            />
           </ErrorBoundary>
         </div>
         <div

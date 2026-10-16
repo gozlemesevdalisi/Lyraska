@@ -20,7 +20,9 @@ use crate::analysis::evaluate;
 use crate::audio::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus, AbxTest};
 use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
-use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
+use crate::audio::peq::{
+    HeadphoneProfile, HeadphoneSettings, HeadphoneState, ParametricSettings, ParametricState,
+};
 use crate::audio::player::{PlaybackStatus, Player};
 use crate::audio::PlaybackOptions;
 use crate::library::{DropOutcome, LibraryService, LibraryStatus, TrackRow};
@@ -86,6 +88,7 @@ pub fn restore_settings(player: &PlayerState, store: &SettingsStore) {
         let settings = store.get();
         player.set_equalizer(settings.equalizer);
         player.set_headphone(settings.headphone);
+        player.set_parametric(settings.parametric);
         player.set_visual_safe(settings.visual_safe);
         player.set_audio_delay_ms(settings.audio_delay_ms);
         // Açılışta çalan şarkı yok: aygıt açılmaz, hata olamaz.
@@ -450,6 +453,73 @@ fn apply_headphone(
         .update(|s| s.headphone = applied.clone())
         .map_err(|e| reported(format!("Kulaklık ayarı kaydedilemedi: {e}")))?;
     Ok(HeadphoneState::new(applied))
+}
+
+/// Elle parametrik ekolayzer: ayar, eğriler, taşma koruması.
+#[tauri::command]
+pub async fn parametric_get(player: State<'_, PlayerState>) -> Result<ParametricState, String> {
+    let player = player.lock()?;
+    Ok(ParametricState::new(
+        player.parametric(),
+        player.parametric_comparing(),
+    ))
+}
+
+/// Parametrik ekolayzeri uygular ve kaydeder.
+#[tauri::command]
+pub async fn parametric_set(
+    settings: ParametricSettings,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<ParametricState, String> {
+    apply_parametric(settings, &player, &store)
+}
+
+/// Karşılaştırma (A/B): açıkken parametrik ekolayzer atlanır, ses eşit yükseklikte çalar.
+#[tauri::command]
+pub async fn parametric_compare(
+    compare: bool,
+    player: State<'_, PlayerState>,
+) -> Result<ParametricState, String> {
+    let mut player = player.lock()?;
+    player.set_parametric_compare(compare);
+    Ok(ParametricState::new(
+        player.parametric(),
+        player.parametric_comparing(),
+    ))
+}
+
+/// Equalizer APO biçimindeki dosyayı (AutoEq, REW, Equalizer APO) parametrik ekolayzere yükler.
+#[tauri::command]
+pub async fn parametric_import(
+    path: String,
+    player: State<'_, PlayerState>,
+    store: State<'_, SettingsStore>,
+) -> Result<ParametricState, String> {
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| reported(format!("Dosya okunamadı: {e}")))?;
+    let profile = HeadphoneProfile::parse(&text, "").map_err(reported)?;
+    apply_parametric(ParametricSettings::from_profile(&profile), &player, &store)
+}
+
+/// Parametrik ekolayzeri Equalizer APO biçiminde dosyaya yazar.
+#[tauri::command]
+pub async fn parametric_export(path: String, player: State<'_, PlayerState>) -> Result<(), String> {
+    let text = player.lock()?.parametric().to_apo();
+    std::fs::write(&path, text).map_err(|e| reported(format!("Dosya yazılamadı: {e}")))
+}
+
+fn apply_parametric(
+    settings: ParametricSettings,
+    player: &PlayerState,
+    store: &SettingsStore,
+) -> Result<ParametricState, String> {
+    let mut player = player.lock()?;
+    let applied = player.set_parametric(settings);
+    store
+        .update(|s| s.parametric = applied.clone())
+        .map_err(|e| reported(format!("Parametrik ekolayzer kaydedilemedi: {e}")))?;
+    Ok(ParametricState::new(applied, player.parametric_comparing()))
 }
 
 /// İşaretleme: şarkının kayıtlı işaretleri (yoksa `null`).

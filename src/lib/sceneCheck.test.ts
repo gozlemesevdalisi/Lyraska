@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { EqState } from "./backend";
+import type { EqState, ParametricState } from "./backend";
 
 /**
  * Sahne denetiminin (`scripts/check-scenes.mjs`) sahte çekirdeği, arayüzün beklediği verinin
@@ -23,6 +23,20 @@ const FULL_EQ_STATE: EqState = {
   curveDb: [],
 };
 
+const FULL_PARAMETRIC_STATE: ParametricState = {
+  settings: { enabled: true, bands: [], design: "matched" },
+  comparing: false,
+  curveHz: [],
+  curveDb: [],
+  bandCurvesDb: [],
+  boostDb: 0,
+  loudnessDb: 0,
+  maxBands: 20,
+  maxGainDb: 24,
+  minQ: 0.1,
+  maxQ: 30,
+};
+
 /** Sahte çekirdekte bir komutun döndürdüğü nesnenin metni. */
 function fakeResponse(command: string): string {
   // Testler depo kökünde çalışır.
@@ -33,6 +47,13 @@ function fakeResponse(command: string): string {
 }
 
 describe("sahne denetiminin sahte çekirdeği", () => {
+  it("parametrik ekolayzer durumunun bütün alanlarını döndürür", () => {
+    const response = fakeResponse("parametric_get");
+    for (const field of Object.keys(FULL_PARAMETRIC_STATE)) {
+      expect(response, `"${field}" eksik`).toMatch(new RegExp(`\\b${field}:`));
+    }
+  });
+
   it("ekolayzer durumunun bütün alanlarını döndürür", () => {
     const response = fakeResponse("equalizer_get");
     for (const field of Object.keys(FULL_EQ_STATE)) {

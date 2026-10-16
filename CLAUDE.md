@@ -73,9 +73,9 @@ lyraska/
 │   │                         # (sahne, 1–5), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
 │   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
 │   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak),
-│   │                         # useAbx (kör test), useSongKey (çalan şarkının tonu)
+│   │                         # useAbx (kör test), useSongKey (çalan şarkının tonu), useParametric (elle parametrik EQ)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover, abx, stageLight, musicalKey), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # timeline, cover, abx, stageLight, musicalKey, parametric), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
@@ -90,10 +90,11 @@ lyraska/
 │   │   │   ├── eq.rs         #   10 bant ekolayzer: taşma düzeltmeli tasarım, kilitsiz ayar, yumuşak geçiş
 │   │   │   ├── bass.rs       #   bas düğmesi (raf, 0–18 dB), derinlik (alt oktav), küçük hoparlör bası, bas tepesi ölçümü
 │   │   │   ├── punch.rs      #   vuruş: davulun ilk anını güçlendiren dinamik bas rafı (sürekli bas aynen kalır)
-│   │   │   ├── biquad.rs     #   ortak ikinci dereceden süzgeçler (RBJ): kulaklık düzeltmesi ve bas kullanır
+│   │   │   ├── biquad.rs     #   ikinci dereceden süzgeçler: sekiz tür; RBJ ve analog eğriye eşlenmiş tasarım
+│   │   │   ├── crossfeed.rs  #   crossfeed: orta/yan biçimi, orta ses bit bit aynı (çekirdek; ses yoluna bağlanacak)
 │   │   │   ├── loudness.rs   #   EBU R128 ses yüksekliği (LUFS) ve gerçek tepe (dBTP) ölçümü
 │   │   │   ├── normalize.rs  #   çalarken eşitleme (−14 LUFS) ve ekolayzerin boşluğa göre taşma koruması
-│   │   │   ├── peq.rs        #   kulaklık düzeltmesi: AutoEq/Equalizer APO profili, parametrik EQ (RBJ)
+│   │   │   ├── peq.rs        #   kulaklık düzeltmesi (AutoEq/Equalizer APO) ve elle parametrik EQ; A/B eşit yükseklikte
 │   │   │   ├── resample.rs   #   şarkıyı aygıtın hızına çevirme (rubato FFT, yüksek kalite), mono → stereo
 │   │   │   ├── limiter.rs    #   taşma koruması: ileriye bakan tepe sınırlayıcı (0 dBFS)
 │   │   │   ├── render.rs     #   gerçek zamanlı doldurma, ekolayzer, eşitleme, taşma koruması, duraklatma geçişi

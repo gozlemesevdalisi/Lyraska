@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { previewEqState } from "./eq";
 import type { AbxChoice } from "./bindings/AbxChoice";
 import type { AbxResult } from "./bindings/AbxResult";
@@ -10,6 +10,7 @@ import type { AppInfo } from "./bindings/AppInfo";
 import type { BeatEvaluation } from "./bindings/BeatEvaluation";
 import type { BeatFrame } from "./bindings/BeatFrame";
 import type { CalibrationTrack } from "./bindings/CalibrationTrack";
+import type { DesignMethod } from "./bindings/DesignMethod";
 import type { DirectorFrame } from "./bindings/DirectorFrame";
 import type { DropOutcome } from "./bindings/DropOutcome";
 import type { EqSettings } from "./bindings/EqSettings";
@@ -17,6 +18,10 @@ import type { EqState } from "./bindings/EqState";
 import type { HeadphoneFilter } from "./bindings/HeadphoneFilter";
 import type { HeadphoneProfile } from "./bindings/HeadphoneProfile";
 import type { HeadphoneState } from "./bindings/HeadphoneState";
+import type { FilterKind } from "./bindings/FilterKind";
+import type { ParametricBand } from "./bindings/ParametricBand";
+import type { ParametricSettings } from "./bindings/ParametricSettings";
+import type { ParametricState } from "./bindings/ParametricState";
 import type { KeyMap } from "./bindings/KeyMap";
 import type { KeyRelation } from "./bindings/KeyRelation";
 import type { LibraryFolder } from "./bindings/LibraryFolder";
@@ -45,6 +50,7 @@ export type {
   BeatEvaluation,
   BeatFrame,
   CalibrationTrack,
+  DesignMethod,
   DirectorFrame,
   DropOutcome,
   EqSettings,
@@ -52,6 +58,10 @@ export type {
   HeadphoneFilter,
   HeadphoneProfile,
   HeadphoneState,
+  FilterKind,
+  ParametricBand,
+  ParametricSettings,
+  ParametricState,
   KeyMap,
   KeyRelation,
   LibraryFolder,
@@ -433,6 +443,54 @@ export async function pickHeadphoneProfile(): Promise<string | null> {
     filters: [{ name: "AutoEq parametrik profil", extensions: ["txt"] }],
   });
   return typeof selected === "string" ? selected : null;
+}
+
+/** Elle parametrik ekolayzer. Tarayıcı önizlemesinde `null`: eğriyi arayüz yaklaşık çizer. */
+export async function getParametric(): Promise<ParametricState | null> {
+  if (!isTauri()) return null;
+  return invoke<ParametricState>("parametric_get");
+}
+
+export async function setParametric(settings: ParametricSettings): Promise<ParametricState | null> {
+  if (!isTauri()) return null;
+  return invoke<ParametricState>("parametric_set", { settings });
+}
+
+/** Karşılaştırma (A/B): açıkken parametrik ekolayzer atlanır, ses eşit yükseklikte çalar. */
+export async function setParametricCompare(compare: boolean): Promise<ParametricState | null> {
+  if (!isTauri()) return null;
+  return invoke<ParametricState>("parametric_compare", { compare });
+}
+
+/** Equalizer APO biçimindeki dosyayı (AutoEq, REW, Equalizer APO) yükler. */
+export async function importParametric(path: string): Promise<ParametricState> {
+  return invoke<ParametricState>("parametric_import", { path });
+}
+
+/** Ayarı Equalizer APO biçiminde dosyaya yazar. */
+export async function exportParametric(path: string): Promise<void> {
+  return invoke<void>("parametric_export", { path });
+}
+
+/** Parametrik ekolayzer dosyası seçme penceresi. */
+export async function pickParametricFile(): Promise<string | null> {
+  const selected = await open({
+    title: "Equalizer APO biçiminde ekolayzer dosyası seçin",
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Equalizer APO / AutoEq / REW", extensions: ["txt"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+/** Kaydetme penceresi; seçilen yol ya da `null`. */
+export async function pickParametricSavePath(): Promise<string | null> {
+  const path = await save({
+    title: "Parametrik ekolayzeri kaydet (Equalizer APO biçimi)",
+    defaultPath: "Lyraska ParametricEQ.txt",
+    filters: [{ name: "Equalizer APO", extensions: ["txt"] }],
+  });
+  return path ?? null;
 }
 
 /** Pencereye dosya sürükleme olaylarını dinleyen işlevler. */

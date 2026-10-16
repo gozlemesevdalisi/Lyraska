@@ -21,6 +21,8 @@ use super::Sample;
 pub struct RenderControls {
     pub eq: Arc<EqControl>,
     pub headphone: Arc<PeqControl>,
+    /// Kullanıcının elle parametrik ekolayzeri.
+    pub parametric: Arc<PeqControl>,
     pub loudness: Arc<LoudnessControl>,
     pub levels: Arc<TrackLevels>,
     /// Bit-perfect oturum: ses hiç işlenmez (yalnızca duraklatma geçişi ve taşma koruması,
@@ -34,6 +36,7 @@ impl Default for RenderControls {
         Self {
             eq: Arc::default(),
             headphone: Arc::default(),
+            parametric: Arc::default(),
             loudness: Arc::new(LoudnessControl::new(false)),
             levels: Arc::new(TrackLevels::new()),
             bit_perfect: false,
@@ -69,6 +72,7 @@ pub struct Renderer {
     /// Bas düğmesi ve küçük hoparlör bası (ekolayzerin ayarlarından).
     bass: BassProcessor,
     headphone: PeqProcessor,
+    parametric: PeqProcessor,
     /// Ses yüksekliği eşitlemesi ve ekolayzerin taşma koruması.
     leveler: Leveler,
     levels: Arc<TrackLevels>,
@@ -95,6 +99,7 @@ impl Renderer {
             bass: BassProcessor::new(Arc::clone(&controls.eq), channels, sample_rate),
             eq: EqProcessor::new(controls.eq, channels, sample_rate),
             headphone: PeqProcessor::new(controls.headphone, channels, sample_rate),
+            parametric: PeqProcessor::new(controls.parametric, channels, sample_rate),
             leveler,
             levels: controls.levels,
             loudness: controls.loudness,
@@ -135,6 +140,7 @@ impl Renderer {
         self.eq.begin_block();
         self.bass.begin_block();
         self.headphone.begin_block();
+        self.parametric.begin_block();
         let normalize = self.loudness.enabled();
         if self.wait_frames > 0 {
             if !normalize || self.levels.is_known(0) {
@@ -152,10 +158,12 @@ impl Renderer {
                 return outcome;
             }
         }
+        // Grafik ve parametrik ekolayzerin yükseltmeleri toplanır (en kötü durum: tepeleri aynı
+        // frekansta).
         self.leveler.begin_block(
             &self.levels,
             normalize,
-            self.eq.boost_db(),
+            self.eq.boost_db() + self.parametric.boost_db(),
             self.bass.boost(),
         );
 
@@ -189,9 +197,11 @@ impl Renderer {
                     *value *= self.gain;
                 }
             } else {
-                // Sıra: kulaklık düzeltmesi → kullanıcının ekolayzeri → bas → eşitleme ve
-                // ekolayzerin taşma koruması → ses geçişi → taşma koruması (sınırlayıcı).
+                // Sıra: kulaklık düzeltmesi → parametrik ekolayzer → grafik ekolayzer → bas →
+                // eşitleme ve ekolayzerin taşma koruması → ses geçişi → taşma koruması
+                // (sınırlayıcı).
                 self.headphone.process_frame(&mut self.frame);
+                self.parametric.process_frame(&mut self.frame);
                 self.eq.advance_frame();
                 for (channel, value) in self.frame.iter_mut().enumerate() {
                     *value = self.eq.process(channel, *value);
@@ -397,6 +407,7 @@ mod tests {
         let headphone = Arc::new(PeqControl::default());
         let profile = HeadphoneProfile {
             name: "Deneme".into(),
+            design: Default::default(),
             preamp_db: -4.0,
             filters: vec![
                 PeqFilter {
@@ -420,6 +431,29 @@ mod tests {
             ],
         };
         headphone.set(Some(&profile), true);
+        // Elle parametrik ekolayzer (eşlenmiş tasarım: ses iş parçacığında yeniden tasarlanır).
+        let parametric = Arc::new(PeqControl::default());
+        let user_filters = [
+            PeqFilter {
+                kind: FilterKind::Peaking,
+                freq_hz: 9000.0,
+                gain_db: 4.0,
+                q: 2.0,
+            },
+            PeqFilter {
+                kind: FilterKind::HighPass,
+                freq_hz: 25.0,
+                gain_db: 0.0,
+                q: 0.7,
+            },
+        ];
+        parametric.set_filters(
+            &user_filters,
+            0.0,
+            4.0,
+            crate::audio::peq::DesignMethod::Matched,
+            true,
+        );
         let w = 2.0 * std::f64::consts::PI * 220.0 / f64::from(rate);
         let samples: Vec<Sample> = (0..rate * 2)
             .map(|i| 0.9 * (w * f64::from(i / 2)).sin())
@@ -430,6 +464,7 @@ mod tests {
         let controls = RenderControls {
             eq: eq.clone(),
             headphone: headphone.clone(),
+            parametric: parametric.clone(),
             loudness: loudness.clone(),
             levels: levels.clone(),
             bit_perfect: false,
@@ -490,6 +525,15 @@ mod tests {
                         eq.set(small);
                     }
                     80 => headphone.set(Some(&profile), false),
+                    95 => parametric.set_compare(true, 1.5),
+                    105 => parametric.set_compare(false, 1.5),
+                    110 => parametric.set_filters(
+                        &user_filters,
+                        0.0,
+                        4.0,
+                        crate::audio::peq::DesignMethod::Rbj,
+                        true,
+                    ),
                     90 => loudness.set(false),
                     100 => {
                         eq.set(flat);
@@ -614,6 +658,7 @@ mod tests {
         headphone.set(
             Some(&HeadphoneProfile {
                 name: "Deneme".into(),
+                design: Default::default(),
                 preamp_db: -4.0,
                 filters: vec![
                     PeqFilter {
@@ -651,6 +696,7 @@ mod tests {
                     ..EqSettings::default()
                 })),
                 headphone,
+                parametric: Arc::default(),
                 loudness: Arc::new(LoudnessControl::new(true)),
                 levels,
                 bit_perfect: false,

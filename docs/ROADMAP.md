@@ -115,8 +115,17 @@ Proje sahibi, 16 Ekim 2026: "Faz 1 tamam."
 - [x] Yüksek kaliteli yeniden örnekleme (aygıtın hızına, Windows'a bırakmadan), taşma koruması, sinyal yolu göstergesi (öne alındı: 0.0.12).
       "Müzikler garip geliyor" bildiriminin proje sahibince doğrulanması bekliyor
       ([#25](https://github.com/gozlemesevdalisi/Lyraska/issues/25))
-- [ ] Parametrik EQ (motor hazır: kulaklık düzeltmesi bunu kullanıyor; kullanıcının elle ayarlayacağı arayüz yok).
+- [x] Parametrik EQ (0.0.47; motor ve elle ayar arayüzü).
       Ekolayzerle ilgili kalan işler tek yerde: [#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)
+  - [x] Süzgeç çekirdeği (0.0.47; proje sahibi, 16 Ekim 2026: "en üst düzey mühendislik, en üst düzey matematik"):
+        sekiz tür (tepe, raflar, alçak/yüksek/bant geçiren, çentik, tüm geçiren); RBJ'nin yanında analog eğriye
+        eşlenmiş tasarım (44,1 kHz'te ortalama sapma tepe süzgecinde 0,70 → 0,16 dB, alçak geçirende 3,97 → 0,16 dB;
+        hiçbir ayarda RBJ'den uzak değil). Kulaklık profilleri Equalizer APO'nun kaynak kodundaki anlamlarla okunur
+        (LS/HS köşe frekansı, Q'suz rafta S = 0,9, eğim, BW Oct, LP/HP/BP/NO/AP)
+  - [x] Elle ayar arayüzü (0.0.47): Ekolayzer panelinde "Parametrik" görünümü; grafikte sürüklenen bantlar (Shift
+        ince ayar, tekerlek Q, çift tıklama bant ekler), klavye, sayısal kutular, sekiz tür, bant aç/kapa, Equalizer
+        APO dosyası yükleme/kaydetme, eşit ses yüksekliğinde A/B karşılaştırma, tasarım seçimi (analog eğriye sadık /
+        Equalizer APO ile aynı)
 - [x] AutoEq kulaklık profilleri: ParametricEQ.txt içe aktarma (öne alındı: 0.0.13). Hazır profil listesi, ölçüm
       kaynaklarının lisansı doğrulanınca
 - [x] EBU R128 loudness (0.0.28, öne alındı; proje sahibi, 8 Ekim 2026: "bas dedin mi gerçekten hissedilsin"):
@@ -129,7 +138,9 @@ Proje sahibi, 16 Ekim 2026: "Faz 1 tamam."
       şarkının ölçülen bas tepelerine göre akıllı taşma koruması (bas yükselince ses gereksiz kısılmaz).
       Hazır ayarlar: Bas, Derin bas, Kulüp, Küçük hoparlör. 0.0.31: "Vuruş" (proje sahibinin seçimi: davul
       vuruşunun ilk anı 8 dB'ye kadar güçlenir, bas şişmez)
-- [ ] Crossfeed
+- [ ] Crossfeed — çekirdek hazır (0.0.47, `audio/crossfeed.rs`, testli): orta ses bit bit aynı, yan kanal hiçbir
+      frekansta yükselmez, kulaklar arası seviye ve zaman farkı hedefte. Kalan: ses yoluna bağlama (bastan sonra,
+      eşitlemeden önce; bit-perfect'te kapalı), kalıcı ayar, komutlar, arayüz (Ekolayzer panelinde kulaklık bölümü)
 - [ ] Retriever: sıkıştırılmış (MP3 vb.) sesi iyileştirme — çalışma adı; ürün içi adı özgün olacak
   - Araştırma ve ölçüm: [VERITAS.md](VERITAS.md) (14 Ekim 2026). MP3 her katsayı için gerçek değerin hangi aralıkta
     (kutu) olduğunu kesin olarak taşır; gerçek LAME 3.100 ile doğru kutu kuralı (adj43 + bant kuralı) kapsama %100.
@@ -231,7 +242,7 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
 - **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): kör dinleme aracı (ABX) 0.0.40'ta geldi;
   "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. R2 sonucu geldi: kapıdan geçmedi, MP3 kolu
-  kapandı (bölüm 8); sayılar bizim düzeneğimizde bağımsız olarak tekrar üretiliyor.
+  kapandı (bölüm 8); kâhin ayrıştırması bizim düzeneğimizde birebir tekrarlandı (devir notu 2026-10-16).
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)
