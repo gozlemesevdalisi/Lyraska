@@ -18,7 +18,7 @@ export interface SettingsPanelProps {
 const SHORTCUTS: [string, string][] = [
   ["Boşluk", "Çal / duraklat"],
   ["← →", "5 saniye geri / ileri"],
-  ["1 – 4", "Sahne seç"],
+  ["1 – 5", "Sahne seç"],
   ["Ctrl + O", "Dosya aç"],
   ["Esc", "Paneli kapat"],
 ];
