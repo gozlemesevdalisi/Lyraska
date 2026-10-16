@@ -43,6 +43,19 @@ fn dominant_frequency(samples: &[f64]) -> f64 {
     crossings as f64 / 2.0 / (samples.len() as f64 / RATE)
 }
 
+/// Çözülen sesin, t = 0'da sıfır fazlı `freq` Hz sinüsle normalleştirilmiş ilintisi (−1..1):
+/// genlikten bağımsız, zaman kaymasına duyarlı hizalama ölçüsü.
+fn alignment(samples: &[f64], freq: f64) -> f64 {
+    let (mut xy, mut xx, mut yy) = (0.0, 0.0, 0.0);
+    for (n, &x) in samples.iter().enumerate() {
+        let y = (2.0 * std::f64::consts::PI * freq * n as f64 / RATE).sin();
+        xy += x * y;
+        xx += x * x;
+        yy += y * y;
+    }
+    xy / (xx * yy).sqrt()
+}
+
 fn assert_near(actual: f64, expected: f64, what: &str) {
     assert!(
         (actual - expected).abs() / expected < 0.06,
@@ -124,17 +137,20 @@ fn bosluksuz_calma_icin_dolgu_atilir() {
         while let Some(chunk) = decoder.next_chunk().unwrap() {
             samples.extend_from_slice(chunk);
         }
-        // MP3: symphonia, 22,05 kHz (MPEG-2) dosyalarda sondan ~47 örnek (2 ms) fazla atıyor;
-        // 44,1/48 kHz MP3'lerde uzunluk ffmpeg ile birebir aynı (devir notu 2026-10-08).
-        let tolerance = if *ext == "mp3" { 64 } else { 0 };
-        assert!(
-            samples.len().abs_diff(66_150) <= tolerance,
-            "{ext}: örnek sayısı {}",
-            samples.len()
-        );
+        // Her biçimde tam 66 150 örnek: ne baştan ne sondan dolgu kalır, örnek de kaybolmaz.
+        // (Eskiden MP3'e 64 örnek tolerans vardı; o tolerans baştan atılan 47 örneği gizliyordu.)
+        assert_eq!(samples.len(), 66_150, "{ext}: örnek sayısı");
         // Ses ilk örneklerden başlar: baştaki sessizlik (dolgu) yok.
         let first_loud = samples.iter().position(|s| s.abs() > 0.05).unwrap();
         assert!(first_loud < 20, "{ext}: ses {first_loud}. örnekte başlıyor");
+        // Hizalama: çözülen ses, kaynağın t = 0'da sıfır fazla başlayan 440 Hz sinüsüyle örnek
+        // örnek örtüşür (ilinti ≈ 1). 47 örneklik kayma 440 Hz'te 0,84 radyan faz farkı eder;
+        // ilinti 0,92'ye düşer ve bu ölçüden kaçmaz.
+        let corr = alignment(&samples[..2000], 440.0);
+        assert!(
+            corr > 0.98,
+            "{ext}: ilk 2000 örnek kaynakla hizalı değil (ilinti {corr:.3})"
+        );
         let duration = decoder.info().duration_secs.unwrap();
         assert!(
             (duration - 3.0).abs() < 1e-9 || *ext == "ogg",

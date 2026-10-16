@@ -35,17 +35,30 @@ export interface PlaybackControls {
 export function usePlayback(extensions: string[]): PlaybackControls {
   const [queue, setQueue] = useState<Queue>(EMPTY_QUEUE);
 
+  // Sıradan en son açılması istenen şarkı. Açılamazsa (bozuk ya da silinmiş dosya) çalan şarkı
+  // kalmaz ama sıra bu şarkıda durur: Önceki/Sonraki çalışmayı sürdürür (#74).
+  const [requested, setRequested] = useState<string | null>(null);
   // Sıradaki şarkıyı çalmak için oynatıcıya ihtiyaç var; oynatıcı da şarkı bitince
   // sırayı soruyor. Döngüyü kırmak için açma işlevi sonradan bağlanır.
-  const [openPathRef] = useState<{ current: (path: string) => Promise<void> }>(() => ({
-    current: async () => {},
+  const [openPathRef] = useState<{
+    current: (path: string) => Promise<boolean | undefined>;
+  }>(() => ({
+    current: async () => undefined,
   }));
   const playQueue = useCallback(
-    (next: Queue) => {
+    function play(next: Queue, automatic = false) {
       const path = currentPath(next);
       if (!path) return;
       setQueue(next);
-      void openPathRef.current(path);
+      setRequested(path);
+      void openPathRef.current(path).then((opened) => {
+        // Şarkı sonunda kendiliğinden geçilen şarkı açılamadıysa bir sonrakine geçilir
+        // (kullanıcının seçtiği şarkı açılamazsa hata gösterilir, sıra beklemede kalır).
+        if (opened === false && automatic) {
+          const following = nextInQueue(next);
+          if (following) play(following, true);
+        }
+      });
     },
     [openPathRef],
   );
@@ -56,7 +69,7 @@ export function usePlayback(extensions: string[]): PlaybackControls {
       const current = followQueue(queue, ended.track?.path ?? null);
       if (currentPath(current) !== ended.track?.path) return;
       const next = nextInQueue(current);
-      if (next) playQueue(next);
+      if (next) playQueue(next, true);
     },
     [queue, playQueue],
   );
@@ -93,7 +106,11 @@ export function usePlayback(extensions: string[]): PlaybackControls {
   }, [openPathRef, player.openPath]);
 
   // Sıra yalnızca çalan şarkı sıradaysa geçerlidir ("Dosya aç" ile tek şarkı açılınca değil).
-  const queueActive = status.track !== null && currentPath(activeQueue) === status.track.path;
+  // Çalan şarkı yoksa (açılamadı), sıranın şarkısı en son istenen şarkıysa sıra yine geçerlidir.
+  const queueCurrent = currentPath(activeQueue);
+  const queueActive =
+    queueCurrent !== null &&
+    (status.track === null ? queueCurrent === requested : queueCurrent === status.track.path);
   const canNext = queueActive && nextInQueue(activeQueue) !== null;
 
   const playList = useCallback(

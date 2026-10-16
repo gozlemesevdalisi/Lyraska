@@ -33,7 +33,11 @@ export interface PlayerControls {
   /** Son komut hatası; bir sonraki başarılı komutta temizlenir. */
   error: string | null;
   openFile: () => Promise<void>;
-  openPath: (path: string) => Promise<void>;
+  /**
+   * Şarkıyı açar. `true`: açıldı; `false`: çekirdek açamadı (hata `error`'da); `undefined`:
+   * başka bir komut sürdüğü için sıraya alındı, sonucu bilinmiyor.
+   */
+  openPath: (path: string) => Promise<boolean | undefined>;
   toggle: () => Promise<void>;
   stop: () => Promise<void>;
   /** Şarkıda verilen saniyeye atlar. Ekran beklemeden yeni konumu gösterir. */
@@ -119,20 +123,25 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
    * komut bitince açılır (#52).
    */
   const run = useCallback(
-    async (command: () => Promise<PlaybackStatus | void>) => {
-      if (busy.current) return;
+    async (command: () => Promise<PlaybackStatus | void>): Promise<boolean | undefined> => {
+      if (busy.current) return undefined;
       busy.current = true;
+      // İlk komutun sonucu çağırana döner (bekletilen açılışlar kendi hatasını `error`'a yazar).
+      let succeeded = true;
       try {
         let next: (() => Promise<PlaybackStatus | void>) | null = command;
+        let first = true;
         while (next) {
           try {
             const result = await next();
             applyStatus(result ?? (await getPlaybackStatus()), true);
             setError(null);
           } catch (e) {
+            if (first) succeeded = false;
             setError(errorMessage(e));
             applyStatus(await getPlaybackStatus().catch(() => IDLE_STATUS), true);
           }
+          first = false;
           const waiting = pendingOpen.current;
           pendingOpen.current = null;
           next = waiting === null ? null : () => openTrack(waiting).then(() => undefined);
@@ -140,6 +149,7 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
       } finally {
         busy.current = false;
       }
+      return succeeded;
     },
     [applyStatus],
   );
@@ -150,7 +160,7 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
       // arada istenenlerden yalnızca sonuncusu.
       if (busy.current) {
         pendingOpen.current = path;
-        return Promise.resolve();
+        return Promise.resolve(undefined);
       }
       return run(async () => {
         await openTrack(path);
@@ -169,8 +179,8 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     }
   }, [available, extensions, openPath]);
 
-  const toggle = useCallback(() => run(togglePlayback), [run]);
-  const stop = useCallback(() => run(stopPlayback), [run]);
+  const toggle = useCallback(() => run(togglePlayback).then(() => undefined), [run]);
+  const stop = useCallback(() => run(stopPlayback).then(() => undefined), [run]);
 
   const seek = useCallback(
     async (seconds: number) => {

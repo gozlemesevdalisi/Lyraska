@@ -8,6 +8,10 @@ const backend = vi.hoisted(() => ({
   current: null as string | null,
   opens: [] as { path: string; finish: () => void }[],
   next: [] as (string | null)[],
+  /** Açılamayan (bozuk ya da silinmiş) dosyalar. */
+  broken: [] as string[],
+  /** Çalan şarkı bitti mi (çekirdek "ended" bildirir). */
+  ended: false,
 }));
 
 const track = (path: string): TrackInfo => ({
@@ -26,7 +30,7 @@ const track = (path: string): TrackInfo => ({
 });
 
 const status = (): PlaybackStatus => ({
-  state: backend.current ? "playing" : "idle",
+  state: backend.current ? (backend.ended ? "ended" : "playing") : "idle",
   track: backend.current ? track(backend.current) : null,
   positionSecs: 0,
   underruns: 0,
@@ -41,10 +45,17 @@ vi.mock("../lib/backend", async (importOriginal) => {
     ...actual,
     isDesktop: () => true,
     openTrack: (path: string) =>
-      new Promise<TrackInfo>((resolve) =>
+      new Promise<TrackInfo>((resolve, reject) =>
         backend.opens.push({
           path,
           finish: () => {
+            backend.ended = false;
+            if (backend.broken.includes(path)) {
+              // Çekirdek: açılamayan şarkıda oturum kapanır, çalan şarkı kalmaz.
+              backend.current = null;
+              reject(new Error(`Dosya açılamadı: ${path}`));
+              return;
+            }
             backend.current = path;
             resolve(track(path));
           },
@@ -71,6 +82,8 @@ beforeEach(() => {
   backend.current = null;
   backend.opens = [];
   backend.next = [];
+  backend.broken = [];
+  backend.ended = false;
 });
 
 describe("çalma sırası", () => {
@@ -129,6 +142,39 @@ describe("çalma sırası", () => {
     expect(backend.opens).toHaveLength(0);
     expect(result.current.player.status.track?.path).toBe("C");
     expect(result.current.queueLabel).toBe("3 / 3");
+  });
+
+  it("açılamayan şarkı sırayı öldürmez: Sonraki çalışır ve bir sonraki şarkı açılır (#74)", async () => {
+    backend.broken = ["B"];
+    const { result } = renderHook(() => usePlayback(["flac"]));
+    act(() => result.current.playList(["A", "B", "C"], "A"));
+    await finishOpen("A");
+    act(() => result.current.next());
+    await finishOpen("B");
+    // B açılamadı: çalan şarkı yok ama sıra duruyor; Sonraki ve Önceki hâlâ çalışır.
+    expect(result.current.player.status.track).toBeNull();
+    expect(result.current.canNext).toBe(true);
+    expect(result.current.queueLabel).toBe("2 / 3");
+    act(() => result.current.next());
+    await finishOpen("C");
+    expect(result.current.player.status.track?.path).toBe("C");
+    expect(result.current.queueLabel).toBe("3 / 3");
+  });
+
+  it("şarkı sonunda sıradaki açılamazsa bir sonrakine geçilir (#74)", async () => {
+    backend.broken = ["B"];
+    const { result } = renderHook(() => usePlayback(["flac"]));
+    act(() => result.current.playList(["A", "B", "C"], "A"));
+    await finishOpen("A");
+    // A bitti (boşluksuz geçiş olamadı): düzenli durum sorgusu "bitti" görür, arayüz B'yi
+    // açar; B bozuk → C denenir.
+    backend.ended = true;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await finishOpen("B");
+    await finishOpen("C");
+    expect(result.current.player.status.track?.path).toBe("C");
   });
 
   it("açılış sürerken art arda seçilenlerden yalnızca sonuncusu açılır", async () => {
