@@ -118,12 +118,19 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
     live, zero = hole & ~tr.zero_band, hole & tr.zero_band
     regions = {"tümü": hole, "canlı bant": live, "sıfır bant": zero, "< 5 kHz": hole & (f < 5000), "≥ 5 kHz": hole & (f >= 5000)}
     res["delik payı"] = float(hole.mean())
-    # Boş granül kuralı: bir kanalın bütün q'ları 0 ise LAME'in global_gain'i anlamsızdır (ölçülen: Δ_genel = 181,
-    # gerçek |θ| ~ 1e-4). Kutu geçerli ama bilgisizdir; oraya yazılan her şey patlamadır. Model doldurmaları bu
-    # granüllere dokunmaz (çözücünün bildiği bir olgu; kâhin değil).
-    empty = ~np.any(tr.q != 0, axis=2)
-    fillable = hole & ~empty[:, :, None]
-    res["boş granül payı"] = float(empty.mean())
+    # Sıfır bant tavanı (çözücünün bildiği bir olgu, kâhin değil; kesin kutu değil, %99,9 geçerli bir öngörü):
+    # bütün q'ları sıfır bantlarda kesin sınır Δ_genel/2'dir ama LAME genel kazancı bazen anlamsız bırakır (ölçülen:
+    # Δ_genel = 65 536 × canlı bantların Δ'sı, gerçek |θ| ~ 1e-4). Oraya yazılan en küçük değer bile patlamadır
+    # (tek granül, MOS 4,705 → 3,195). Doldurma sıfır bantlarda |θ̂| ≤ maks canlı Δ/2 ile sınırlanır (sınama
+    # parçasında gerçek değerlerin %99,86'sı bu sınırın içinde); canlı bandı olmayan granüle hiçbir şey yazılmaz.
+    live_delta = np.where(tr.zero_band, 0.0, tr.delta).max(axis=2, keepdims=True)  # (2, g, 1)
+    cap = np.where(tr.zero_band, live_delta / 2, np.inf)
+    fillable = hole & (cap > 0)
+    res["tavanlı sıfır bant payı"] = float(np.mean(tr.zero_band & (tr.dglob / 2 > cap)))
+
+    def guarded(fill):
+        return np.where(fillable, np.clip(fill, -cap, cap), tr.r)
+
     s = M.scale_of(d)
     u_true = np.clip(tr.theta / s, -0.5, 0.5)
 
@@ -142,10 +149,10 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
         res["bit"][label] = summarize(-bits)  # kazanılan bit = −NLL
         pred_ms = e2 * s * s
         res.setdefault("enerji hatası", {})[label] = band_energy_error(tr, pred_ms, hole)
-        ests[f"{label}: örnek"] = np.where(fillable, sample * s, tr.r)
-        ests[f"{label}: ortalama (MMSE)"] = np.where(fillable, mean * s, tr.r)
-        ests[f"{label}: ortalama, model enerjisine ölçekli"] = scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, fillable)
-        ests[f"{label}: model enerjisiyle gürültü"] = np.where(fillable, D.noise_fill(tr, pred_ms, seed), tr.r)
+        ests[f"{label}: örnek"] = guarded(sample * s)
+        ests[f"{label}: ortalama (MMSE)"] = guarded(mean * s)
+        ests[f"{label}: ortalama, model enerjisine ölçekli"] = guarded(scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, fillable))
+        ests[f"{label}: model enerjisiyle gürültü"] = guarded(D.noise_fill(tr, pred_ms, seed))
         # Sıfır bantların seviyesi bit akışında yok ve modelin oradaki hatası büyük: yalnızca canlı bant deliklerini
         # örnekle, sıfır bantları 0'da bırak (kâhin tavanı "yalnız canlı bant delikleri").
         ests[f"{label}: örnek, yalnız canlı bant"] = np.where(live, sample * s, tr.r)
@@ -157,7 +164,7 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
         t0 = time.time()
         _, sample, _, _ = model_bits_and_fill(net, td, hole, "akis", gen)
         res.setdefault("süre", {})["akış"] = time.time() - t0
-        ests["akış: örnek"] = np.where(fillable, sample * s, tr.r)
+        ests["akış: örnek"] = guarded(sample * s)
         ests["akış: örnek + bant enerjisi koruma"] = D.energy_match(tr, ests["akış: örnek"])
     ests["kâhin: delikler gerçek"] = np.where(hole, tr.theta, tr.r)
     if egri:

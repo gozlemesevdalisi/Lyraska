@@ -470,10 +470,13 @@ gerekenin çok altında; komşu granüllerin **gerçek** değerleri bile bu bilg
     öğrenilmiş hâli) ve **kâhin bağlam** (komşu granüllerin GERÇEK θ'sı; yalnızca tavan).
 - **Ölçüler (`r2_degerlendir.py`):** R1'inkiler (SNR, Zimtohrli MOS, kutu dışı oranı; her yöntemde ölçüldü, hepsinde
   0) + delik katsayısı başına bit + bant başına delik enerjisi kestirim hatası (dB) + süre.
-- **Boş granül kuralı** (çözücünün bildiği bir olgu, kâhin değil): bir kanalın bütün q'ları sıfır olan granülde
-  LAME'in genel kazancı anlamsız kalıyor (bir sınama parçasında Δ_genel = 181, gerçek |θ| ≈ 10⁻⁴). Kutu geçerli ama
-  bilgisiz; oraya yazılan en küçük ortalama bile patlamaya dönüştü (tek granül, MOS 4,705 → 3,195). Model doldurmaları
-  bu granüllere dokunmaz.
+- **Sıfır bant tavanı** (çözücünün bildiği bir olgu, kâhin değil): bütün q'ları sıfır bantlarda kesin sınır
+  Δ_genel/2'dir, ama LAME genel kazancı bazen anlamsız bırakır: bir sınama parçasında bir S kanalı granülünde
+  Δ_genel canlı bantların Δ'sının **65 536 katı** çıktı (gerçek |θ| ≈ 10⁻⁴). Kutu geçerli ama bilgisiz; modelin
+  oraya yazdığı küçük ortalama (u ≈ 0,02) 4,7'lik bir katsayı, yani bir patlama oldu (tek granül, MOS 4,705 → 3,195).
+  Kural: sıfır bantlara yazılan değer, o granülün canlı bantlarındaki en büyük Δ/2'yi aşamaz (sınama parçasında gerçek
+  değerlerin %99,86'sı bu sınırın içinde; Δ_genel/maks canlı Δ oranı granüllerin %90'ında 1, %99'unda ≤ 8); canlı bandı
+  olmayan granüle hiçbir şey yazılmaz. Kesin kutu değil, öngörüdür; bütün model doldurmalarına uygulandı.
 
 ### 8.2 Kâhin ayrıştırması: açık nerede? (`r2_tonal.py`)
 
