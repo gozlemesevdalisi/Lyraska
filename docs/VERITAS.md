@@ -447,7 +447,7 @@ Bütün sayılar `docs/arastirma/veritas/r2_*.py` ile tekrar üretilir (adımlar
 parçanın çözücü ve kâhin MOS'ları bölüm 7.2 ile birebir). MOS bir modeldir (Zimtohrli), dinleme değildir.
 
 **Kısa sonuç: K1 geçilmedi.** En iyi kâhinsiz sonuç 64 kbps'te ortalama +0,006 MOS (sonsal ortalama; çözücüden
-ayırt edilemez), örnekleyen her yöntem ortalamada çözücüden kötü (−0,04 … −0,24). Nedeni bu bölümde sayılarla
+ayırt edilemez), örnekleyen her yöntem ortalamada çözücüden kötü (akış −0,07 … bağlamsız −0,24). Nedeni bu bölümde sayılarla
 gösteriliyor: deliklerin ince yapısı hakkında bit akışının ve bağlamın taşıdığı bilgi, kulağa gelen bir iyileşme için
 gerekenin çok altında; komşu granüllerin **gerçek** değerleri bile bu bilgiyi artırmıyor.
 
@@ -468,8 +468,7 @@ gerekenin çok altında; komşu granüllerin **gerçek** değerleri bile bu bilg
     adımdan sonra kutuya kırpma (P_C'nin katsayı alanındaki hâli).
   - Üç bağlam: **çözücü** (yalnızca çözücünün gördüğü), **bağlamsız** (komşu granül ve öteki kanal silinmiş: marjinalin
     öğrenilmiş hâli) ve **kâhin bağlam** (komşu granüllerin GERÇEK θ'sı; yalnızca tavan).
-- **Ölçüler (`r2_degerlendir.py`):** R1'inkiler (SNR, Zimtohrli MOS, kutu dışı oranı; her yöntemde ölçüldü, hepsinde
-  0) + delik katsayısı başına bit + bant başına delik enerjisi kestirim hatası (dB) + süre.
+- **Ölçüler (`r2_degerlendir.py`):** R1'inkiler (SNR, Zimtohrli MOS, kutu dışı oranı; her yöntemde ölçüldü, hepsinde 0) + delik katsayısı başına bit + bant başına delik enerjisi kestirim hatası (dB) + süre.
 - **Sıfır bant tavanı** (çözücünün bildiği bir olgu, kâhin değil): bütün q'ları sıfır bantlarda kesin sınır
   Δ_genel/2'dir, ama LAME genel kazancı bazen anlamsız bırakır: bir sınama parçasında bir S kanalı granülünde
   Δ_genel canlı bantların Δ'sının **65 536 katı** çıktı (gerçek |θ| ≈ 10⁻⁴). Kutu geçerli ama bilgisiz; modelin
@@ -482,14 +481,14 @@ gerekenin çok altında; komşu granüllerin **gerçek** değerleri bile bu bilg
 
 64 kbps, MOS. Kâhinler gerçek değeri bilir; yalnızca açığın yerini gösterir (R1'in +0,25'lik tavanı: 4,628 → 4,875).
 
-| Delikler gerçek değerle, yalnızca…          | pop   | piyano | akustik | elektronik | orkestra | vurmalı | Ort.      |
-| ------------------------------------------- | ----- | ------ | ------- | ---------- | -------- | ------- | --------- |
-| Standart çözücü                             | 4,349 | 4,722  | 4,604   | 4,763      | 4,504    | 4,825   | 4,628     |
-| Tüm delikler                                | 4,872 | 4,867  | 4,876   | 4,883      | 4,857    | 4,894   | **4,875** |
-| Canlı bant delikleri (SNR +1,2 … +1,9 dB)   | 4,579 | 4,837  | 4,742   | 4,846      | 4,639    | 4,882   | 4,754     |
-| Sıfır bant delikleri (SNR +0,0 … +0,1 dB)   | 4,703 | 4,758  | 4,760   | 4,811      | 4,713    | 4,841   | 4,764     |
-| Yalnız işaret doğru, genlik = bandın RMS'i  | 4,790 | 4,797  | 4,805   | 4,848      | 4,767    | 4,871   | 4,813     |
-| Gerçeğin tonal olmayan kalıntısı (12 dB)    | 4,836 | 4,780  | 4,859   | 4,836      | 4,834    | 4,871   | 4,836     |
+| Delikler gerçek değerle, yalnızca…         | pop   | piyano | akustik | elektronik | orkestra | vurmalı | Ort.      |
+| ------------------------------------------ | ----- | ------ | ------- | ---------- | -------- | ------- | --------- |
+| Standart çözücü                            | 4,349 | 4,722  | 4,604   | 4,763      | 4,504    | 4,825   | 4,628     |
+| Tüm delikler                               | 4,872 | 4,867  | 4,876   | 4,883      | 4,857    | 4,894   | **4,875** |
+| Canlı bant delikleri (SNR +1,2 … +1,9 dB)  | 4,579 | 4,837  | 4,742   | 4,846      | 4,639    | 4,882   | 4,754     |
+| Sıfır bant delikleri (SNR +0,0 … +0,1 dB)  | 4,703 | 4,758  | 4,760   | 4,811      | 4,713    | 4,841   | 4,764     |
+| Yalnız işaret doğru, genlik = bandın RMS'i | 4,790 | 4,797  | 4,805   | 4,848      | 4,767    | 4,871   | 4,813     |
+| Gerçeğin tonal olmayan kalıntısı (12 dB)   | 4,836 | 4,780  | 4,859   | 4,836      | 4,834    | 4,871   | 4,836     |
 
 - **Sıfır bantlar** (katsayıların %14–23'ü) açığın yarısını taşır ve **SNR'ı hiç değiştirmez**: enerjileri çok küçük,
   ama kulak yokluklarını duyar. Canlı bant delikleri SNR'ın tamamını, MOS'un yarısını verir.
@@ -503,16 +502,16 @@ Gerçek sinyal uzun STFT'de (8192) tepe seçmeyle tonal parçaya ayrılır (tepe
 parça yalnızca deliklere, kutuya kırpılarak yazılır. Hiçbir tonal yöntem bu kâhinden ileri gidemez. "Tonal POCS",
 R1'in faz-tutarlı doldurmasının yinelemeli, kâhinsiz hâlidir (tepe maskesi izdüşümü ↔ kutu izdüşümü P_C).
 
-| Yöntem                                   | 64 kbps ort. MOS | parça aralığı     | 96 kbps ort. MOS | parça aralığı     |
-| ---------------------------------------- | ---------------- | ----------------- | ---------------- | ----------------- |
-| Standart çözücü                          | 4,628            |                   | 4,797            |                   |
-| Kâhin tonal tavan, tepe 6 dB             | 4,730 (+0,10)    | +0,02 … +0,22     | 4,833 (+0,04)    | −0,00 … +0,07     |
-| Kâhin tonal tavan, tepe 12 dB            | 4,656 (+0,03)    | +0,01 … +0,07     | 4,806 (+0,01)    | −0,00 … +0,03     |
-| Kâhin tonal tavan, tepe 20 dB            | 4,633 (+0,01)    | −0,00 … +0,03     | 4,798 (+0,00)    | −0,00 … +0,01     |
-| Kâhin tonal tavan, 12 dB, en çok 30 tepe | 4,629 (+0,00)    | −0,00 … +0,01     | 4,795 (−0,00)    | −0,01 … +0,00     |
-| Tonal POCS ×1 (yalnız çözücü bilgisi)    | 4,633 (+0,01)    | −0,00 … +0,02     | 4,795 (−0,00)    | −0,01 … +0,01     |
-| Tonal POCS ×8                            | 4,627 (−0,00)    | −0,04 … +0,04     | 4,790 (−0,01)    | −0,03 … +0,01     |
-| Tonal POCS ×8, tepe 6 dB                 | 4,562 (−0,07)    | −0,12 … +0,01     | 4,733 (−0,06)    | −0,17 … +0,02     |
+| Yöntem                                   | 64 kbps ort. MOS | parça aralığı | 96 kbps ort. MOS | parça aralığı |
+| ---------------------------------------- | ---------------- | ------------- | ---------------- | ------------- |
+| Standart çözücü                          | 4,628            |               | 4,797            |               |
+| Kâhin tonal tavan, tepe 6 dB             | 4,730 (+0,10)    | +0,02 … +0,22 | 4,833 (+0,04)    | −0,00 … +0,07 |
+| Kâhin tonal tavan, tepe 12 dB            | 4,656 (+0,03)    | +0,01 … +0,07 | 4,806 (+0,01)    | −0,00 … +0,03 |
+| Kâhin tonal tavan, tepe 20 dB            | 4,633 (+0,01)    | −0,00 … +0,03 | 4,798 (+0,00)    | −0,00 … +0,01 |
+| Kâhin tonal tavan, 12 dB, en çok 30 tepe | 4,629 (+0,00)    | −0,00 … +0,01 | 4,795 (−0,00)    | −0,01 … +0,00 |
+| Tonal POCS ×1 (yalnız çözücü bilgisi)    | 4,633 (+0,01)    | −0,00 … +0,02 | 4,795 (−0,00)    | −0,01 … +0,01 |
+| Tonal POCS ×8                            | 4,627 (−0,00)    | −0,04 … +0,04 | 4,790 (−0,01)    | −0,03 … +0,01 |
+| Tonal POCS ×8, tepe 6 dB                 | 4,562 (−0,07)    | −0,12 … +0,01 | 4,733 (−0,06)    | −0,17 … +0,02 |
 
 - Tonal tavan kâhinle bile **+0,03 (12 dB) … +0,10 (6 dB)**; 6 dB'lik eşik gürültüye yakın bileşenleri de "tonal"
   sayar. Belirgin tonların (20 dB) deliklerdeki payı MOS'ta sıfırdır: belirgin tonlar zaten q ≠ 0'dır.
@@ -526,14 +525,14 @@ Delik katsayısına gürültülü kâhin verilir: y = u + N(0, σ²), kutuya kı
 düzgün önselle kesik Gauss sonsal; modellerle aynı ölçü). İki ölçek: σ kutuya göre (α/2) ve gerçek delik RMS'ine
 göre (σ = α·RMS; RMS'i bilmek kâhindir). 64 kbps, altı parça ortalaması:
 
-| Ölçek | α    | bit/delik | MOS ort. | parça aralığı            |
-| ----- | ---- | --------- | -------- | ------------------------ |
-| kutu  | 0,10 | +2,3      | 3,878    | piyano 3,269 … vurmalı 4,733 |
+| Ölçek | α    | bit/delik | MOS ort. | parça aralığı                  |
+| ----- | ---- | --------- | -------- | ------------------------------ |
+| kutu  | 0,10 | +2,3      | 3,878    | piyano 3,269 … vurmalı 4,733   |
 | kutu  | 0,50 | +0,4      | 3,229    | orkestra 2,749 … vurmalı 4,022 |
-| RMS   | 1,00 | +2,7      | 4,768    | piyano +0,02 … pop +0,36 |
-| RMS   | 0,50 | +3,5      | 4,848    | piyano +0,11 … pop +0,48 |
-| RMS   | 0,25 | +4,4      | 4,869    |                          |
-| RMS   | 0,05 | +6,5      | 4,875    |                          |
+| RMS   | 1,00 | +2,7      | 4,768    | piyano +0,02 … pop +0,36       |
+| RMS   | 0,50 | +3,5      | 4,848    | piyano +0,11 … pop +0,48       |
+| RMS   | 0,25 | +4,4      | 4,869    |                                |
+| RMS   | 0,05 | +6,5      | 4,875    |                                |
 
 - **Seviye yanlışsa bit sayısı kurtarmaz.** Kutu ölçeğinde 2,3 bit/delik (her deliğin değeri kutunun %5'i hatayla!)
   MOS'u 3,9'a düşürür: sıfır bantlarda kutu (Δ_genel/2) gerçek seviyenin 20–40 dB üstündedir; o ölçekte eklenen en
@@ -546,14 +545,14 @@ göre (σ = α·RMS; RMS'i bilmek kâhindir). 64 kbps, altı parça ortalaması:
 Delik katsayısı başına, kutu içinde düzgün dağılıma göre kazanılan bit (−log₂ p(u); yüksek iyi). R1'in altı parçası
 (eğitimde yok), ortalama. "Marjinal h(u)" parçanın kendi deliklerinin histogramıdır (kâhin: yalnızca karşılaştırma).
 
-| Model                                      | 64: tümü | canlı bant | sıfır bant | < 5 kHz | ≥ 5 kHz | 96: tümü | canlı | sıfır |
-| ------------------------------------------ | -------- | ---------- | ---------- | ------- | ------- | -------- | ----- | ----- |
-| Kutu içinde düzgün                         | 0        | 0          | 0          | 0       | 0       | 0        | 0     | 0     |
-| Sıfırda Laplace (bant uyumu, R1 modeli)    | −0,38    | −0,48      | 0\*        | −0,24   | −0,44   | −0,31    | −0,37 | 0\*   |
-| Marjinal h(u) (kâhin histogram)            | +1,26    | +0,57      | +5,23      | +0,31   | +1,87   | +1,14    | +0,39 | +6,27 |
-| Öğrenilmiş, bağlamsız                      | +1,90    | +0,78      | +5,70      | +0,44   | +2,58   | +1,75    | +0,52 | +6,49 |
-| Öğrenilmiş, çözücü bağlamı (±2 granül)     | +2,02    | +0,87      | +5,90      | +0,52   | +2,71   | +1,85    | +0,59 | +6,72 |
-| Öğrenilmiş, **kâhin bağlam** (gerçek komşu) | +2,02   | +0,87      | +5,89      | +0,51   | +2,72   | +1,84    | +0,60 | +6,66 |
+| Model                                       | 64: tümü | canlı bant | sıfır bant | < 5 kHz | ≥ 5 kHz | 96: tümü | canlı | sıfır |
+| ------------------------------------------- | -------- | ---------- | ---------- | ------- | ------- | -------- | ----- | ----- |
+| Kutu içinde düzgün                          | 0        | 0          | 0          | 0       | 0       | 0        | 0     | 0     |
+| Sıfırda Laplace (bant uyumu, R1 modeli)     | −0,38    | −0,48      | 0\*        | −0,24   | −0,44   | −0,31    | −0,37 | 0\*   |
+| Marjinal h(u) (kâhin histogram)             | +1,26    | +0,57      | +5,23      | +0,31   | +1,87   | +1,14    | +0,39 | +6,27 |
+| Öğrenilmiş, bağlamsız                       | +1,90    | +0,78      | +5,70      | +0,44   | +2,58   | +1,75    | +0,52 | +6,49 |
+| Öğrenilmiş, çözücü bağlamı (±2 granül)      | +2,02    | +0,87      | +5,90      | +0,52   | +2,71   | +1,85    | +0,59 | +6,72 |
+| Öğrenilmiş, **kâhin bağlam** (gerçek komşu) | +2,02    | +0,87      | +5,89      | +0,51   | +2,72   | +1,84    | +0,60 | +6,66 |
 
 \* Bütün q'ları sıfır bantta Laplace uyumu yapılamaz; düzgün sayıldı.
 
@@ -576,35 +575,72 @@ Delik katsayısı başına, kutu içinde düzgün dağılıma göre kazanılan b
 
 ### 8.6 S2: örnekleyiciler (`r2_model.py`, `r2_degerlendir.py`)
 
-MOS; parantez içinde SNR farkı. Kutu dışı oranı her satırda 0 (ölçüldü). Boş granül kuralı uygulanmış.
+MOS; parantez içinde SNR farkı. Kutu dışı oranı her satırda 0 (ölçüldü). Sıfır bant tavanı kuralı uygulanmış.
 
-(TABLO_64)
+| Yöntem (64 kbps)                           | pop          | piyano       | akustik      | elektronik   | orkestra     | vurmalı      | Ort.      |
+| ------------------------------------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | --------- |
+| Standart çözücü                            | 4,349        | 4,722        | 4,604        | 4,763        | 4,504        | 4,825        | 4,628     |
+| Bağlamsız model, örnek                     | 4,451 (−1,3) | 3,877 (−1,1) | 4,595 (−1,0) | 4,743 (−1,7) | 3,878 (−0,9) | 4,775 (−1,6) | 4,386     |
+| Çözücü bağlamı, örnek                      | 4,448 (−1,3) | 4,238 (−1,1) | 4,637 (−1,1) | 4,748 (−1,4) | 4,142 (−1,0) | 4,791 (−1,2) | 4,501     |
+| Çözücü bağlamı, örnek, yalnız canlı bant   | 4,348 (−1,2) | 4,642 (−1,1) | 4,589 (−1,0) | 4,743 (−1,3) | 4,418 (−0,9) | 4,792 (−1,2) | 4,589     |
+| Çözücü bağlamı, **sonsal ortalama (MMSE)** | 4,367 (+0,0) | 4,721 (+0,0) | 4,605 (+0,0) | 4,764 (+0,0) | 4,521 (+0,0) | 4,825 (+0,0) | **4,634** |
+| Kâhin bağlam, örnek                        | 4,458 (−1,3) | 4,182 (−1,1) | 4,634 (−1,1) | 4,746 (−1,4) | 4,142 (−1,0) | 4,792 (−1,3) | 4,493     |
+| **Akış örnekleyici** (granül birlikte)     | 4,454 (−0,9) | 4,398 (−0,8) | 4,593 (−0,7) | 4,748 (−0,9) | 4,360 (−0,8) | 4,813 (−0,9) | 4,561     |
+| Akış + bant enerjisi koruma                | 4,441 (−0,8) | 4,388 (−0,8) | 4,590 (−0,6) | 4,748 (−0,8) | 4,356 (−0,7) | 4,819 (−0,8) | 4,557     |
+| Kâhin: delikler gerçek                     | 4,872 (+1,7) | 4,867 (+1,5) | 4,876 (+1,3) | 4,883 (+1,9) | 4,857 (+1,3) | 4,894 (+2,0) | 4,875     |
 
-(TABLO_96)
+| Yöntem (96 kbps)                           | pop          | piyano       | akustik      | elektronik   | orkestra     | vurmalı      | Ort.      |
+| ------------------------------------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | --------- |
+| Standart çözücü                            | 4,633        | 4,883        | 4,744        | 4,847        | 4,748        | 4,927        | 4,797     |
+| Bağlamsız model, örnek                     | 4,571 (−1,3) | 3,901 (−0,8) | 4,753 (−0,8) | 4,826 (−1,5) | 3,839 (−0,7) | 4,908 (−1,2) | 4,467     |
+| Çözücü bağlamı, örnek                      | 4,636 (−1,2) | 4,383 (−0,8) | 4,778 (−0,8) | 4,834 (−1,2) | 4,421 (−0,7) | 4,911 (−1,0) | 4,660     |
+| Çözücü bağlamı, örnek, yalnız canlı bant   | 4,653 (−1,1) | 4,844 (−0,8) | 4,750 (−0,7) | 4,834 (−1,2) | 4,690 (−0,7) | 4,912 (−1,0) | 4,780     |
+| Çözücü bağlamı, **sonsal ortalama (MMSE)** | 4,641 (+0,0) | 4,881 (+0,0) | 4,744 (+0,0) | 4,847 (+0,0) | 4,747 (+0,0) | 4,926 (+0,0) | **4,798** |
+| Kâhin bağlam, örnek                        | 4,643 (−1,2) | 4,280 (−0,7) | 4,777 (−0,8) | 4,835 (−1,2) | 4,350 (−0,7) | 4,908 (−1,1) | 4,632     |
+| **Akış örnekleyici** (granül birlikte)     | 4,701 (−0,9) | 4,693 (−0,6) | 4,773 (−0,5) | 4,841 (−0,9) | 4,570 (−0,6) | 4,918 (−0,8) | 4,749     |
+| Akış + bant enerjisi koruma                | 4,687 (−0,7) | 4,689 (−0,6) | 4,771 (−0,5) | 4,841 (−0,8) | 4,561 (−0,5) | 4,922 (−0,7) | 4,745     |
+| Kâhin: delikler gerçek                     | 4,881 (+1,4) | 4,924 (+0,9) | 4,894 (+0,9) | 4,914 (+1,7) | 4,880 (+0,9) | 4,940 (+1,5) | 4,906     |
 
 - **Örnekleme ortalamada zarar verir** (64 kbps: bağlamsız −0,24, çözücü bağlamı −0,13, kâhin bağlam −0,13, akış
-  AKIŞ64). Zararın yeri sıfır bantlar: piyano ve orkestrada seviye 6–12 dB yüksek yazılınca tiz hışırtı. Seviyenin
+  −0,07). Zararın yeri sıfır bantlar: piyano ve orkestrada seviye 6–12 dB yüksek yazılınca tiz hışırtı. Seviyenin
   doğru olduğu üç parçada (pop, akustik, elektronik) örnekleme +0,10 / +0,03 / −0,02; pop'ta R1'in gerçek enerjiyle
   gürültüsüne (+0,20) yaklaşıyor.
 - **Yalnız canlı bant deliklerini örneklemek** zararı sınırlar ama kazandırmaz (−0,04): canlı bantlarda seviye doğru,
   ince yapı yine rastgele; kulak rastgele yapıyı sıfırdan iyi bulmuyor (R1 bulgu 4).
 - **Sonsal ortalama (MMSE)** her modelde çözücüyle aynı (+0,006 … +0,012): ortalama sıfıra yakın çıkıyor, çünkü
   model işareti bilmiyor. Bu, bölüm 8.2'nin tersten okunuşudur: işaret bilinmeyince en küçük hata kestirimi 0'dır.
-- **Akış örnekleyici (granülün bütün delikleri birlikte):** AKIŞ_METIN. Granül içi birliktelik, komşu granülle
-  bağımsızlık sorununu çözmez; 8.5'e göre çözecek bilgi de yok.
-- Süre (4 çekirdek, 20 sn parça): yoğunluk modeli SÜRE_Y s, akış SÜRE_A s; her ikisi şarkı süresinin altında.
+- **Akış örnekleyici (granülün bütün delikleri birlikte)** örnekleyenlerin en iyisi: 64 kbps'te ortalama −0,07
+  (pop +0,11, akustik −0,01, elektronik −0,02; piyano −0,32, orkestra −0,14), 96 kbps'te −0,05 (pop +0,07, piyano −0,19).
+  Bağımsız örneklemeye göre piyanoda +0,16 daha iyi ve SNR kaybı yarı yarıya (−0,8 dB): granül içi birliktelik tiz
+  hışırtıyı azaltıyor ama kaldırmıyor; seviye hatası aynı. Komşu granülle bağımsızlık sorunu kalır; 8.5'e göre onu
+  çözecek bilgi de yok. Yalnızca pop +0,10'a ulaşıyor; K1'in "hiçbir parça 0,02'den kötü değil" koşulu 64'te de
+  96'da da iki parçada (piyano, orkestra) bozuluyor.
+- Süre (20 sn parça, tek iş parçacığı, dört ölçüm yan yana koşarken): yoğunluk modeli 7–25 s (şarkı süresinin altında);
+  akış 32 Euler adımıyla 370–730 s, yani bütçenin (4 çekirdekte şarkı süresi) çok üstünde. Kapı geçilmediği için
+  hızlandırılmadı (daha az adım, daha küçük ağ mümkün); bu da yöntemin lehine bir sonuç değil.
 
 ### 8.7 K2: ezber ve genelleme
 
 64 kbps; aynı üreticiden 16 sınama parçası (eğitimde yok) ve eğitimden 4 parça; R1'in altı parçası başka bir
 üreticiden (başka çalgılar, yapı, 20 sn).
 
-(TABLO_K2)
+| Küme (64 kbps)                                                       | Eğitim (4 parça)      | Sınama (16, aynı üretici) | R1 (6, başka üretici) |
+| -------------------------------------------------------------------- | --------------------- | ------------------------- | --------------------- |
+| Bit: bağlamsız / çözücü bağlamı / kâhin bağlam                       | +1,57 / +1,70 / +1,70 | +1,87 / +2,00 / +2,00     | +1,90 / +2,02 / +2,02 |
+| Bit, canlı bant: bağlamsız / çözücü / kâhin                          | +0,59 / +0,67 / +0,68 | +0,78 / +0,88 / +0,89     | +0,78 / +0,87 / +0,87 |
+| MOS çözücü                                                           | 4,638                 | 4,614                     | 4,628                 |
+| Çözücü bağlamı, örnek: fark ort. [en kötü, en iyi]                   | −0,05 [−0,08, −0,03]  | −0,03 [−0,23, +0,23]      | −0,13 [−0,48, +0,10]  |
+| Çözücü bağlamı, MMSE: fark ort. [en kötü, en iyi]                    | +0,00 [−0,00, +0,01]  | +0,00 [−0,01, +0,01]      | +0,01 [+0,00, +0,02]  |
+| Akış örnekleyici: fark ort. [en kötü, en iyi]                        | −0,03 [−0,10, +0,02]  | −0,02 [−0,13, +0,16]      | −0,07 [−0,32, +0,11]  |
+| Sıfır bant enerji hatası, çözücü bağlamı (ortanca dB; ort., en kötü) | +0,8, +1,5            | +2,7, +6,0                | +4,4, +12,0           |
+| Kâhin: delikler gerçek, fark ort.                                    | +0,24                 | +0,26                     | +0,25                 |
 
 - Bit kazancı sınama parçalarında eğitimdekilerden **düşük değil** (ezber yok); R1 parçaları da aynı aralıkta.
-- Örnekleme sınama parçalarında da ortalamada zarar verir; çözücünün kötü olduğu yoğun parçalarda (MOS 4,3–4,4)
-  +0,12 … +0,22, seyrek ve tonal parçalarda −0,1 … −0,24. Yani kazanç "gürültülü içerikte gürültü doldurma"dır;
-  tonal içerikte ince yapı eksikliği cezalandırılır.
+  Kâhin bağlam üç kümede de çözücü bağlamıyla aynı: komşu granülün gerçek değeri hiçbir kümede bilgi eklemiyor.
+- Örnekleme sınama parçalarında da ortalamada zarar verir (−0,03; akış −0,02): çözücünün kötü olduğu yoğun parçalarda
+  (MOS 4,3–4,4) +0,12 … +0,23, seyrek ve tonal parçalarda −0,1 … −0,23. Yani kazanç "gürültülü içerikte gürültü
+  doldurma"dır; tonal içerikte ince yapı eksikliği cezalandırılır. Sıfır bant tavanı kuralından önce bir parçada
+  (0510) tek granül −1,5 MOS'a mal olmuştu; kuralla o parçada MMSE 4,704 = çözücü, örnek −0,06, akış −0,01.
 - **Gerçek kayıtlara genelleme ölçülmedi:** eğitim ve sınama aynı ses bankasından; vokal, gerçek oda, analog gürültü,
   başka kodlayıcılar (FhG, eski LAME) yok. Bu bir sınırdır. Sonuç olumsuz olduğu için bu sınır kararı değiştirmez:
   sentetik müzikte bile bilgi yoksa gerçek müzikte de yoktur; gerçek müzikte eksik olan, daha iyi bir önselin

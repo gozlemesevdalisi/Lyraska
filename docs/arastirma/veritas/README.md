@@ -17,12 +17,12 @@ ve depo dışındaki bir çalışma klasörüne yazılır.
 | `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                      |
 | `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)     |
 | `R2_GOREV.md`                   | R2 görev tanımı: devralacak model için kendi başına anlaşılır, kanıtlı olgular ve kapılarla    |
-| `r2_beste.py`                   | R2 eğitim/sınama müziği: tohumdan rastgele ton, tempo, çalgı, ritim; FluidR3_GM ile çalınır   |
-| `r2_veri.py`                    | R2 veri hazırlığı: dökümleri `deney.Track` ile çözücü görünümüne çevirip sıkışık .npz yazar   |
-| `r2_model.py`                   | R2 model: delikler için kesik Gauss karışımı (bilgi ölçümü) ve akış eşleme örnekleyici; CPU   |
-| `r2_degerlendir.py`             | R2 ölçüm: bit kazancı, enerji hatası, örnekleyiciler (SNR, MOS, kutu dışı), bilgi–algı eğrisi |
-| `r2_tonal.py`                   | R2 / S3: kâhin ayrıştırması, tonal tavan (gerçek sinyalin tepeleri) ve tonal POCS             |
-| `r2_tablo.py`                   | R2 JSON sonuçlarını VERITAS.md için Markdown tablolarına çevirir                              |
+| `r2_beste.py`                   | R2 eğitim/sınama müziği: tohumdan rastgele ton, tempo, çalgı, ritim; FluidR3_GM ile çalınır    |
+| `r2_veri.py`                    | R2 veri hazırlığı: dökümleri `deney.Track` ile çözücü görünümüne çevirip sıkışık .npz yazar    |
+| `r2_model.py`                   | R2 model: delikler için kesik Gauss karışımı (bilgi ölçümü) ve akış eşleme örnekleyici; CPU    |
+| `r2_degerlendir.py`             | R2 ölçüm: bit kazancı, enerji hatası, örnekleyiciler (SNR, MOS, kutu dışı), bilgi–algı eğrisi  |
+| `r2_tonal.py`                   | R2 / S3: kâhin ayrıştırması, tonal tavan (gerçek sinyalin tepeleri) ve tonal POCS              |
+| `r2_tablo.py`                   | R2 JSON sonuçlarını VERITAS.md için Markdown tablolarına çevirir                               |
 
 ## Gerekenler
 
