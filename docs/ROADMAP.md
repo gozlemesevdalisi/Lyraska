@@ -20,7 +20,9 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Windows kurulum dosyası ve sabit "test-surumu" indirme linki
 - [x] CLAUDE.md, README, Türkçe hata kaydı formu
 
-## Faz 1 — Çalan program, v0.1 (12 Ekim – 8 Kasım 2026)
+## Faz 1 — Çalan program, v0.1 (12 Ekim – 8 Kasım 2026) — tamamlandı
+
+Proje sahibi, 16 Ekim 2026: "Faz 1 tamam."
 
 - [x] Ses motoru: symphonia ile çözme, 64-bit iç işlem, kilitsiz halka tampon, WASAPI çıkışı
 - [x] Dosya aç, çal/duraklat (yumuşak geçişli), durdur; sürükle-bırak; konum ve takılma sayacı
@@ -33,18 +35,20 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] 3 sahne: nokta matris spektrum, VU ibreleri, "Gece göğü" (WebGL2 gölgelendirici: kuzey ışıkları ve Lyra takımyıldızı).
       0.0.22: sahneler CI'da Windows Edge ile denetlenir; WebGL2 açılamazsa neden hata günlüğüne yazılır ve gece
       göğü 2D yedek çizimle (Lyra dahil) görünür. Proje sahibinde ışıklar görünüyor (#24 kapandı)
-- [ ] Kuzey ışıklarını göz kamaştırıcı ve estetik yapmak (proje sahibinin isteği; parlamasız, epilepsi sınırı
+- [x] Kuzey ışıklarını göz kamaştırıcı ve estetik yapmak (proje sahibinin isteği; parlamasız, epilepsi sınırı
       içinde) ([#30](https://github.com/gozlemesevdalisi/Lyraska/issues/30)). 0.0.30: perdeler yeniden çizildi
       (katlanma, ince ışınlar, alttan yeşil üstte mor, dört derinlik, Vega'nın ışık çizgileri); üç manzara
-      (göl, korona, karlı vadi) Ayarlar'da. Proje sahibinin seçimi ve onayı bekleniyor
+      (göl, korona, karlı vadi) Ayarlar'da. Proje sahibi onayladı (16 Ekim; #30 kapandı)
 - [x] Gerçek albüm kapakları (0.0.32): şarkının içindeki kapak büyük başlığın yanında ve sıradaki şarkı kartında;
       yoksa albüm adından özgün renk kapağı. Arayüzün vurgu renkleri çalan bölümün temasına yumuşakça geçer.
       Her panel ve sahne bir hata sınırı içinde: hata yalnızca o bölümü kapatır
-- [ ] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29))
+- [x] Sürükle-bırak sorunu ([#29](https://github.com/gozlemesevdalisi/Lyraska/issues/29)). 0.0.23: bırakılan şarkılar
+      kütüphaneye eklenir ve çalar, sürüklerken pencerede vurgu, desteklenmeyen türde anlaşılır mesaj. Proje sahibi
+      onayladı (16 Ekim; #29 kapandı)
 - [x] Yalnızca ID3v1 etiketli MP3'lerde başlık/sanatçı okunması
       ([#27](https://github.com/gozlemesevdalisi/Lyraska/issues/27)). 0.0.33: Türkçe harfler (Windows-1254) ve
       UTF-8 doğru okunur; kütüphanedeki etkilenmiş kayıtlar bir sonraki taramada kendiliğinden düzelir.
-      Proje sahibinin kendi MP3'lerinde doğrulaması bekleniyor
+      Faz 1 ile onaylandı (16 Ekim)
 
 ## Faz 2 — Görsel Yönetmen, v0.2 (9 Kasım – 20 Aralık 2026)
 
@@ -227,7 +231,7 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
 - **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): kör dinleme aracı (ABX) 0.0.40'ta geldi;
   "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. R2 sonucu geldi: kapıdan geçmedi, MP3 kolu
-  kapandı (bölüm 8); proje sahibi sayıları kendi düzeneğinde tekrar üretir.
+  kapandı (bölüm 8); sayılar bizim düzeneğimizde bağımsız olarak tekrar üretiliyor.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)

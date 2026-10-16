@@ -296,8 +296,9 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 Sonuçları bana yazdıkça buraya işlenir.
 
-| Madde         | Sonuç                                                   | Not                                                                                                                                    |
-| ------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| — (0.0.33'te) | ❌ Kütüphane hiç açılmıyordu: `no such table: analyses` | #49. 0.0.5–0.0.19'un kütüphane dosyası 0.0.28'den beri açılmıyordu. 0.0.35'te düzeltildi (testli); A0 ile sizin yedeğinizle denenecek. |
-| A0 (0.0.35)   | ✅ Oldu: eski yedek geri konunca kütüphane açıldı       | #49 kapandı (14 Ekim).                                                                                                                 |
-| — (0.0.39)    | ✅ Denendi, sorun çıkmadı                               | 15 Ekim. Hangi maddelerin denendiği yazılmadı; madde madde sonuçlar gelince tabloya ayrı ayrı işlenecek.                               |
+| Madde                | Sonuç                                                   | Not                                                                                                                                    |
+| -------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| — (0.0.33'te)        | ❌ Kütüphane hiç açılmıyordu: `no such table: analyses` | #49. 0.0.5–0.0.19'un kütüphane dosyası 0.0.28'den beri açılmıyordu. 0.0.35'te düzeltildi (testli); A0 ile sizin yedeğinizle denenecek. |
+| A0 (0.0.35)          | ✅ Oldu: eski yedek geri konunca kütüphane açıldı       | #49 kapandı (14 Ekim).                                                                                                                 |
+| — (0.0.39)           | ✅ Denendi, sorun çıkmadı                               | 15 Ekim. Hangi maddelerin denendiği yazılmadı; madde madde sonuçlar gelince tabloya ayrı ayrı işlenecek.                               |
+| Faz 1 (A2, D1 dahil) | ✅ "Faz 1 tamam"                                        | 16 Ekim. Sürükle-bırak (#29) ve kuzey ışıkları (#30) kapandı. Gece göğünün varsayılan manzarası aynı kaldı; değişsin isterseniz yazın. |
