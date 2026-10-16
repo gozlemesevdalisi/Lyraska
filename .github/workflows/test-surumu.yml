@@ -1,20 +1,27 @@
-# main her güncellendiğinde Windows kurulum dosyasını derler ve "test-surumu"
-# adlı sabit GitHub Release'ini yeniler. İndirme linki hiç değişmez:
+# main'de CI yeşil bitince Windows kurulum dosyasını derler ve "test-surumu" adlı
+# sabit GitHub Release'ini yeniler. İndirme linki hiç değişmez:
 # https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
+#
+# Güvenlik (DENETIM.md C1, C2, C4):
+# - CI'yi bekler (`workflow_run`): kırmızı ya da sınanmamış bir main sabit linke düşmez.
+# - Derleme işinin yazma izni yoktur; yazma izni yalnızca Release'i yenileyen, kod çalıştırmayan işte.
+# - Üçüncü taraf eylemler commit SHA'sıyla sabitlenir; `checkout` kimlik bilgisi bırakmaz.
+# - Yayın iptal edilmez, sıraya girer; yeni dosya önce ayrı adla yüklenir, eskisi sonra silinir.
 name: Test sürümü
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
-# Aynı anda tek yayın; yeni bir push gelirse eskisi iptal edilir.
+# Aynı anda tek yayın; yenisi eskisini iptal etmez, bekler (yarıda kalan yayın linki boş bırakabilir).
 concurrency:
   group: test-surumu
-  cancel-in-progress: true
+  cancel-in-progress: false
 
-permissions:
-  contents: write
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,46 +29,88 @@ env:
   ASSET_NAME: Lyraska-Kurulum.exe
 
 jobs:
-  yayinla:
-    name: Kurulum dosyasını derle ve yayınla
+  derle:
+    name: Kurulum dosyasını derle
+    # Elle başlatılmadıysa yalnızca CI başarılı bittiğinde.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.kaynak.outputs.sha }}
+      version: ${{ steps.surum.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - name: Derlenecek commit
+        id: kaynak
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ steps.kaynak.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
       - run: npm ci
-
-      - name: Kurulum dosyasını derle (tauri-action)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      - name: Sürüm numarası
+        id: surum
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Kurulum dosyasını derle
+        # Tauri CLI doğrudan: üçüncü taraf eylem ve token gerekmez. `--locked`: Cargo.lock aynen.
+        run: npm run tauri build -- --ci -- --locked
       - name: Kurulum dosyasını sabit ada kopyala
         shell: pwsh
+        env:
+          VERSION: ${{ steps.surum.outputs.version }}
         run: |
-          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          if (-not $exe) { throw "Kurulum dosyası bulunamadı" }
-          Copy-Item $exe.FullName $env:ASSET_NAME
-          Write-Host "Kurulum dosyası: $($exe.Name) -> $env:ASSET_NAME"
+          $exe = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/Lyraska_${env:VERSION}_*-setup.exe")
+          if ($exe.Count -ne 1) { throw "Sürüm $env:VERSION için tam bir kurulum dosyası bekleniyordu, $($exe.Count) bulundu" }
+          Copy-Item $exe[0].FullName $env:ASSET_NAME
+          Write-Host "Kurulum dosyası: $($exe[0].Name) -> $env:ASSET_NAME"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kurulum
+          path: ${{ env.ASSET_NAME }}
+          if-no-files-found: error
+          retention-days: 7
 
+  yayinla:
+    name: test-surumu Release'ini yenile
+    needs: derle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Yazma izni yalnızca burada; bu iş depo kodunu indirmez ve çalıştırmaz.
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ needs.derle.outputs.sha }}
+      VERSION: ${{ needs.derle.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kurulum
       - name: Sürüm notlarını hazırla
-        shell: bash
         run: |
-          version=$(node -p "require('./package.json').version")
-          short_sha=${GITHUB_SHA::7}
-          # Windows'taki Git Bash saat dilimi verisi içermez; tarihi Node ile biçimlendir.
-          date=$(node -p "new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })")
+          short_sha=${SHA::7}
+          date=$(TZ=Europe/Istanbul date +'%d.%m.%Y %H:%M')
           cat > notlar.md <<NOTES
-          **En güncel test sürümü** — her \`main\` güncellemesinde otomatik yenilenir.
+          **En güncel test sürümü** — \`main\`'de CI yeşil bittiğinde otomatik yenilenir.
 
-          - Sürüm: \`$version\`
-          - Commit: [\`$short_sha\`](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)
+          - Sürüm: \`$VERSION\`
+          - Commit: [\`$short_sha\`](https://github.com/$GH_REPO/commit/$SHA)
           - Derlenme: $date (İstanbul)
 
           ### Kurulum
@@ -70,28 +119,36 @@ jobs:
              (Program henüz dijital olarak imzalanmadığı için bu uyarı normaldir; imzalama Faz 4'te.)
           3. Kurulum yönetici izni istemez; program Başlat menüsüne "Lyraska" adıyla eklenir.
           NOTES
-
-      - name: test-surumu Release'ini yenile
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Etiketi taşı ve Release'i yenile
         run: |
-          # Etiketi bu commit'e taşı (Release aynı kalır, böylece link değişmez).
-          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-          git push -f origin "refs/tags/$RELEASE_TAG"
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
-            gh release upload "$RELEASE_TAG" "$ASSET_NAME" --clobber
-            # Eski adlı dosyaları (ör. ad değişikliğinden kalanları) sil; sayfada tek dosya kalsın.
-            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | while read -r name; do
-              if [ "$name" != "$ASSET_NAME" ]; then
-                echo "Eski dosya siliniyor: $name"
-                gh release delete-asset "$RELEASE_TAG" "$name" --yes
-              fi
-            done
+          set -euo pipefail
+          # Etiketi bu commit'e taşı (Release aynı kalır, böylece link değişmez). Git kimlik bilgisi
+          # yok; API ile.
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" -f sha="$SHA" -F force=true >/dev/null
           else
-            gh release create "$RELEASE_TAG" "$ASSET_NAME" --verify-tag \
-              --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$SHA" >/dev/null
           fi
-          echo "İndirme linki: https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$ASSET_NAME"
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "Test sürümü (en güncel)" \
+              --notes-file notlar.md --prerelease
+          fi
+          gh release edit "$RELEASE_TAG" --title "Test sürümü (en güncel)" --notes-file notlar.md --prerelease
+
+          # Yeni dosya önce geçici adla yüklenir; eskisi ancak yenisi yerindeyken silinir ve yenisi
+          # sabit ada çevrilir: link en kısa süre boş kalır.
+          temp_name="$ASSET_NAME.yeni"
+          cp "$ASSET_NAME" "$temp_name"
+          gh release upload "$RELEASE_TAG" "$temp_name" --clobber
+          assets=$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" --jq '.assets[] | "\(.id) \(.name)"')
+          while read -r id name; do
+            [ -n "$id" ] || continue
+            if [ "$name" != "$temp_name" ]; then
+              echo "Eski dosya siliniyor: $name"
+              gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null
+            fi
+          done <<< "$assets"
+          new_id=$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" --jq ".assets[] | select(.name==\"$temp_name\") | .id")
+          gh api -X PATCH "repos/$GH_REPO/releases/assets/$new_id" -f name="$ASSET_NAME" >/dev/null
+          echo "İndirme linki: https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$ASSET_NAME"
