@@ -557,6 +557,9 @@ impl Analysis {
     ) -> Option<Self> {
         let spectrogram = Spectrogram::new();
         let target = Arc::clone(&spectrogram);
+        // Kareler önbellekten hemen: görseller iş parçacığının başlamasını (ya da çalan şarkının
+        // analizinin bitmesini) beklemez.
+        spectrogram::publish_cached(&target, &cached);
         let busy = ForegroundGuard::new(&context.foreground);
         let cache = context.cache.clone();
         let file = path.to_path_buf();
@@ -2063,6 +2066,41 @@ mod tests {
             .unwrap()
             .is_some_and(|c| !c.stale.any())));
         assert_eq!(spectrogram.saved().unwrap(), full);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn onbellekten_yenilemede_kareler_is_parcacigini_beklemeden_hazir() {
+        // Yenileme iş parçacığı çalan şarkının analizini bekliyorsa (ya da zamanlayıcı onu geç
+        // başlattıysa) önbellekteki kareler yine de hemen yayımlanmalı: görseller beklemez.
+        // Eskiden kareler iş parçacığının içinde yayımlanıyordu; CI'da yarış olarak yakalandı.
+        let path = ramp_song("yenile-hemen.wav");
+        let cache = Arc::new(AnalysisCache::open_in_memory().unwrap());
+        let stamp = FileStamp::of(&path).unwrap();
+        let mut first = Player::new();
+        first.set_analysis_cache(Arc::clone(&cache));
+        first.load(&path, false).unwrap();
+        assert!(wait_until(|| cache.load(&path, stamp).unwrap().is_some()));
+        cache
+            .lock_for_test()
+            .execute("UPDATE analyses SET loudness_version = 0", [])
+            .unwrap();
+        let cached = cache.load(&path, stamp).unwrap().unwrap();
+        let frames = cached.saved.frames();
+        let context = AnalysisContext {
+            cache: Some(Arc::clone(&cache)),
+            foreground: Arc::new(AtomicUsize::new(0)),
+        };
+        // Hiç bitmeyecek bir "çalan şarkı" analizi: yenileme iş parçacığı onu bekler.
+        let never = Spectrogram::new();
+        let analysis =
+            Analysis::refresh(&path, cached, &context, Some(Arc::clone(&never)), stamp).unwrap();
+        assert_eq!(
+            analysis.spectrogram.ready_frames(),
+            frames,
+            "kareler iş parçacığından önce hazır"
+        );
+        drop(analysis); // bekleyen iş parçacığı iptalle biter
         std::fs::remove_file(path).ok();
     }
 
