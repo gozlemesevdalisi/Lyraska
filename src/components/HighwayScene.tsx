@@ -75,9 +75,11 @@ export function highwayInput(frame: VisualFrame): HighwayInput {
       ? {
           mood: d.atmosphere.mood,
           theme: d.atmosphere.theme,
-          barPhase: d.rhythm.barPhase,
+          // Ölçü belirsizse (ör. tanınmayan bir aksak ölçü) lambalar ölçü başına kilitlenmez.
+          barPhase: d.rhythm.barsConfident ? d.rhythm.barPhase : null,
           anticipation: d.rhythm.anticipation,
           release: d.rhythm.release,
+          motion: d.texture.motion,
         }
       : null,
   };

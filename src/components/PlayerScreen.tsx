@@ -10,12 +10,14 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SceneStage } from "./SceneStage";
 import { SettingsPanel } from "./SettingsPanel";
 import { SyncPanel } from "./SyncPanel";
+import { AbxPanel } from "./AbxPanel";
 import { CloseIcon, LibraryIcon, LyraMark, SettingsIcon, SlidersIcon } from "./icons";
 import {
   BROWSER_FALLBACK,
   getAppInfo,
   type AppInfo,
   type LibraryTrack,
+  type KeyMap,
   type SongMap,
 } from "../lib/backend";
 import { SCENES } from "../lib/scene";
@@ -34,17 +36,20 @@ import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSkyLook } from "../hooks/useSkyLook";
 import { useCover } from "../hooks/useCover";
+import { useSongKey } from "../hooks/useSongKey";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
 import { useMarker } from "../hooks/useMarker";
 import { useLibrary } from "../hooks/useLibrary";
+import { useAbx } from "../hooks/useAbx";
 
 const PANELS: [Panel, string][] = [
   ["library", "Kütüphane"],
   ["eq", "Ekolayzer"],
   ["marker", "İşaretle"],
   ["sync", "Senkron"],
+  ["abx", "Kör test"],
   ["settings", "Ayarlar"],
 ];
 
@@ -82,6 +87,7 @@ export function PlayerScreen() {
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
+  const songKey = useSongKey(statusPath, songMap?.sections.length ?? 0);
   const sync = useSync(
     player.openPath,
     player.positionNow,
@@ -100,6 +106,13 @@ export function PlayerScreen() {
     [setRecording, finishCalibration],
   );
   const drawer = useDrawer({ onLeave, escapeBusy: marker.recording });
+  // Kör test: panel açık değilken süren test duraklatılır. Test çalan şarkıyı kapatır, bitince
+  // kaldığı yerde geri açar: oynatıcı ekranı da güncellenir.
+  const abx = useAbx(
+    info.supportedExtensions,
+    drawer.open && drawer.panel === "abx",
+    player.refresh,
+  );
 
   // Çalmaya başlayınca sahne ortaya çıksın; kütüphane düğmesiyle geri açılır.
   const { close: closeDrawer } = drawer;
@@ -206,7 +219,7 @@ export function PlayerScreen() {
         fallback={() => (
           <div className="stage" data-scene="error">
             <p className="stage__error" role="alert">
-              Sahne çizilemedi; hata günlüğe yazıldı. Başka bir sahne seçebilirsiniz (1–4).
+              Sahne çizilemedi; hata günlüğe yazıldı. Başka bir sahne seçebilirsiniz (1–5).
             </p>
           </div>
         )}
@@ -217,6 +230,11 @@ export function PlayerScreen() {
           hasTrack={hasTrack}
           safe={visualSafe.safe}
           skyLook={skyLook.look}
+          title={
+            status.track
+              ? [status.track.artist, status.track.title].filter(Boolean).join(" · ")
+              : null
+          }
         />
       </ErrorBoundary>
       <div className="stage__shade" aria-hidden />
@@ -266,6 +284,7 @@ export function PlayerScreen() {
         queueLabel={playback.queueLabel}
         cover={cover}
         songMap={songMap}
+        songKey={songKey}
         soundShaped={soundShaped}
         safe={visualSafe.safe}
         next={upNext}
@@ -372,6 +391,17 @@ export function PlayerScreen() {
         <div
           className="drawer__panel"
           role="tabpanel"
+          id="drawer-panel-abx"
+          aria-labelledby="drawer-tab-abx"
+          hidden={drawer.panel !== "abx"}
+        >
+          <ErrorBoundary name="Kör test">
+            <AbxPanel abx={abx} available={player.available} />
+          </ErrorBoundary>
+        </div>
+        <div
+          className="drawer__panel"
+          role="tabpanel"
           id="drawer-panel-settings"
           aria-labelledby="drawer-tab-settings"
           hidden={drawer.panel !== "settings"}
@@ -400,6 +430,7 @@ interface LiveChromeProps {
   queueLabel: string | null;
   cover: string | null;
   songMap: SongMap | null;
+  songKey: KeyMap | null;
   soundShaped: boolean;
   safe: boolean;
   next: UpNext | null;
@@ -419,6 +450,7 @@ function LiveChrome({
   queueLabel,
   cover,
   songMap,
+  songKey,
   soundShaped,
   safe,
   next,
@@ -444,6 +476,7 @@ function LiveChrome({
           status={status}
           positionSecs={position}
           songMap={songMap}
+          songKey={songKey}
           soundShaped={soundShaped}
           safe={safe}
           next={next}

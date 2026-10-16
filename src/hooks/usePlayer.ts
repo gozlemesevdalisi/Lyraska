@@ -38,6 +38,11 @@ export interface PlayerControls {
   stop: () => Promise<void>;
   /** Şarkıda verilen saniyeye atlar. Ekran beklemeden yeni konumu gösterir. */
   seek: (seconds: number) => Promise<void>;
+  /**
+   * Çekirdeğin durumunu yeniden sorar. Başka bir yer oturumu değiştirdiğinde (kör test çalan
+   * şarkıyı kapatıp bitince geri açar) ekran güncellensin diye.
+   */
+  refresh: () => Promise<void>;
 }
 
 const now = () => performance.now();
@@ -234,6 +239,15 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     };
   }, [available, hasTrack, applyStatus]);
 
+  const refresh = useCallback(async () => {
+    if (!available) return;
+    try {
+      applyStatus(await getPlaybackStatus(), true);
+    } catch {
+      /* Geçici hata: bir sonraki komutta yeniden sorulur. */
+    }
+  }, [available, applyStatus]);
+
   // Klavye kısayolları
   useEffect(() => {
     if (!available) return;
@@ -273,6 +287,7 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
     toggle,
     stop,
     seek,
+    refresh,
   };
 }
 

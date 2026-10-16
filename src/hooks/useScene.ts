@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { loadScene, saveScene, sceneForKey, type Scene } from "../lib/scene";
 
-/** Seçili sahne (hatırlanır); 1–4 tuşları da sahne seçer (yazı yazılırken değil). */
+/** Seçili sahne (hatırlanır); 1–5 tuşları da sahne seçer (yazı yazılırken değil). */
 export function useScene(): [Scene, (scene: Scene) => void] {
   const [scene, setScene] = useState<Scene>(loadScene);
   const choose = useCallback((next: Scene) => {

@@ -121,8 +121,19 @@ CREATE TRIGGER IF NOT EXISTS analyses_follow_tracks AFTER DELETE ON tracks
 BEGIN DELETE FROM analyses WHERE path = old.path; END;
 ";
 
+/// 7: ton analizi ([`crate::analysis::key`]): saniye başına kroma (sıkıştırılmış), tahmin
+/// (JSON), kütüphane listesi için Camelot kodu (güveni yeterliyse) ve parçanın sürümü. Eski
+/// kayıtlarda ton yoktur (sürüm 0): kütüphane arka planda bir kez çözülür; spektrum ve ritim
+/// yeniden hesaplanmaz.
+const V7: &str = "
+ALTER TABLE analyses ADD COLUMN chroma BLOB;
+ALTER TABLE analyses ADD COLUMN musical_key TEXT;
+ALTER TABLE analyses ADD COLUMN camelot TEXT;
+ALTER TABLE analyses ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0;
+";
+
 /// Sıralı göç adımları (bkz. modül belgesi). Yalnızca sona eklenir.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 /// Bu sürümün bildiği en yeni şema.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

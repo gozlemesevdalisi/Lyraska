@@ -62,9 +62,12 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
 - [x] Gecikme telafisi ve kalibrasyon (0.0.21): verinin ekrana ulaşma süresi her karede ölçülüp telafi edilir; ses
       aygıtının ek gecikmesi (ör. Bluetooth) "Senkron" sekmesinde ayarlanır ya da tıklama kaydıyla ölçülür; vuruş
       göstergesiyle gözle denetlenir. Gerçek aygıtlarda ±20 ms hedefinin ölçümü proje sahibinin denemesiyle
-- [ ] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
+- [x] Koreografi: atmosfer, ritim ve doku katmanları — Görsel Yönetmen çekirdeği hazır (0.0.17); gece göğü
       bağlandı (0.0.18: bölüm teması, drop öncesi gerilim, drop açılımı, ölçü başı dalgası); gece otoyolu
-      bağlandı (0.0.19). Sıradaki: spektrum ve VU sahneleri, doku katmanı
+      bağlandı (0.0.19). 0.0.41: VU ve spektrum sahneleri "sahne ışığı"yla bağlandı (hale bölüm renginde, ruh
+      hâliyle güçlenir, droptan önce daralır, drop'ta açılır; spektrumda tepe noktaları droptan önce asılı
+      kalır); doku katmanı bütün sahnelerde (vuruş yoğunluğu akışı, tizlerin canlılığı kırpışmayı ve tepe
+      noktalarını hızlandırır)
 - [x] "Gece otoyolu" sahnesi (0.0.19): şerit çizgileri vuruşlara, sokak lambaları ölçü başlarına kilitli; ufuk
       parıltısı bölüm temasıyla renklenir; drop öncesi ufka çekilir, drop'ta yükselir ve yol iki kat hızlanır
 - [x] Epilepsi güvenli modu (0.0.18): her zaman saniyede en fazla 3 parlama (testle sınanır); güvenli modda
@@ -72,28 +75,36 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       ekranda "Güvenli mod" yazar
 - [x] Yeni arayüz "Sahne" (0.0.25): sahne tüm pencereyi kaplar, yazı ve düğmeler cam katmanlarda; büyük şarkı
       adı; şarkı haritası şeridi (bölümler gökyüzünün o bölümdeki renginde, enerji, drop'lar); drop geri sayımı;
-      sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–4 tuşları
+      sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–5 tuşları
       sahne seçer; Inter yazı tipi (OFL-1.1)
-- [ ] **Ton tespiti (Camelot)** (plan, 9 Ekim 2026): şarkının tonu (ör. "A minör") ve Camelot kodu (ör. 8A), güven
-      değeriyle. Kütüphanede sütun; Akıllı Geçiş (Faz 6) ve Otomatik DJ (Faz 7) ton uyumunu buradan alır.
-  - Yöntem: kroma (12 perde sınıfı) özellikleri + ton profilleriyle karşılaştırma (Krumhansl–Kessler / Temperley
-    gibi klasik, lisans gerektirmeyen yöntem). Yapay zekâ modeli gerekirse önce kod ve ağırlık lisansı doğrulanır.
+- [x] **Ton tespiti (Camelot)** (0.0.42): şarkının tonu (ör. "La minör") ve Camelot kodu (ör. 8A), güven
+      değeriyle. Kütüphanede "Ton" sütunu, çalarken bilgi kartında (ton değişen bölümde o bölümün tonu, vurgulu);
+      işaretleme aracında ton seçimi ve "Doğruluğu ölç"te karşılaştırma. Akıllı Geçiş (Faz 6) ve Otomatik DJ
+      (Faz 7) ton uyumunu buradan alır. Gerçek şarkılarda isabet proje sahibinin işaretleriyle ölçülecek.
+  - Yöntem: kroma (12 perde sınıfı; tepe frekansları parabolle inceltilir, akort kayması bulunur) + Krumhansl–
+    Kessler ton profilleriyle ilinti; şarkının tonu 15 sn'lik pencerelerin oylamasıyla. Yapay zekâ modeli
+    gerekirse önce kod ve ağırlık lisansı doğrulanır.
   - Kroma, saklanan 32 bant kareden çıkmaz (perde çözünürlüğü yetmez): yeni bir analiz parçası olur, kendi sürümüyle
     (`analysis::cache::VERSIONS`). Eklenince kütüphane bir kez çözülür; spektrum ve ritim yeniden hesaplanmaz.
   - Güven düşükse (atonal, perküsyon, ton değiştiren şarkı) ton gösterilmez; şarkı içinde ton değişiyorsa bölüm
     bölüm.
   - Kalite hedefi: işaretli şarkılarda ton isabeti (aynı ton ya da Camelot komşusu) ≥ %80; işaretleme aracına ton
     girişi eklenir.
-- [ ] **Aksak ölçü desteği** (plan, 9 Ekim 2026): 9/8, 7/8, 5/4 ve Türk müziğinin aksak usulleri (ör. 9/8 =
-      2+2+2+3, 7/8 = 2+2+3). Şu an yalnızca 4/4 ve 3/4 seçiliyor.
-  - Ölçü seçimi her ölçü ve gruplama için puanlanır; vuruşlar eşit aralıklı değilse (aksak) gruplar ayrı tutulur.
+- [x] **Aksak ölçü desteği** (0.0.43): 5/8, 7/8, 9/8 ve Türk müziğinin aksak usulleri (ör. 9/8 = 2+2+2+3, 7/8 =
+      2+2+3); bilgi kartında "9/8 (2+2+2+3)". Gerçek aksak şarkılarda isabet proje sahibinin işaretleriyle
+      ölçülecek.
+  - Ölçü sekizlik ızgarasında puanlanır: düzenli (2+2+2+2, 2+2+2, 3+3) ve aksak gruplamaların (dönüşleriyle) her
+    başlangıç konumu vurguyla (başlangıç gücü + bas vuruşu) ilintilenir. Aksak açıkça daha uygunsa şarkının
+    vuruşları grup başları olur (9/8'de ölçüde 4 uzun-kısa vuruş), ölçü başları ızgaradan gelir.
   - **Güven düşükse ölçü vurgusu kapanır:** görseller ölçü başını vurgulamaz (lamba, dalga), yalnızca vuruşa tepki
-    verir. Yanlış ölçü vurgusu, hiç vurgu olmamasından kötüdür.
+    verir; bilgi kartında ölçü yazmaz. Yanlış ölçü vurgusu, hiç vurgu olmamasından kötüdür. Düzenli ölçüde güven,
+    8 ölçülük pencerelerde aynı ölçü başı konumunun kazanma payından.
   - Yalnızca ritim parçasının sürümü artar: kütüphane çözülmeden yenilenir.
   - Kalite hedefi: işaretli aksak şarkılarda ölçü başı isabeti; test verisi sentetik 9/8 ve 7/8 davul kayıtları.
-- [ ] "Gece sürüşü" nostalji modu (proje sahibi onayladı, A'dan sonra): ön camdan gece otoyolu, torpidoda
-      özgün tasarım teyp — parlayan nokta matris ekran, ışık halkalı düğmeler, arkadan aydınlatmalı VU
-      ibreleri. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz
+- [x] "Gece sürüşü" nostalji modu (0.0.44; proje sahibi onayladı): ön camdan gece otoyolu (aynı çizim), torpidoda
+      özgün tasarım teyp: makaraları dönen kaset, kayan şarkı adı ve spektrumlu nokta matris ekran, ışık halkalı
+      düğmeler, arkadan aydınlatmalı VU ibreleri. Işıklar Görsel Yönetmen'in sahne ışığından; sinema görünümünde
+      tam belirir. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz. Proje sahibinin görüşü bekleniyor
 
 ## Faz 3 — Profesyonel ses, v0.3 (21 Aralık 2026 – 17 Ocak 2027)
 
@@ -121,12 +132,14 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
   - R1 sonucu (gerçek dalga biçimi, algısal ölçü): kutulara sadık klasik yöntemler SNR'ı 0,2–1,3 dB artırıyor ama
     duyulur bir iyileşme vermiyor; algısal kayıp tizdeki deliklerde ve onları dolduracak bilgi bit akışında yok.
     Klasik yol kapıdan geçmedi, ürüne alınmaz.
+  - [x] Kör dinleme aracı (ABX, 0.0.40, proje sahibinin kararı): çekmecede **Kör test**. Aynı şarkının iki sürümü
+        örnek düzeyinde hizalanır, ses yükseklikleri eşitlenir, işlenmeden çalınır; A/B/X aynı konumda tıksız
+        değişir, sonuç binom sınamasıyla en sonda verilir.
   - R2 sonucu (15–16 Ekim 2026, öğrenmeli önsel; VERITAS.md bölüm 8): kutularla sınırlanmış öğrenilmiş model de
     kapıdan geçmedi (en iyi +0,006 MOS; örnekleyen yöntemler ortalamada çözücüden kötü). Nedeni ölçüldü: deliklerin
     ince yapısı hakkında bit akışı ve bağlam ≈ 0,1 bit taşıyor, komşu granüllerin gerçek değeri bile bilgi eklemiyor;
     duyulur kazanç için doğru seviye ve ≥ 0,5 bit yapı gerekiyor. **MP3 kolu kapandı**; yeniden açılması için yeni bir
-    bilgi kaynağı gerekir (aynı şarkının ikinci kopyası ya da kayıpsız referans).
-  - Sıradaki (proje sahibinin kararı): kör dinleme aracı (ABX).
+    bilgi kaynağı gerekir (aynı şarkının ikinci kopyası ya da kayıpsız referans). AAC için ayrı karar.
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
       kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
       aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
@@ -212,8 +225,9 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
   `unsafe` kod gerektirdiği için onay şart. Öneri: şimdilik yapılmasın, takılma görülürse ilk bu açılsın.
 - **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
-- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): R1 ve R2 kapıdan geçmedi, MP3 kolu kapandı.
-  Kalan öneri kör dinleme aracı (ABX): "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar.
+- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): kör dinleme aracı (ABX) 0.0.40'ta geldi;
+  "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. R2 sonucu geldi: kapıdan geçmedi, MP3 kolu
+  kapandı (bölüm 8); proje sahibi sayıları kendi düzeneğinde tekrar üretir.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)

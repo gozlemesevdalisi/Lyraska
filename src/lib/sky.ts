@@ -7,7 +7,8 @@ import { SCENE_CLOCK_PERIOD, foldTime } from "./sceneClock";
  * Görsel Yönetmen bağlıysa (`DirectorInput`): bölüm teması perdelerin rengini,
  * ruh hâli parlaklığını belirler; droptan önce perdeler toplanıp ufka çekilir
  * (gerilim), drop'ta genişleyip yükselir (açılım); ölçü başlarında perdede bir
- * dalga akar.
+ * dalga akar. Doku katmanı: vuruş yoğunluğu perdelerin akışını, tizlerin canlılığı yıldızların
+ * kırpışmasını hızlandırır.
  *
  * Epilepsi güvenliği: ekranın parlaklığını değiştiren her değer (perde
  * enerjileri ve açılım) saniyede en fazla `ENERGY_SLEW_PER_SECOND` kadar değişir
@@ -37,6 +38,9 @@ export interface SkyState {
   rippleTime: number;
   /** Son karede okunan ölçü vurgusu (yeni vurguyu ayırt etmek için). */
   lastAccent: number;
+  /** Doku: tizlerin canlılığı ve vuruş yoğunluğu (0..1; yumuşak; 0,5 = olağan). */
+  detail: number;
+  motion: number;
 }
 
 export const SKY_AT_REST: SkyState = {
@@ -49,6 +53,8 @@ export const SKY_AT_REST: SkyState = {
   palette: { from: 0, to: 0, mix: 1 },
   rippleTime: 100,
   lastAccent: 0,
+  detail: 0.5,
+  motion: 0.5,
 };
 
 /** Gökyüzünün Görsel Yönetmen'den kullandığı değerler (`DirectorFrame`'in alt kümesi). */
@@ -59,6 +65,9 @@ export interface DirectorInput {
   accent: number;
   anticipation: number;
   release: number;
+  /** Doku katmanı (yoksa olağan hız). */
+  detail?: number;
+  motion?: number;
 }
 
 /** Gece göğünün görünümü: perdelerin hangi manzarada görüldüğü. */
@@ -109,6 +118,8 @@ const ENERGY_ATTACK_SECONDS = 0.12;
 const ENERGY_RELEASE_SECONDS = 0.7;
 const PULSE_ATTACK_SECONDS = 0.05;
 const PULSE_RELEASE_SECONDS = 0.35;
+/** Doku değerlerinin yumuşatma süresi (saniye). */
+const TEXTURE_SECONDS = 1.5;
 
 /** Akış hızı: boştayken `IDLE_SPEED`, en güçlü vuruşta `IDLE_SPEED + PULSE_SPEED`. */
 const IDLE_SPEED = 0.35;
@@ -189,12 +200,18 @@ export function stepSky(
   const freshAccent = accent > prev.lastAccent + 0.3 && !reducedMotion;
   const rippleTime = freshAccent ? 0 : Math.min(100, prev.rippleTime + step);
 
+  // Doku: yoğun vuruşlu bölümde perdeler biraz daha hızlı akar, tizler canlıyken yıldızlar daha
+  // hızlı kırpışır (yalnızca hız; parlaklık değişmez).
+  const detail = smoothTexture(prev.detail, playingDirector?.detail, step);
+  const textureMotion = smoothTexture(prev.motion, playingDirector?.motion, step);
+
   // Akış: vuruşta hızlanır; gerilimde yavaşlar, açılımda hızlanır.
   const directorPulse = playingDirector?.pulse ?? 0;
   const speed =
     (IDLE_SPEED + PULSE_SPEED * Math.max(pulse, 0.6 * directorPulse)) *
     (1 - 0.6 * tension) *
-    (1 + 1.5 * bloom);
+    (1 + 1.5 * bloom) *
+    (0.85 + 0.3 * textureMotion);
   const motion = reducedMotion ? REDUCED_MOTION_SPEED : 1;
   return {
     energies,
@@ -202,13 +219,26 @@ export function stepSky(
     // Saatler sürekli ilerler; çizim katlanmış hâlini kullanır (`skyClocks`).
     flowTime: (prev.flowTime + step * speed * motion) % SCENE_CLOCK_PERIOD,
     // "Animasyonları azalt" açıkken yıldızlar kırpışmaz.
-    twinkleTime: reducedMotion ? prev.twinkleTime : (prev.twinkleTime + step) % SCENE_CLOCK_PERIOD,
+    twinkleTime: reducedMotion
+      ? prev.twinkleTime
+      : (prev.twinkleTime + step * (0.7 + 0.6 * detail)) % SCENE_CLOCK_PERIOD,
     tension,
     bloom,
     palette,
     rippleTime,
     lastAccent: accent,
+    detail,
+    motion: textureMotion,
   };
+}
+
+/**
+ * Doku değerini (0..1) `TEXTURE_SECONDS` içinde yumuşakça hedefe götürür; hedef yoksa olağan
+ * değere (0,5) döner.
+ */
+export function smoothTexture(current: number, target: number | undefined, dt: number): number {
+  const goal = target === undefined ? 0.5 : clamp01(target);
+  return current + (goal - current) * (1 - Math.exp(-Math.max(0, dt) / TEXTURE_SECONDS));
 }
 
 /** Renk teması geçişi: eski tema, yeni tema ve karışım (0 → 1). */

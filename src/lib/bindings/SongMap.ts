@@ -6,13 +6,24 @@ import type { Section } from "./Section";
  */
 export type SongMap = { 
 /**
- * Ölçüdeki vuruş sayısı (3 ya da 4).
+ * Ölçüdeki vuruş sayısı: düzenli ölçüde 3 ya da 4; aksak ölçüde grup sayısı (ör. 9/8 =
+ * 2+2+2+3'te 4: vuruşlar grup başlarıdır).
  */
 meter: number, 
 /**
  * İlk tam ölçünün başladığı vuruşun sırası (0..meter).
  */
 downbeatPhase: number, 
+/**
+ * Aksak ölçünün sekizlik gruplaması (ör. [2, 2, 2, 3] = 9/8); düzenli ölçüde boş.
+ */
+grouping: Array<number>, 
+/**
+ * Ölçünün (ölçü başlarının) güveni (0..1). [`METER_CONFIDENCE_MIN`]'in altında görseller
+ * ölçü başını vurgulamaz (lamba, dalga), yalnızca vuruşa tepki verir: yanlış ölçü vurgusu,
+ * hiç vurgu olmamasından kötüdür.
+ */
+meterConfidence: number, 
 /**
  * Ölçü başlarının zamanları (saniye).
  */

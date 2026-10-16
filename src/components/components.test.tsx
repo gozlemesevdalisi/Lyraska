@@ -15,6 +15,8 @@ const backend = vi.hoisted(() => ({
   stop: vi.fn(),
   seek: vi.fn(),
   bands: null as number[] | null,
+  /** Görsel karedeki Görsel Yönetmen notu (yoksa analiz bitmemiş gibi). */
+  director: null as import("../lib/backend").DirectorFrame | null,
   library: null as import("../lib/backend").LibraryStatus | null,
   /** Kütüphane açılamadıysa çekirdeğin her kütüphane komutunda verdiği hata. */
   libraryFailure: null as string | null,
@@ -41,6 +43,7 @@ const backend = vi.hoisted(() => ({
   saveMarks: vi.fn(),
   annotation: null as import("../lib/backend").Annotation | null,
   songMap: null as import("../lib/backend").SongMap | null,
+  songKey: null as import("../lib/backend").KeyMap | null,
   safe: false,
   setSafe: vi.fn(),
   /** Çekirdek ekolayzer durumunu eksik alanlarla döndürür (0.0.29'daki sahne denetimi olayı). */
@@ -50,6 +53,9 @@ const backend = vi.hoisted(() => ({
   coverAsked: vi.fn(),
   /** Kütüphane panelinin kaç kez çizildiği (her karede yeniden çizilmemeli). */
   libraryPanelRenders: 0,
+  /** Kör test: süren testin durumu ve dosya seçicinin vereceği yollar. */
+  abx: null as import("../lib/backend").AbxStatus | null,
+  abxPicks: [] as string[],
 }));
 
 // Kütüphane paneli aynen çizilir; yalnızca çizim sayılır.
@@ -91,7 +97,16 @@ vi.mock("../lib/backend", async (importOriginal) => {
       return current();
     },
     getVisualFrame: async () =>
-      backend.bands ? { positionSecs: current().positionSecs, bands: backend.bands } : null,
+      backend.bands
+        ? {
+            positionSecs: current().positionSecs,
+            bands: backend.bands,
+            rmsDb: [-20, -20],
+            peakDb: [-6, -6],
+            vuReferenceDb: -14,
+            director: backend.director,
+          }
+        : null,
     openTrack: async (path: string) => {
       backend.open(path);
       return current().track;
@@ -162,8 +177,14 @@ vi.mock("../lib/backend", async (importOriginal) => {
     },
     getAnnotation: async () => backend.annotation,
     getSongMap: async () => backend.songMap,
-    saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
-      backend.saveMarks(path, beats, drops);
+    getSongKey: async () => backend.songKey,
+    saveAnnotation: async (
+      path: string,
+      beats: number[],
+      drops: number[],
+      key: import("../lib/backend").MarkedKey | null = null,
+    ) => {
+      backend.saveMarks(path, beats, drops, key);
       return "C:\\Veri\\isaretler\\Lyra - Gece Otoyolu.1234abcd.json";
     },
     evaluateAnnotation: async () => ({
@@ -181,6 +202,9 @@ vi.mock("../lib/backend", async (importOriginal) => {
         detectedDrops: [61.5],
         dropHits: 1,
         markedDrops: 1,
+        // Program Do majör buldu; işaret La minör: paralel ton, isabet sayılır.
+        detectedKey: { tonic: 0, minor: false, confidence: 0.7, camelot: 8 },
+        keyRelation: "relative" as const,
       },
     }),
     setNextTrack: async (path: string | null) => {
@@ -210,6 +234,27 @@ vi.mock("../lib/backend", async (importOriginal) => {
     clearHeadphone: async () => {
       backend.headphone = null;
       return actual.NO_HEADPHONE;
+    },
+    // Kör test, gerçek çekirdek gibi: başlarken çalan oturum kapanır, bitince şarkı kaldığı
+    // yerde duraklatılmış geri gelir.
+    pickAbxFile: async () => backend.abxPicks.shift() ?? null,
+    abxStatus: async () => backend.abx ?? actual.ABX_INACTIVE,
+    abxStart: async () => {
+      backend.abx = {
+        ...actual.ABX_INACTIVE,
+        active: true,
+        aName: "gece.flac",
+        bName: "gece.mp3",
+        clipSecs: 20,
+        total: 16,
+      };
+      backend.status = null;
+      return backend.abx;
+    },
+    abxStop: async () => {
+      backend.abx = null;
+      backend.status = { ...playing, state: "paused" };
+      return actual.ABX_INACTIVE;
     },
   };
 });
@@ -248,6 +293,7 @@ beforeEach(() => {
   backend.desktop = false;
   backend.status = null;
   backend.bands = null;
+  backend.director = null;
   backend.library = null;
   backend.libraryFailure = null;
   backend.tracks = [];
@@ -255,9 +301,12 @@ beforeEach(() => {
   backend.dragFailure = null;
   backend.dropOutcome = null;
   backend.songMap = null;
+  backend.songKey = null;
   backend.annotation = null;
   backend.covers = {};
   backend.libraryPanelRenders = 0;
+  backend.abx = null;
+  backend.abxPicks = [];
   clearCoverCache();
   window.localStorage.clear();
   vi.clearAllMocks();
@@ -432,6 +481,47 @@ describe("sarma ve spektrum", () => {
   });
 });
 
+describe("VU ve spektrum sahnelerinin ışığı", () => {
+  const director = (mood: number) => ({
+    atmosphere: { section: 0, theme: 0, mood, warmth: 0.5 },
+    rhythm: {
+      pulse: 0,
+      accent: 0,
+      beatPhase: 0,
+      barPhase: 0,
+      anticipation: 0,
+      release: 0,
+      barsConfident: true,
+    },
+    texture: { detail: 0.5, motion: 0.5 },
+  });
+  const glowOf = (element: Element | null) =>
+    Number((element as HTMLElement | null)?.style.getPropertyValue("--stage-glow") || 0);
+
+  for (const [scene, selector] of [
+    ["Spektrum", ".vfd-frame"],
+    ["VU ibreleri", ".vu-scene"],
+  ] as const) {
+    it(`${scene}: Görsel Yönetmen'in ruh hâliyle ışır, not yoksa kısık kalır`, async () => {
+      backend.desktop = true;
+      backend.status = playing;
+      backend.bands = new Array<number>(32).fill(0.5);
+      backend.director = director(1);
+      const { container } = render(<App />);
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: scene })));
+      await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+      await waitFor(() => expect(glowOf(container.querySelector(selector))).toBeGreaterThan(0.3), {
+        timeout: 3000,
+      });
+      // Analiz yok (not gelmiyor): ışık yumuşakça söner.
+      backend.director = null;
+      await waitFor(() => expect(glowOf(container.querySelector(selector))).toBeLessThan(0.05), {
+        timeout: 4000,
+      });
+    });
+  }
+});
+
 describe("kütüphane", () => {
   const song = (id: number, title: string) => ({
     id,
@@ -442,9 +532,10 @@ describe("kütüphane", () => {
     trackNumber: id,
     durationSecs: 200,
     codec: "flac",
-    // 1. şarkı 128 BPM, 2. ritimsiz, 3. henüz analiz edilmedi.
+    // 1. şarkı 128 BPM ve La minör (8A), 2. ritimsiz ve tonu belirsiz, 3. henüz analiz edilmedi.
     bpm: id === 1 ? 128.4 : null,
     analyzed: id !== 3,
+    key: id === 1 ? "8A" : null,
   });
   const library = {
     folders: [{ id: 7, path: "C:\\Müzik" }],
@@ -608,6 +699,12 @@ describe("kütüphane", () => {
     const rows = screen.getAllByRole("row").slice(1);
     expect(rows.map((row) => row.querySelector(".library__bpm")?.textContent)).toEqual([
       "128",
+      "—",
+      "",
+    ]);
+    // Ton sütunu: Camelot kodu; tonu belirsizse çizgi, analiz beklerken boş.
+    expect(rows.map((row) => row.querySelector(".library__key")?.textContent)).toEqual([
+      "8A",
       "—",
       "",
     ]);
@@ -957,7 +1054,53 @@ describe("sahneler", () => {
     expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
   });
 
-  it("1–4 tuşları sahne seçer; arama kutusuna yazarken seçmez", async () => {
+  it("gece sürüşü: ön camdan yol, torpidoda teyp; kaset çalarken döner, ekranda şarkı kayar", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    backend.bands = new Array<number>(32).fill(0.6);
+    backend.director = {
+      atmosphere: { section: 0, theme: 0, mood: 1, warmth: 0.5 },
+      rhythm: {
+        pulse: 0,
+        accent: 0,
+        beatPhase: 0,
+        barPhase: 0,
+        anticipation: 0,
+        release: 0,
+        barsConfident: true,
+      },
+      texture: { detail: 0.5, motion: 0.5 },
+    };
+    const { container } = render(<App />);
+    // Oynatıcı çalan şarkıyı ilk komutla öğrenir (duraklatılmış).
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.keyDown(window, { key: "5" }));
+    expect(screen.getByRole("button", { name: "Gece sürüşü" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Ön camda gece otoyolunun çizimi; torpidoda teyp ve iki VU ibresi.
+    expect(screen.getByRole("img", { name: /Gece otoyolu/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Teyp" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Kaset duruyor" })).toBeInTheDocument();
+    // Ekranda çalan şarkı kayar (sanatçı · başlık).
+    expect(screen.getByRole("img", { name: "Lyra · Gece Otoyolu" })).toBeInTheDocument();
+
+    backend.status = playing;
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByRole("img", { name: "Kaset dönüyor" })).toBeInTheDocument();
+    // Torpidonun ışığı Görsel Yönetmen'i izler.
+    await waitFor(
+      () => {
+        const dash = container.querySelector<HTMLElement>(".drive-scene__dash");
+        expect(Number(dash?.style.getPropertyValue("--stage-glow") || 0)).toBeGreaterThan(0.3);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("1–5 tuşları sahne seçer; arama kutusuna yazarken seçmez", async () => {
     render(<App />);
     await act(async () => fireEvent.keyDown(window, { key: "3" }));
     expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
@@ -1027,8 +1170,9 @@ describe("sahneler", () => {
           barPhase: 0.81,
           anticipation: 0.4,
           release: 0,
+          barsConfident: true,
         },
-        texture: { detail: 0.5, motion: 0.5 },
+        texture: { detail: 0.5, motion: 0.6 },
       },
     });
     expect(input.beat).toEqual({ bpm: 128, phase: 0.25 });
@@ -1038,6 +1182,7 @@ describe("sahneler", () => {
       barPhase: 0.81,
       anticipation: 0.4,
       release: 0,
+      motion: 0.6,
     });
     expect(input.energies[0]).toBeCloseTo(1, 5);
   });
@@ -1106,6 +1251,35 @@ describe("senkron", () => {
   });
 });
 
+describe("kör test", () => {
+  it("başlayınca çalan şarkı ekrandan kalkar, bitince kaldığı yerde geri gelir", async () => {
+    backend.desktop = true;
+    backend.pick.mockResolvedValue("C:\\Müzik\\gece.flac");
+    render(<App />);
+    const open = screen.getByRole("button", { name: /Dosya aç/ });
+    await waitFor(() => expect(open).toBeEnabled());
+    backend.status = playing;
+    await act(async () => fireEvent.click(open));
+    const title = { level: 1, name: "Gece Otoyolu" } as const;
+    await screen.findByRole("heading", title);
+
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Kör test" })));
+    backend.abxPicks = ["C:\\Müzik\\gece.flac", "C:\\Müzik\\gece.mp3"];
+    fireEvent.click(screen.getByRole("button", { name: "A dosyasını seç" }));
+    await screen.findByText("gece.flac");
+    fireEvent.click(screen.getByRole("button", { name: "B dosyasını seç" }));
+    await screen.findByText("gece.mp3");
+    fireEvent.click(screen.getByRole("button", { name: "Testi başlat" }));
+    await screen.findByText(/Deneme 1 \/ 16/);
+    await waitFor(() => expect(screen.queryByRole("heading", title)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Testi bitir" }));
+    await screen.findByRole("button", { name: "Testi başlat" });
+    await screen.findByRole("heading", title, { timeout: 2000 });
+    expect(screen.getByRole("button", { name: /Çal/ })).toBeEnabled();
+  });
+});
+
 describe("şarkı haritası ve bilgi kartları", () => {
   it("şeritte bölümleri ve drop'ları gösterir, drop yaklaşınca geri sayar", async () => {
     backend.desktop = true;
@@ -1127,6 +1301,8 @@ describe("şarkı haritası ve bilgi kartları", () => {
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [
         { start: 0, end: 60, energy: 0.3, label: 0 },
@@ -1136,6 +1312,11 @@ describe("şarkı haritası ve bilgi kartları", () => {
       drops: [60, 100],
       dropConfidence: [0.9, 0.85],
       energy: [],
+    };
+    // Şarkı La minör; ikinci bölümde ton Re majöre değişiyor.
+    backend.songKey = {
+      key: { tonic: 9, minor: true, confidence: 0.8, camelot: 8 },
+      sections: [null, { tonic: 2, minor: false, confidence: 0.7, camelot: 10 }, null],
     };
     const { container } = render(<App />);
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
@@ -1153,8 +1334,38 @@ describe("şarkı haritası ve bilgi kartları", () => {
     expect(screen.getByText("17 saniye sonra")).toBeInTheDocument();
     expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
     expect(screen.getByText("FLAC 44,1 → 48 kHz")).toBeInTheDocument();
+    // 83,4 sn ikinci bölümde: tonu değişen bölümün tonu vurgulu gösterilir.
+    const keyChip = await screen.findByText("10B · Re majör");
+    expect(keyChip).toHaveClass("is-on");
+    expect(keyChip).toHaveAttribute("title", expect.stringContaining("ton değişiyor"));
     // Arayüzün vurgu renkleri çalan bölümün temasında (83,4 sn: ikinci bölüm, etiket 1).
     expect(container.querySelector("main")).toHaveAttribute("data-theme", "1");
+  });
+
+  it("aksak ölçü bilgi kartında gruplamasıyla, belirsiz ölçü hiç görünmez", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused", bpm: 120 };
+    const map = {
+      meter: 4,
+      downbeatPhase: 0,
+      grouping: [2, 2, 2, 3],
+      meterConfidence: 0.9,
+      downbeats: [],
+      sections: [{ start: 0, end: 225, energy: 0.5, label: 0 }],
+      drops: [],
+      dropConfidence: [],
+      energy: [],
+    };
+    backend.songMap = map;
+    const { unmount } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByText("120 BPM · 9/8 (2+2+2+3)")).toBeInTheDocument();
+    unmount();
+
+    backend.songMap = { ...map, grouping: [], meterConfidence: 0.2 };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByText("120 BPM")).toBeInTheDocument();
   });
 
   it("güveni düşük drop için sayaç görünmez", async () => {
@@ -1163,6 +1374,8 @@ describe("şarkı haritası ve bilgi kartları", () => {
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [{ start: 0, end: 225, energy: 0.6, label: 0 }],
       // 100. saniyedeki "drop" şüpheli (küçük bir bas artışı): "drop yaklaşıyor" denmez.
@@ -1529,6 +1742,15 @@ describe("işaretleme", () => {
     expect(drops).toEqual([]);
     await waitFor(() => expect(screen.getByText("Kaydedildi")).toBeInTheDocument());
 
+    // Ton seçimi de işaretlerle birlikte kendiliğinden kaydedilir.
+    backend.saveMarks.mockClear();
+    await act(async () =>
+      fireEvent.change(screen.getByLabelText("Ton"), { target: { value: "4m" } }),
+    );
+    await waitFor(() => expect(backend.saveMarks).toHaveBeenCalled(), { timeout: 2000 });
+    expect(backend.saveMarks.mock.calls.at(-1)![3]).toEqual({ tonic: 4, minor: true });
+    await waitFor(() => expect(screen.getByText("Kaydedildi")).toBeInTheDocument());
+
     await act(async () => fireEvent.keyDown(document.body, { code: "Escape", key: "Escape" }));
     expect(screen.getByRole("button", { name: /İşaretlemeye başla/ })).toBeInTheDocument();
     await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
@@ -1586,7 +1808,12 @@ describe("işaretleme", () => {
     };
     await waitFor(
       () =>
-        expect(backend.saveMarks).toHaveBeenCalledWith(playing.track!.path, expect.any(Array), []),
+        expect(backend.saveMarks).toHaveBeenCalledWith(
+          playing.track!.path,
+          expect.any(Array),
+          [],
+          null,
+        ),
       { timeout: 2000 },
     );
     const [, beats] = backend.saveMarks.mock.calls.find(([p]) => p === playing.track!.path)!;
@@ -1610,11 +1837,14 @@ describe("işaretleme", () => {
       savedAt: "",
       beats: Array.from({ length: 12 }, (_, i) => 1 + i * 0.5),
       drops: [61],
+      key: { tonic: 9, minor: true },
       evaluation: null,
     };
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [
         { start: 0, end: 60, energy: 0.3, label: 0 },
@@ -1645,6 +1875,11 @@ describe("işaretleme", () => {
     expect(screen.getByText("%95,1")).toBeInTheDocument();
     expect(screen.getByText("128 / 127,9 BPM")).toBeInTheDocument();
     expect(screen.getByText("1 / 1")).toBeInTheDocument(); // drop isabeti
+    // Kayıtlı ton seçili; ölçüm programın tonuyla karşılaştırır.
+    expect(screen.getByLabelText("Ton")).toHaveValue("9m");
+    expect(
+      screen.getByText("8B · Do majör / 8A · La minör — paralel ton (aynı Camelot sayısı) ✓"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("img", {
         name: "Şarkı haritası: 2 bölüm, programın bulduğu 1 drop, sizin 1 drop işaretiniz",
@@ -1655,7 +1890,12 @@ describe("işaretleme", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Hepsini sil" })));
     expect(screen.queryByText("%87,3")).not.toBeInTheDocument();
     await waitFor(
-      () => expect(backend.saveMarks).toHaveBeenLastCalledWith(expect.any(String), [], []),
+      () =>
+        // Ton işareti silinmez: işaretler silinse de seçilen ton kalır.
+        expect(backend.saveMarks).toHaveBeenLastCalledWith(expect.any(String), [], [], {
+          tonic: 9,
+          minor: true,
+        }),
       {
         timeout: 2000,
       },

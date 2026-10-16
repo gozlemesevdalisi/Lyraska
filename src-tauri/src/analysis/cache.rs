@@ -22,6 +22,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use super::beats::BeatGrid;
+use super::key::{KeyAnalysis, MusicalKey, PITCH_CLASSES};
 use super::levels::VALUES_PER_FRAME;
 use super::spectrogram::{SavedAnalysis, BANDS};
 use super::structure::SongMap;
@@ -39,6 +40,8 @@ use crate::audio::loudness::Loudness;
 ///   şarkı **yeniden çözülmez**, şarkı başına milisaniyeler sürer.
 /// - `loudness`: ses yüksekliği (EBU R128) ve gerçek tepe. Şarkı yeniden çözülür (FFT'siz).
 /// - `bass`: bas tepeleri (bas düğmesinin akıllı koruması). Şarkı yeniden çözülür (FFT'siz).
+/// - `key`: ton (kroma ve tahmin). Şarkı yeniden çözülür (uzun pencereli tek FFT); bant
+///   kareleri ve ritim yeniden hesaplanmaz.
 ///
 /// Tek sürüm döneminin geçmişi (`ANALYSIS_VERSION`): 2 kareler her örnekleme hızında tam
 /// 1/60 sn, vuruş gecikmesi hıza göre düşülüyor; 3 ses yüksekliği; 4 bas tepeleri; 5 bas
@@ -49,15 +52,17 @@ pub struct PartVersions {
     pub rhythm: i64,
     pub loudness: i64,
     pub bass: i64,
+    pub key: i64,
 }
 
 /// Parçaların şu anki sürümleri.
 pub const VERSIONS: PartVersions = PartVersions {
     spectrum: 1,
-    // 2: şarkı haritasında drop güveni.
-    rhythm: 2,
+    // 2: şarkı haritasında drop güveni. 3: aksak ölçü (9/8, 7/8, 5/8) ve ölçü güveni.
+    rhythm: 3,
     loudness: 1,
     bass: 1,
+    key: 1,
 };
 
 /// Eski tek sürüm sütununa (`version`) yazılan değer. Parça sürümlerinden önceki program
@@ -71,17 +76,25 @@ pub struct StaleParts {
     pub rhythm: bool,
     pub loudness: bool,
     pub bass: bool,
+    pub key: bool,
 }
 
 impl StaleParts {
     pub fn any(self) -> bool {
-        self.rhythm || self.loudness || self.bass
+        self.rhythm || self.loudness || self.bass || self.key
     }
 
-    /// Şarkının yeniden çözülmesi gerekir mi (ses yüksekliği ya da bas tepeleri eski)?
+    /// Şarkının yeniden çözülmesi gerekir mi (ses yüksekliği, bas tepeleri ya da ton eski)?
     pub fn needs_decoding(self) -> bool {
-        self.loudness || self.bass
+        self.loudness || self.bass || self.key
     }
+}
+
+/// Ton tahmininin saklanan hâli (`musical_key` sütunu, JSON).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedKey {
+    key: Option<MusicalKey>,
+    tuning: f32,
 }
 
 /// Önbellekten okunan kayıt. Eskimiş parçalar `saved` içinde boştur (`None`) ve `stale`
@@ -187,7 +200,8 @@ impl AnalysisCache {
         let row = conn
             .query_row(
                 "SELECT frames, levels, meters, onset, beats, song_map, loudness_lufs, true_peak_dbtp,
-                        bass_peaks, sample_rate, rhythm_version, loudness_version, bass_version
+                        bass_peaks, sample_rate, rhythm_version, loudness_version, bass_version,
+                        chroma, musical_key, key_version
                  FROM analyses
                  WHERE path = ?1 AND file_size = ?2 AND modified = ?3 AND spectrum_version = ?4",
                 params![
@@ -208,10 +222,13 @@ impl AnalysisCache {
                         peak: r.get(7)?,
                         bass_peaks: r.get(8)?,
                         sample_rate: r.get(9)?,
+                        chroma: r.get(13)?,
+                        musical_key: r.get(14)?,
                         stale: StaleParts {
                             rhythm: r.get::<_, i64>(10)? != VERSIONS.rhythm,
                             loudness: r.get::<_, i64>(11)? != VERSIONS.loudness,
                             bass: r.get::<_, i64>(12)? != VERSIONS.bass,
+                            key: r.get::<_, i64>(15)? != VERSIONS.key,
                         },
                     })
                 },
@@ -241,6 +258,21 @@ impl AnalysisCache {
             .bass_peaks
             .as_ref()
             .and_then(|b| serde_json::to_string(b).ok());
+        // Ton parçası yoksa (eski kayıt yeniden hesaplanamadı) sürümü 0 yazılır: sonra hesaplanır.
+        let key = saved.key.as_ref();
+        let chroma = key.map(|k| deflate(&k.chroma.concat()));
+        let musical_key = key.and_then(|k| {
+            serde_json::to_string(&SavedKey {
+                key: k.key,
+                tuning: k.tuning,
+            })
+            .ok()
+        });
+        let camelot = key
+            .and_then(|k| k.key)
+            .filter(MusicalKey::is_confident)
+            .map(|k| k.camelot_code());
+        let key_version = if key.is_some() { VERSIONS.key } else { 0 };
         let row = params![
             path.to_string_lossy(),
             stamp.size as i64,
@@ -261,14 +293,19 @@ impl AnalysisCache {
             VERSIONS.rhythm,
             VERSIONS.loudness,
             VERSIONS.bass,
+            chroma,
+            musical_key,
+            camelot,
+            key_version,
         ];
         self.lock()?.execute(
             "INSERT OR REPLACE INTO analyses
                  (path, file_size, modified, version, frames, bpm, levels, meters, onset, beats,
                   song_map, loudness_lufs, true_peak_dbtp, bass_peaks, sample_rate,
-                  spectrum_version, rhythm_version, loudness_version, bass_version)
+                  spectrum_version, rhythm_version, loudness_version, bass_version,
+                  chroma, musical_key, camelot, key_version)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19)",
+                     ?18, ?19, ?20, ?21, ?22, ?23)",
             row,
         )?;
         Ok(())
@@ -299,14 +336,21 @@ impl AnalysisCache {
              LEFT JOIN analyses a ON a.path = t.path AND a.file_size = t.file_size
                  AND a.modified = t.modified
              WHERE a.path IS NULL OR a.spectrum_version != ?1 OR a.rhythm_version != ?2
-                 OR a.loudness_version != ?3 OR a.bass_version != ?4
+                 OR a.loudness_version != ?3 OR a.bass_version != ?4 OR a.key_version != ?5
              ORDER BY (a.path IS NULL OR a.spectrum_version != ?1 OR a.loudness_version != ?3
-                       OR a.bass_version != ?4),
+                       OR a.bass_version != ?4 OR a.key_version != ?5),
                       t.sort_key
-             LIMIT ?5",
+             LIMIT ?6",
         )?;
         let v = VERSIONS;
-        let values = params![v.spectrum, v.rhythm, v.loudness, v.bass, limit as i64];
+        let values = params![
+            v.spectrum,
+            v.rhythm,
+            v.loudness,
+            v.bass,
+            v.key,
+            limit as i64
+        ];
         let rows = stmt.query_map(values, |r| {
             Ok((
                 PathBuf::from(r.get::<_, String>(0)?),
@@ -332,6 +376,8 @@ struct Row {
     peak: Option<f64>,
     bass_peaks: Option<String>,
     sample_rate: Option<u32>,
+    chroma: Option<Vec<u8>>,
+    musical_key: Option<String>,
     stale: StaleParts,
 }
 
@@ -364,11 +410,36 @@ impl Row {
                 .bass_peaks
                 .filter(|_| !stale.bass)
                 .and_then(|j| serde_json::from_str::<BassPeaks>(&j).ok()),
+            key: if stale.key {
+                None
+            } else {
+                Some(decode_key(
+                    self.chroma.as_deref(),
+                    self.musical_key.as_deref(),
+                )?)
+            },
             sample_rate: self.sample_rate,
         };
         (saved.is_consistent() && saved.frames() as i64 == self.frames)
             .then_some(CachedAnalysis { saved, stale })
     }
+}
+
+/// Saklanan ton parçasını çözer; bozuksa `None` (kayıt baştan analiz edilir).
+fn decode_key(chroma: Option<&[u8]>, musical_key: Option<&str>) -> Option<KeyAnalysis> {
+    let flat = inflate(chroma?)?;
+    if flat.len() % PITCH_CLASSES != 0 {
+        return None;
+    }
+    let saved: SavedKey = serde_json::from_str(musical_key?).ok()?;
+    Some(KeyAnalysis {
+        chroma: flat
+            .chunks_exact(PITCH_CLASSES)
+            .map(|c| std::array::from_fn(|i| c[i]))
+            .collect(),
+        key: saved.key,
+        tuning: saved.tuning,
+    })
 }
 
 /// Kareleri bir öncekinden farka çevirir (taşmalı çıkarma): ardışık kareler benzer
@@ -418,6 +489,8 @@ mod tests {
             song_map: Some(SongMap {
                 meter: 4,
                 downbeat_phase: 1,
+                grouping: Vec::new(),
+                meter_confidence: 1.0,
                 downbeats: vec![0.72],
                 sections: vec![Section {
                     start: 0.0,
@@ -436,6 +509,18 @@ mod tests {
             bass_peaks: Some(BassPeaks {
                 shelf_rise_db: [0.2, 0.5, 1.25, 2.5, 4.0, 6.5, 8.75, 11.0, 13.5],
                 octave_band_db: -7.5,
+            }),
+            key: Some(KeyAnalysis {
+                chroma: (0..frames / 60 + 1)
+                    .map(|s| std::array::from_fn(|i| ((s * 31 + i * 17) % 256) as u8))
+                    .collect(),
+                key: Some(MusicalKey {
+                    tonic: 9,
+                    minor: true,
+                    confidence: 0.75,
+                    camelot: 8,
+                }),
+                tuning: -0.125,
             }),
             sample_rate: Some(44_100),
         }
@@ -613,6 +698,11 @@ mod tests {
             song_map: None,
             loudness: None,
             bass_peaks: None,
+            key: Some(KeyAnalysis {
+                chroma: vec![[0; 12]],
+                key: None,
+                tuning: 0.0,
+            }),
             ..sample(30)
         };
         cache.store(path, STAMP, &saved).unwrap();

@@ -26,8 +26,24 @@ export function emptyMeter(bands: number): MeterState {
   };
 }
 
+/** Tepe noktalarının davranışı (sahne ışığı değiştirebilir; varsayılan gerçek ölçer gibi). */
+export interface PeakBallistics {
+  holdSeconds: number;
+  fallPerSecond: number;
+}
+
+export const DEFAULT_PEAKS: PeakBallistics = {
+  holdSeconds: PEAK_HOLD_SECONDS,
+  fallPerSecond: PEAK_FALL_PER_SECOND,
+};
+
 /** Ölçeri `dt` saniye ilerletir; `targets` o anki ölçülen seviyelerdir (0..1). */
-export function stepMeter(prev: MeterState, targets: number[], dt: number): MeterState {
+export function stepMeter(
+  prev: MeterState,
+  targets: number[],
+  dt: number,
+  peaks: PeakBallistics = DEFAULT_PEAKS,
+): MeterState {
   const step = Math.max(0, Math.min(dt, 0.25)); // sekme/uyku sonrası büyük sıçramaları sınırla
   const next = emptyMeter(prev.levels.length);
   for (let i = 0; i < prev.levels.length; i++) {
@@ -39,12 +55,12 @@ export function stepMeter(prev: MeterState, targets: number[], dt: number): Mete
     const hold = prev.holds[i] ?? 0;
     if (next.levels[i]! >= peak) {
       next.peaks[i] = next.levels[i]!;
-      next.holds[i] = PEAK_HOLD_SECONDS;
+      next.holds[i] = peaks.holdSeconds;
     } else if (hold > 0) {
       next.peaks[i] = peak;
       next.holds[i] = Math.max(0, hold - step);
     } else {
-      next.peaks[i] = Math.max(next.levels[i]!, peak - PEAK_FALL_PER_SECOND * step);
+      next.peaks[i] = Math.max(next.levels[i]!, peak - peaks.fallPerSecond * step);
       next.holds[i] = 0;
     }
   }

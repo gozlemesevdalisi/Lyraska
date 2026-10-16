@@ -2,8 +2,8 @@
 
 **Durum:** araştırma ve ölçüm tamamlandı. R1 (bölüm 7): klasik yol kapıdan geçmedi. R2 (bölüm 8): öğrenmeli önsel de
 kapıdan geçmedi ve nedeni ölçüldü (bit akışı deliklerin ince yapısını taşımıyor). **MP3 kolu kapandı.** Programda
-Veritas kodu yok. Kalan öneri kör dinleme aracı (ABX); karar proje sahibinin (bkz. [ROADMAP.md](ROADMAP.md), Faz 3,
-"Retriever").
+Veritas kodu yok. Kör dinleme aracı (ABX) 0.0.40'ta programa girdi (çekmecede **Kör test**); sıradaki karar proje
+sahibinin (bkz. [ROADMAP.md](ROADMAP.md), Faz 3, "Retriever").
 
 Bu belge üç şeyi bir arada tutar:
 
@@ -307,8 +307,8 @@ Her adımın sonunda ölçülebilir bir kapı var. Kapı geçilmezse durulur ve 
 deneyelim" ile ürüne girmez.
 
 > **R1 ve R2 sonrası güncelleme (bölüm 7 ve 8):** F1 klasik önsellerle (R1) ve öğrenmeli önselle (R2) denendi, ikisi de
-> kapıdan geçmedi. F0 (Rust bit akışı ayrıştırıcı) ve F3–F4 bu yüzden yapılmaz; kör dinleme aracı (F2'nin aracı) tek
-> başına değerli kalır ve proje sahibinin kararını bekler.
+> kapıdan geçmedi. F0 (Rust bit akışı ayrıştırıcı) ve F3–F4 bu yüzden yapılmaz. Kör dinleme aracı (F2'nin aracı)
+> 0.0.40'ta eklendi (çekmecede **Kör test**); tek başına değerlidir.
 
 - **F0, bit akışı ve kutular (Rust).** MP3 bit akışı ayrıştırıcı (yan bilgi, ölçek çarpanları, Huffman) → q, Δ,
   blok türü, M/S; LAME etiketini okuma; kutu kuralı (adj43 + bant kuralı; tanınmayan kodlayıcıda genişletilmiş kutu);
@@ -659,8 +659,9 @@ MOS; parantez içinde SNR farkı. Kutu dışı oranı her satırda 0 (ölçüld�
   (R2: +0,006). **Veritas'ın MP3 kolu burada kapanır;** yeniden açılması için yeni bir bilgi kaynağı gerekir (aynı
   şarkının ikinci bir kopyası, bölüm 2.4; ya da kayıpsız bir referans), genel bir önsel değil.
 - Öneri (proje sahibinin kararı):
-  1. **Kör dinleme aracı (ABX)** öncelikli kalır: ses mühendisiyle tartışmayı kulakla bitirir ve bu belgenin
-     "MOS modeldir" sınırını da kapatır.
+  1. **Kör dinleme aracı (ABX)** artık programda (0.0.40, çekmecede **Kör test**): ses mühendisiyle tartışmayı kulakla
+     bitirir ve bu belgenin "MOS modeldir" sınırını da kapatır. İsteyen, bu araştırmanın örneklerini de onunla
+     dinleyebilir (`r2_degerlendir.py` çıktıları WAV olarak yazdırılabilir; bu sürümde yazdırılmadı).
   2. Yol haritasındaki Retriever maddesi "araştırıldı, kapıdan geçmedi" diye işaretlenir; AAC (F4) için aynı deney
      tekrarlanmadan karar verilmez ama MP3 sonucu beklentiyi düşürür.
   3. Proje sahibinin kendi kayıpsız arşiviyle tek bir doğrulama (kendi bilgisayarında): bu belgenin sentetik müzik

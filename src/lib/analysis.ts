@@ -12,6 +12,15 @@ export function bpmLabel(track: { bpm: number | null; analyzed: boolean }): stri
 }
 
 /**
+ * Listedeki ton sütunu: Camelot kodu (ör. "8A"); analiz edildiği hâlde tonu belirsiz şarkıda
+ * "—", tonu henüz analiz edilmemişte boş.
+ */
+export function keyCell(track: { key: string | null; analyzed: boolean }): string {
+  if (track.key) return track.key;
+  return track.analyzed ? "—" : "";
+}
+
+/**
  * Analiz ilerledikçe listenin (BPM sütunu) ne zaman tazeleneceği: her şarkıda
  * değil, kütüphanenin yaklaşık %2'si analiz edildikçe ve analiz bitince. Büyük
  * kütüphanede liste her birkaç saniyede baştan okunmasın diye.

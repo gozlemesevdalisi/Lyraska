@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::evaluate::BeatEvaluation;
+use super::key::MarkedKey;
 use crate::audio::decode::TrackInfo;
 
 /// Dosya biçiminin sürümü (alanlar değişirse artar).
@@ -29,6 +30,9 @@ pub struct Annotation {
     pub beats: Vec<f64>,
     /// İşaretlenen droplar (saniye, artan).
     pub drops: Vec<f64>,
+    /// Kullanıcının seçtiği ton (eski dosyalarda yok).
+    #[serde(default)]
+    pub key: Option<MarkedKey>,
     /// Son "doğruluğu ölç" sonucu.
     #[serde(default)]
     pub evaluation: Option<BeatEvaluation>,
@@ -62,7 +66,12 @@ impl AnnotatedTrack {
 }
 
 impl Annotation {
-    pub fn new(track: AnnotatedTrack, beats: Vec<f64>, drops: Vec<f64>) -> Self {
+    pub fn new(
+        track: AnnotatedTrack,
+        beats: Vec<f64>,
+        drops: Vec<f64>,
+        key: Option<MarkedKey>,
+    ) -> Self {
         Self {
             format: FORMAT,
             app_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -70,6 +79,7 @@ impl Annotation {
             track,
             beats: clean_times(beats),
             drops: clean_times(drops),
+            key: key.filter(|k| k.tonic < 12),
             evaluation: None,
         }
     }
@@ -243,6 +253,10 @@ mod tests {
             track("C:\\Müzik\\gece.flac"),
             vec![2.0, 1.5, f64::NAN, -1.0, 2.5],
             vec![30.0],
+            Some(MarkedKey {
+                tonic: 9,
+                minor: true,
+            }),
         );
         assert_eq!(annotation.beats, vec![1.5, 2.0, 2.5], "sıralı ve temiz");
         let path = store.save(&annotation).unwrap();
@@ -255,6 +269,13 @@ mod tests {
         assert_eq!(store.load(&annotation.track), Some(annotation.clone()));
         assert_eq!(store.load(&track("C:\\Müzik\\yok.flac")), None);
         assert!(AnnotationStore::unavailable().save(&annotation).is_err());
+
+        // Tonsuz eski dosyalar da okunur.
+        let mut old = serde_json::to_value(&annotation).unwrap();
+        old.as_object_mut().unwrap().remove("key");
+        let old: Annotation = serde_json::from_value(old).unwrap();
+        assert_eq!(old.key, None);
+        assert_eq!(old.beats, annotation.beats);
     }
 
     #[test]
@@ -265,7 +286,12 @@ mod tests {
         let store = AnnotationStore::new(dir.clone());
         let before = track("C:\\Müzik\\gece.flac");
         store
-            .save(&Annotation::new(before.clone(), vec![1.0, 1.5], vec![]))
+            .save(&Annotation::new(
+                before.clone(),
+                vec![1.0, 1.5],
+                vec![],
+                None,
+            ))
             .unwrap();
 
         let after = AnnotatedTrack {
@@ -278,7 +304,12 @@ mod tests {
 
         // Yeni kayıt yeni ada yazılır, eski dosya kalmaz (iki kopya karışmasın).
         store
-            .save(&Annotation::new(after.clone(), vec![1.0, 1.5, 2.0], vec![]))
+            .save(&Annotation::new(
+                after.clone(),
+                vec![1.0, 1.5, 2.0],
+                vec![],
+                None,
+            ))
             .unwrap();
         let files: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
         assert_eq!(files.len(), 1, "{files:?}");

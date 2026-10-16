@@ -5,6 +5,7 @@ import {
   getAnnotation,
   saveAnnotation,
   type BeatEvaluation,
+  type MarkedKey,
   type SongMap,
 } from "../lib/backend";
 import {
@@ -30,6 +31,7 @@ interface PendingMarks {
   path: string;
   beats: number[];
   drops: number[];
+  key: MarkedKey | null;
   change: number;
 }
 
@@ -46,6 +48,9 @@ export interface MarkerControls {
   evaluating: boolean;
   /** Programın çıkardığı şarkı haritası (bölümler, droplar); analiz bitmediyse `null`. */
   songMap: SongMap | null;
+  /** Kullanıcının seçtiği ton (seçilmediyse `null`). */
+  key: MarkedKey | null;
+  setKey: (key: MarkedKey | null) => void;
   error: string | null;
   mark: (kind: MarkKind) => void;
   undo: () => void;
@@ -70,6 +75,7 @@ export function useMarker(
   audioDelayMs = 0,
 ): MarkerControls {
   const [marks, setMarks] = useState<Marks>(EMPTY_MARKS);
+  const [key, setKeyState] = useState<MarkedKey | null>(null);
   const [recording, setRecordingState] = useState(false);
   const [lastTap, setLastTap] = useState<MarkerControls["lastTap"]>(null);
   const [savedFile, setSavedFile] = useState<string | null>(null);
@@ -91,6 +97,7 @@ export function useMarker(
   if (loadedPath !== trackPath) {
     setLoadedPath(trackPath);
     setMarks(EMPTY_MARKS);
+    setKeyState(null);
     setEvaluation(null);
     setSavedFile(null);
     setDirty(false);
@@ -106,6 +113,7 @@ export function useMarker(
         setMarks((current) =>
           current.history.length === 0 ? marksFrom(saved.beats, saved.drops) : current,
         );
+        setKeyState((current) => current ?? saved.key);
         setEvaluation(saved.evaluation);
         // Diskteki işaretler kayıtlı sayılır: değiştirmeden de ölçülebilir.
         setSavedFile((current) => current ?? "kayıtlı");
@@ -120,9 +128,15 @@ export function useMarker(
   useEffect(() => {
     pending.current =
       dirty && trackPath
-        ? { path: trackPath, beats: marks.beats, drops: marks.drops, change: changeCount.current }
+        ? {
+            path: trackPath,
+            beats: marks.beats,
+            drops: marks.drops,
+            key,
+            change: changeCount.current,
+          }
         : null;
-  }, [dirty, marks, trackPath]);
+  }, [dirty, marks, key, trackPath]);
 
   // Şarkı değişince (boşluksuz geçiş, "Sonraki") kaydedilmemiş işaretler önceki
   // şarkının dosyasına hemen yazılır; yoksa şarkının son vuruşları kaybolurdu.
@@ -132,7 +146,7 @@ export function useMarker(
       dirtySince.current = null;
       if (!unsaved) return;
       pending.current = null;
-      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops).catch((e) =>
+      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops, unsaved.key).catch((e) =>
         setError(errorMessage(e)),
       );
     },
@@ -152,7 +166,7 @@ export function useMarker(
       const unsaved = pending.current;
       if (!unsaved || unsaved.path !== trackPath) return;
       setSaving(true);
-      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops)
+      saveAnnotation(unsaved.path, unsaved.beats, unsaved.drops, unsaved.key)
         .then((file) => {
           setSavedFile(file);
           setError(null);
@@ -168,16 +182,30 @@ export function useMarker(
         .finally(() => setSaving(false));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [dirty, marks, trackPath]);
+  }, [dirty, marks, key, trackPath]);
 
-  const change = useCallback((next: (m: Marks) => Marks) => {
-    setMarks(next);
+  const touch = useCallback(() => {
     setDirty(true);
     changeCount.current += 1;
     dirtySince.current ??= performance.now();
     setSavedFile(null);
     setEvaluation(null); // eski sonuç artık bu işaretlere ait değil
   }, []);
+  const change = useCallback(
+    (next: (m: Marks) => Marks) => {
+      setMarks(next);
+      touch();
+    },
+    [touch],
+  );
+  /** Ton seçimi de işaretler gibi kendiliğinden kaydedilir. */
+  const setKey = useCallback(
+    (next: MarkedKey | null) => {
+      setKeyState(next);
+      touch();
+    },
+    [touch],
+  );
 
   /** Oynatıcının konumundan (saniye) duyulan an: ses aygıtının gecikmesi düşülür. */
   const delaySecs = (Number.isFinite(audioDelayMs) ? audioDelayMs : 0) / 1000;
@@ -243,6 +271,8 @@ export function useMarker(
     evaluation,
     evaluating,
     songMap,
+    key,
+    setKey,
     error,
     mark,
     undo,

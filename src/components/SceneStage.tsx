@@ -1,3 +1,4 @@
+import { DriveScene } from "./DriveScene";
 import { HighwayScene } from "./HighwayScene";
 import { SkyScene } from "./SkyScene";
 import { SpectrumDemo } from "./SpectrumDemo";
@@ -17,16 +18,27 @@ export interface SceneStageProps {
   safe: boolean;
   /** Gece göğünün manzarası. */
   skyLook: SkyLook;
+  /** Çalan şarkının adı (gece sürüşünde teybin ekranında kayar). */
+  title?: string | null;
 }
 
 /** Tüm pencereyi kaplayan görsel sahne. Sahne değişince yenisi yavaşça belirir. */
-export function SceneStage({ scene, playing, hasTrack, safe, skyLook }: SceneStageProps) {
+export function SceneStage({
+  scene,
+  playing,
+  hasTrack,
+  safe,
+  skyLook,
+  title = null,
+}: SceneStageProps) {
   return (
     <div className="stage" data-scene={scene}>
       {scene === "vu" ? (
-        <VuScene playing={playing} />
+        <VuScene playing={playing} safe={safe} />
       ) : scene === "highway" ? (
         <HighwayScene playing={playing} safe={safe} />
+      ) : scene === "drive" ? (
+        <DriveScene playing={playing} safe={safe} title={title} />
       ) : scene === "spectrum" ? (
         <div className="spectrum-scene">
           {/* Şarkı açıkken gerçek spektrum; boştayken gösteri animasyonu. */}
@@ -35,6 +47,7 @@ export function SceneStage({ scene, playing, hasTrack, safe, skyLook }: SceneSta
               bands={SPECTRUM_BANDS}
               rows={SPECTRUM_ROWS}
               playing={playing}
+              safe={safe}
               className="vfd vfd--primary"
             />
           ) : (

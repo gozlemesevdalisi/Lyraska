@@ -1,18 +1,19 @@
 /** Ekrandaki görsel sahneler. */
-export type Scene = "sky" | "highway" | "vu" | "spectrum";
+export type Scene = "sky" | "highway" | "vu" | "spectrum" | "drive";
 
-/** Üst çubuktaki sırayla; 1–4 tuşları da bu sırayı izler. */
+/** Üst çubuktaki sırayla; 1–5 tuşları da bu sırayı izler. */
 export const SCENES: { id: Scene; name: string }[] = [
   { id: "sky", name: "Gece göğü" },
   { id: "highway", name: "Gece otoyolu" },
   { id: "vu", name: "VU ibreleri" },
   { id: "spectrum", name: "Spektrum" },
+  { id: "drive", name: "Gece sürüşü" },
 ];
 
 const STORAGE_KEY = "lyraska.scene";
 const DEFAULT_SCENE: Scene = "sky";
 
-/** Klavyede 1–4 tuşunun seçtiği sahne; başka tuşta `null`. */
+/** Klavyede 1–5 tuşunun seçtiği sahne; başka tuşta `null`. */
 export function sceneForKey(key: string): Scene | null {
   const index = /^[1-9]$/.test(key) ? Number(key) - 1 : -1;
   return SCENES[index]?.id ?? null;

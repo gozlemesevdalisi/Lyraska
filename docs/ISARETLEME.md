@@ -1,7 +1,7 @@
-# İşaretleme aracı (beat ve drop)
+# İşaretleme aracı (beat, drop ve ton)
 
-Programın beat ve drop bulmasını **gerçek şarkılarda** ölçmek için kullanılır. Yol haritasındaki hedef:
-beat F-ölçüsü en az **%80**.
+Programın beat, drop ve ton bulmasını **gerçek şarkılarda** ölçmek için kullanılır. Yol haritasındaki hedefler:
+beat F-ölçüsü en az **%80**; ton isabeti (aynı ton ya da Camelot komşusu) en az **%80**.
 
 ## Nasıl kullanılır
 
@@ -13,12 +13,17 @@ beat F-ölçüsü en az **%80**.
    - yanlış bastıysanız `Geri` (Backspace) son işareti siler,
    - bitirmek için `Esc` (ya da düğme).
 4. İşaretler siz bastıkça kendiliğinden kaydedilir ("Kaydedildi" yazısı).
+   Şarkının tonunu biliyorsanız (akor kâğıdından ya da notasından) **Ton** listesinden seçin; o da kaydedilir.
+   Bilmiyorsanız "Bilmiyorum" kalsın.
 5. En az 8 beat işaretledikten sonra **Doğruluğu ölç**: program şarkıyı analiz edip kendi bulduğu vuruşları
    sizinkilerle karşılaştırır. Sonuç da dosyaya yazılır.
 
 **Bluetooth kulaklık ya da hoparlörle** işaretleyecekseniz önce **Senkron** sekmesinde "Ölçümü başlat" ile ses
 gecikmesini ölçün. Bu tür aygıtlar sesi 150–250 ms geç çalar; program ölçülen gecikmeyi işaretlerden düşer
 (0.0.33'ten önce düşmüyordu: o sürümlerle Bluetooth'ta yapılan işaretler geç kalmış olabilir).
+
+**Aksak usullerde** (9/8, 7/8, 5/8) her **uzun ve kısa vuruşta** basın: 9/8'de (2+2+2+3) ölçüde 4 kez, sonuncusu
+biraz geç gelir. Program da aksak şarkıda vuruşları böyle sayar.
 
 İpucu: Şarkının tamamını işaretlemek gerekmez; 30–60 saniyelik bir bölüm de işe yarar. Farklı türlerden
 (pop, rock, Türk sanat/halk, elektronik, rap, akustik) şarkılar en faydalısıdır.
@@ -31,6 +36,11 @@ gecikmesini ölçün. Bu tür aygıtlar sesi 150–250 ms geç çalar; program �
 | Parmak gecikmesi          | Tuşa vuruştan ortalama ne kadar geç (+) ya da erken (−) bastığınız             |
 | Gecikme düzeltilince      | Parmak gecikmeniz çıkarıldıktan sonraki doğruluk (asıl bakılacak sayı)         |
 | Tempo (program / siz)     | Programın ve sizin vuruşlarınızdan çıkan BPM; biri ötekinin 2 katıysa söyleyin |
+| Ton (program / siz)       | Programın bulduğu ton ve sizin seçtiğiniz; ✓ aynı ton ya da Camelot komşusu    |
+
+Ton sonucundaki sözcükler: **aynı ton**; **komşu ton** (Camelot çarkında bir yan, ör. 8A ↔ 9A); **paralel ton**
+(aynı notalar, ör. La minör ↔ Do majör); **aynı adlı, öteki kip** (ör. La minör ↔ La majör; isabet sayılmaz);
+**farklı ton**. "Güveni düşük" yazıyorsa program o tonu ekranda göstermez.
 
 ## Dosyalar nerede, bana nasıl gönderilir
 

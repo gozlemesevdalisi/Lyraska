@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.39 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.44 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -137,6 +137,22 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Neye bakılır: "Önceki"de ilk şarkı çalar, altta "1 / …" yazar ve şarkı bitince ikinciye geçer. İkinci denemede son
   çift tıkladığınız şarkı çalar ve sıra yazısı ona göredir.
 
+**B9. Kör test (ABX, 0.0.40)**
+
+- Önce: aynı şarkının iki sürümü gerekir, ör. bir FLAC ve ondan yapılmış bir MP3 (ya da iki farklı MP3: 128 ve
+  320 kbps). İkisi aynı kayıttan olmalı.
+- Nasıl: çekmecede **Kör test** sekmesini açın. **A** ve **B** satırlarındaki **Seç** ile iki dosyayı seçin;
+  **Testi başlat**. Kulaklıkla **A**, **B** ve **X**'i istediğiniz kadar dinleyin, **X = A** ya da **X = B** deyin.
+  16 deneme sürer; istediğiniz an **Testi bitir** ile çıkabilirsiniz.
+- Neye bakılır:
+  - A, B ve X arasında geçerken ses **aynı yerden** sürer; tık ya da boşluk yok, ses yüksekliği sıçramaz.
+  - Bölümün sonunda ses yumuşakça başa döner.
+  - Üstte "seviye farkı … dB eşitlendi · kayma … ms düzeltildi" yazabilir; bu normaldir.
+  - Sonunda kaç doğru yaptığınız ve bunun şansla çıkma olasılığı yazar.
+  - Test bitince ya da **Testi bitir**'e basınca önceden çalan şarkı kaldığı yerde (duraklatılmış) geri gelir.
+  - İki farklı şarkı seçerseniz "aynı kayda benzemiyor" der, test başlamaz; çalan şarkı kesilmez.
+- Bildirin: hangi iki dosyayla denediniz ve sonuç (ör. "FLAC – MP3 320: 16'da 9, ayırt edilemedi").
+
 ## C. Ekolayzer ve bas
 
 **C1. Bas ve Derinlik (0.0.29)**
@@ -173,7 +189,7 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 **D2. Akıcılık (0.0.33)**
 
-- Nasıl: Büyük kütüphaneyle bir şarkı çalarken **Kütüphane** panelini açık bırakın; sahneleri 1–4 tuşlarıyla
+- Nasıl: Büyük kütüphaneyle bir şarkı çalarken **Kütüphane** panelini açık bırakın; sahneleri 1–5 tuşlarıyla
   değiştirin.
 - Neye bakılır: görüntü takılmadan akar (saniyede 60 kare); panel açıkken de kapalıyken de aynı.
 
@@ -197,11 +213,14 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Neye bakılır: nakarata geçince gökyüzüyle birlikte sürgülerin ve ışıkların rengi 2–3 saniyede yumuşakça değişir;
   ani parlama yok.
 
-**D6. Diğer sahneler ve Görsel Yönetmen**
+**D6. Diğer sahneler ve Görsel Yönetmen (VU ve spektrum 0.0.41)**
 
 - Nasıl: **Gece otoyolu** (2), **VU ibreleri** (3), **Spektrum** (4) sahnelerinde drop'lu bir şarkı çalın.
 - Neye bakılır: otoyolda çizgiler vuruşla, lambalar ölçü başıyla akar; drop'tan önce ufka çekilip drop'ta açılır.
   VU ibreleri ve spektrum sesle birlikte oynar.
+- VU ve spektrumda ölçerlerin arkasında hafif bir ışık halesi var: rengi alttaki şeritte o bölümün rengi; sakin
+  bölümde kısık, yoğun bölümde canlı. Drop'tan önce hale daralır (spektrumda tepe noktaları havada asılı kalır),
+  drop'ta açılır. Değişimler yumuşak olmalı; ani parlama yok.
 
 **D7. Epilepsi güvenli modu ve "animasyonları azalt"**
 
@@ -214,6 +233,16 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 - Nasıl: Çalarken fareye ve klavyeye birkaç saniye dokunmayın.
 - Neye bakılır: düğmeler ve yazılar çekilir, yalnızca sahne kalır; fare kıpırdayınca geri gelir.
+
+**D9. Gece sürüşü (0.0.44)**
+
+- Nasıl: Üstteki **Gece sürüşü** düğmesine (ya da 5 tuşuna) basın, bir şarkı çalın; fareye birkaç saniye dokunmayın
+  (sinema görünümü).
+- Neye bakılır: ön camdan gece otoyolu (çizgiler vuruşla, lambalar ölçü başıyla); torpidoda teyp: kasetin
+  makaraları çalarken döner, nokta matris ekranda sanatçı ve şarkı adı kayar, altında spektrum; iki VU ibresi sesle
+  oynar; çal düğmesinin halkası yanar. Teyp, düğmeler ve başlık görünürken kısık durur, sinema görünümünde yavaşça
+  belirir. Hiçbir yerde marka adı ya da logosu yok. Ani parlama yok.
+- Bildirin: beğendiniz mi, değişmesini istediğiniz bir şey var mı (renk, teybin boyutu, kaset)?
 
 ## E. Senkron ve işaretleme
 
@@ -234,6 +263,26 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
   **Doğruluğu ölç**. Bluetooth kullanıyorsanız önce E2'yi yapın. Ayrıntılar: [ISARETLEME.md](ISARETLEME.md).
 - Neye bakılır: "Gecikme düzeltilince" doğruluğu %80 ve üstü hedef. Sonucu ve şarkının türünü bildirin.
 
+**E4. Ton (Camelot, 0.0.42)**
+
+- Nasıl: Kütüphanede birkaç dakika bekleyin (yeni sürümde şarkılar bir kez daha arka planda çözülür; bu sırada
+  müzik takılmamalı). **Ton** sütununa bakın. Tonunu bildiğiniz birkaç şarkı çalın; sağ alttaki bilgi kartında
+  "8A · La minör" gibi bir yazı çıkar. **İşaretle** sekmesinde **Ton** listesinden doğru tonu seçip (birkaç beat de
+  işaretleyip) **Doğruluğu ölç**'e basın.
+- Neye bakılır: tonu bildiğiniz şarkılarda "aynı ton", "komşu ton" ya da "paralel ton" (✓) çıkmalı. Ton değiştiren
+  bir şarkıda o bölüme gelince bilgi kartı vurgulu olarak bölümün tonunu gösterir. Yalnızca davul ya da konuşma
+  olan kayıtlarda ton boş kalır ("—").
+- Bildirin: şarkı adı, sizin bildiğiniz ton ve programın yazdığı ton (✓ olmayanlar en değerlisi).
+
+**E5. Aksak ölçü (0.0.43)**
+
+- Nasıl: Aksak usullü birkaç şarkı çalın (ör. 9/8 roman havası, 7/8 ya da 5/8 bir halk şarkısı). Kütüphanedeki
+  şarkıların ritmi arka planda saniyeler içinde yenilenir (şarkılar yeniden çözülmez).
+- Neye bakılır: sağ alttaki bilgi kartında "9/8 (2+2+2+3)" gibi ölçü yazar. **Gece otoyolu**'nda sokak lambaları
+  ölçü başlarında geçer; **Senkron** panelindeki vuruş noktası uzun ve kısa vuruşlara uyar. Düz 4/4 şarkılar
+  "4/4" kalmalı. Ölçüsü belirsiz bir şarkıda ölçü hiç yazmaz; bu bilerek yapıldı.
+- Bildirin: aksak olduğunu bildiğiniz şarkıda programın yazdığı ölçü (ya da hiç yazmaması) ve şarkının adı.
+
 ## F. Hata günlüğü
 
 **F1. Hata günlüğü açılıyor**
@@ -251,3 +300,4 @@ Sonuçları bana yazdıkça buraya işlenir.
 | ------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | — (0.0.33'te) | ❌ Kütüphane hiç açılmıyordu: `no such table: analyses` | #49. 0.0.5–0.0.19'un kütüphane dosyası 0.0.28'den beri açılmıyordu. 0.0.35'te düzeltildi (testli); A0 ile sizin yedeğinizle denenecek. |
 | A0 (0.0.35)   | ✅ Oldu: eski yedek geri konunca kütüphane açıldı       | #49 kapandı (14 Ekim).                                                                                                                 |
+| — (0.0.39)    | ✅ Denendi, sorun çıkmadı                               | 15 Ekim. Hangi maddelerin denendiği yazılmadı; madde madde sonuçlar gelince tabloya ayrı ayrı işlenecek.                               |

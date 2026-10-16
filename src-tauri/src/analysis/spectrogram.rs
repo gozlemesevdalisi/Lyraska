@@ -13,7 +13,9 @@ use rustfft::{Fft, FftPlanner};
 
 use super::beats::{self, BeatGrid, OnsetDetector};
 use super::cache::CachedAnalysis;
+use super::key::{ChromaAnalyzer, KeyAnalysis};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
+use super::meter;
 use super::structure::{self, SongMap};
 use crate::audio::bass::{BassPeakMeter, BassPeaks};
 use crate::audio::decode::Decoder;
@@ -59,6 +61,8 @@ pub struct Spectrogram {
     loudness_ready: AtomicBool,
     /// Bas tepeleri (yalnızca tam analizde ölçülür).
     bass_peaks: RwLock<Option<BassPeaks>>,
+    /// Ton analizi: kroma zaman çizgisi ve şarkının tonu (analiz bitince).
+    key: RwLock<Option<Arc<KeyAnalysis>>>,
     /// Şarkının örnekleme hızı (ritim karelerden yeniden hesaplanırken gerekir).
     sample_rate: RwLock<Option<u32>>,
     /// Hazır kare sayısı.
@@ -80,6 +84,7 @@ impl Spectrogram {
             loudness: RwLock::new(None),
             loudness_ready: AtomicBool::new(false),
             bass_peaks: RwLock::new(None),
+            key: RwLock::new(None),
             sample_rate: RwLock::new(None),
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
@@ -112,6 +117,7 @@ impl Spectrogram {
             saved.song_map,
             saved.loudness,
             saved.bass_peaks,
+            saved.key,
         );
         spectrogram
     }
@@ -129,6 +135,7 @@ impl Spectrogram {
             song_map: self.song_map().map(|m| (*m).clone()),
             loudness: self.loudness(),
             bass_peaks: self.bass_peaks(),
+            key: self.key().map(|k| (*k).clone()),
             sample_rate: self.sample_rate.read().ok().and_then(|r| *r),
         })
     }
@@ -195,6 +202,11 @@ impl Spectrogram {
         self.bass_peaks.read().ok().and_then(|b| *b)
     }
 
+    /// Ton analizi (analiz bitince; eski kayıtta yeniden hesaplanana kadar `None`).
+    pub fn key(&self) -> Option<Arc<KeyAnalysis>> {
+        self.key.read().ok().and_then(|k| k.clone())
+    }
+
     pub fn loudness(&self) -> Option<Loudness> {
         self.loudness.read().ok().and_then(|l| *l)
     }
@@ -234,7 +246,13 @@ impl Spectrogram {
     }
 
     /// Analiz bitince: vuruşlar, şarkı yapısı ve koreografi.
-    fn finish(&self, sample_rate: u32, loudness: Option<Loudness>, bass_peaks: Option<BassPeaks>) {
+    fn finish(
+        &self,
+        sample_rate: u32,
+        loudness: Option<Loudness>,
+        bass_peaks: Option<BassPeaks>,
+        key: Option<KeyAnalysis>,
+    ) {
         let rhythm = match (self.levels.read(), self.meters.read(), self.onset.read()) {
             (Ok(levels), Ok(meters), Ok(onset)) => {
                 rhythm_from_frames(&levels, &meters, &onset, sample_rate)
@@ -242,7 +260,7 @@ impl Spectrogram {
             _ => (None, None),
         };
         self.set_sample_rate(Some(sample_rate));
-        self.complete(rhythm.0, rhythm.1, loudness, bass_peaks);
+        self.complete(rhythm.0, rhythm.1, loudness, bass_peaks, key);
     }
 
     /// Analizi tamamlar: VU referansı ve koreografi hesaplanır, sonuçlar yayımlanır.
@@ -252,9 +270,13 @@ impl Spectrogram {
         map: Option<SongMap>,
         loudness: Option<Loudness>,
         bass_peaks: Option<BassPeaks>,
+        key: Option<KeyAnalysis>,
     ) {
         if let Ok(mut stored) = self.bass_peaks.write() {
             *stored = bass_peaks;
+        }
+        if let Ok(mut stored) = self.key.write() {
+            *stored = key.map(Arc::new);
         }
         self.set_measured_loudness(loudness);
         let reference = self
@@ -304,6 +326,8 @@ pub struct SavedAnalysis {
     pub loudness: Option<Loudness>,
     /// Bas tepeleri (sessiz şarkıda `None`).
     pub bass_peaks: Option<BassPeaks>,
+    /// Ton analizi (önbellekte bu parça eskimişse `None`).
+    pub key: Option<KeyAnalysis>,
     /// Şarkının örnekleme hızı; eski önbellek kayıtlarında bilinmeyebilir.
     pub sample_rate: Option<u32>,
 }
@@ -379,6 +403,8 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
     let mut loudness = LoudnessMeter::new(info.sample_rate, channels);
     // Bas düğmesinin şarkının tepesini ne kadar yükselttiği (taşma koruması buna göre).
     let mut bass_peaks = BassPeakMeter::new(info.sample_rate, channels);
+    // Ton: uzun pencereli kroma, aynı geçişte.
+    let mut chroma = ChromaAnalyzer::new(info.sample_rate);
 
     loop {
         if target.cancelled.load(Ordering::Acquire) {
@@ -394,6 +420,7 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
             loudness.add(frame);
             bass_peaks.add(frame);
             let mono = frame.iter().sum::<Sample>() / channels as Sample;
+            chroma.add(mono);
             window[head] = mono;
             head = (head + 1) % FFT_SIZE;
             filled = (filled + 1).min(FFT_SIZE);
@@ -422,7 +449,12 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         }
     }
     target.push(&batch, &meter_batch, &onset_batch);
-    target.finish(info.sample_rate, loudness.finish(), bass_peaks.finish());
+    target.finish(
+        info.sample_rate,
+        loudness.finish(),
+        bass_peaks.finish(),
+        Some(chroma.finish()),
+    );
 }
 
 /// Saklanan karelerden ritim: vuruş ızgarası (başlangıç gücünün örnekleme hızına bağlı
@@ -434,7 +466,15 @@ pub fn rhythm_from_frames(
     sample_rate: u32,
 ) -> (Option<BeatGrid>, Option<SongMap>) {
     let latency = beats::onset_latency(sample_rate, FFT_SIZE);
-    let grid = beats::track(onset, FRAMES_PER_SECOND, latency);
+    let tracked = beats::track(onset, FRAMES_PER_SECOND, latency);
+    // Aksak ölçü (9/8, 7/8, 5/8): vuruşlar grup başları olur, ölçü başları sekizlik ızgarasından.
+    let aksak = tracked
+        .as_ref()
+        .and_then(|g| meter::detect(onset, levels, BANDS, g, FRAMES_PER_SECOND, latency));
+    let grid = match &aksak {
+        Some(aksak) => Some(aksak.beat_grid()),
+        None => tracked,
+    };
     let map = grid.as_ref().and_then(|grid| {
         // Kare başına ses yüksekliği: iki kanalın etkin seviyesinin ortalaması.
         let loudness: Vec<f32> = meters
@@ -442,7 +482,14 @@ pub fn rhythm_from_frames(
             .filter_map(levels::decode_frame)
             .map(|m| 0.5 * (m.rms_db[0] + m.rms_db[1]))
             .collect();
-        structure::map_song(levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
+        structure::map_song(
+            levels,
+            BANDS,
+            &loudness,
+            grid,
+            FRAMES_PER_SECOND,
+            aksak.as_ref(),
+        )
     });
     (grid, map)
 }
@@ -451,8 +498,8 @@ pub fn rhythm_from_frames(
 ///
 /// Kareler hemen okunabilir (görseller beklemez); geçerli ses yüksekliği hemen yayımlanır.
 /// - Ritim eskiyse saklanan karelerden hesaplanır: şarkı **çözülmez**.
-/// - Ses yüksekliği ya da bas tepeleri eskiyse şarkı bir kez çözülür (FFT'siz) ve yalnızca
-///   eskimiş olan ölçülür.
+/// - Ses yüksekliği, bas tepeleri ya da ton eskiyse şarkı bir kez çözülür ve yalnızca eskimiş
+///   olan ölçülür (bant kareleri yeniden hesaplanmaz).
 ///
 /// `open` şarkıyı açar; yalnızca gerektiğinde çağrılır (çözme ya da örnekleme hızı
 /// bilinmeyen eski kayıtta başlığı okumak için). Açılamaz ya da iptal edilirse analiz bitmiş
@@ -471,6 +518,7 @@ pub fn refresh_paced(
     let mut sample_rate = saved.sample_rate;
     let mut loudness = saved.loudness;
     let mut bass_peaks = saved.bass_peaks;
+    let mut key = saved.key;
 
     if stale.needs_decoding() {
         let Some(mut decoder) = open() else {
@@ -485,6 +533,7 @@ pub fn refresh_paced(
         let mut bass_meter = stale
             .bass
             .then(|| BassPeakMeter::new(info.sample_rate, channels));
+        let mut chroma = stale.key.then(|| ChromaAnalyzer::new(info.sample_rate));
         loop {
             if target.is_cancelled() {
                 return false;
@@ -502,6 +551,9 @@ pub fn refresh_paced(
                 if let Some(meter) = bass_meter.as_mut() {
                     meter.add(frame);
                 }
+                if let Some(chroma) = chroma.as_mut() {
+                    chroma.add(frame.iter().sum::<Sample>() / channels as Sample);
+                }
             }
         }
         if let Some(meter) = loudness_meter {
@@ -509,6 +561,9 @@ pub fn refresh_paced(
         }
         if let Some(meter) = bass_meter {
             bass_peaks = meter.finish();
+        }
+        if let Some(chroma) = chroma {
+            key = Some(chroma.finish());
         }
     }
 
@@ -526,7 +581,7 @@ pub fn refresh_paced(
         (saved.beats, saved.song_map)
     };
     target.set_sample_rate(sample_rate);
-    target.complete(grid, map, loudness, bass_peaks);
+    target.complete(grid, map, loudness, bass_peaks, key);
     true
 }
 
@@ -690,6 +745,9 @@ mod tests {
         if stale.bass {
             saved.bass_peaks = None;
         }
+        if stale.key {
+            saved.key = None;
+        }
         CachedAnalysis { saved, stale }
     }
 
@@ -734,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn eskiyen_ses_yuksekligi_ve_bas_tepeleri_tek_cozmeyle_ayni_olculur() {
+    fn eskiyen_ses_yuksekligi_bas_tepeleri_ve_ton_tek_cozmeyle_ayni_olculur() {
         let path = drum_song("olcum-yenile.wav");
         let full = analyze_file(&path).saved().unwrap();
         assert!(full.loudness.is_some() && full.bass_peaks.is_some());
@@ -748,9 +806,14 @@ mod tests {
                 ..StaleParts::default()
             },
             StaleParts {
+                key: true,
+                ..StaleParts::default()
+            },
+            StaleParts {
                 rhythm: true,
                 loudness: true,
                 bass: true,
+                key: true,
             },
         ] {
             let target = Spectrogram::new();

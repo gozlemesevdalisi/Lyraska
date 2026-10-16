@@ -144,6 +144,30 @@ function runDirected(
   return s;
 }
 
+describe("gece göğünün doku katmanı", () => {
+  it("vuruş yoğunluğu akışı, tizlerin canlılığı kırpışmayı hızlandırır; parlaklık değişmez", () => {
+    const quiet = runDirected(SKY_AT_REST, { ...CALM, mood: 0.6, detail: 0, motion: 0 }, 6);
+    const busy = runDirected(SKY_AT_REST, { ...CALM, mood: 0.6, detail: 1, motion: 1 }, 6);
+    expect(busy.motion).toBeGreaterThan(0.95);
+    expect(quiet.detail).toBeLessThan(0.05);
+    const advance = (from: SkyState, director: DirectorInput) => {
+      const next = runDirected(from, director, 1);
+      return {
+        flow: next.flowTime - from.flowTime,
+        twinkle: next.twinkleTime - from.twinkleTime,
+      };
+    };
+    const slow = advance(quiet, { ...CALM, mood: 0.6, detail: 0, motion: 0 });
+    const fast = advance(busy, { ...CALM, mood: 0.6, detail: 1, motion: 1 });
+    expect(fast.flow).toBeGreaterThan(slow.flow * 1.3);
+    expect(fast.twinkle).toBeGreaterThan(slow.twinkle * 1.8);
+    // Yalnızca hız: perdelerin parlaklığı aynı kalır.
+    expect(busy.energies).toEqual(quiet.energies);
+    // Doku yoksa olağan hız (eski davranış).
+    expect(runDirected(SKY_AT_REST, CALM, 6).motion).toBeCloseTo(0.5, 6);
+  });
+});
+
 describe("gökyüzünün saatleri", () => {
   it("saatlerce çalınca da görüntü sıçramaz (saatler sarılmaz, katlanır)", () => {
     // Saatler 10 000 sınırına çok yakın: bir sonraki karede sınırı aşar.

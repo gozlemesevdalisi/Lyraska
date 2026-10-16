@@ -47,6 +47,8 @@ pub struct TrackRow {
     pub bpm: Option<f64>,
     /// Geçerli bir analizi var mı (ritimsiz şarkılar da analiz edilmiş sayılır).
     pub analyzed: bool,
+    /// Tonun Camelot kodu (ör. "8A"; geçerli ton analizinden, güveni yeterliyse).
+    pub key: Option<String>,
 }
 
 pub use crate::analysis::cache::FileStamp;
@@ -284,13 +286,14 @@ impl Library {
             .split_whitespace()
             .map(|w| format!("%{}%", escape_like(w)))
             .collect();
-        // Analizle: ?1–?4 analiz parçalarının sürümleri, arama kelimeleri ?5'ten başlar.
+        // Analizle: ?1–?5 analiz parçalarının sürümleri, arama kelimeleri ?6'dan başlar.
         let (mut sql, mut values): (String, Vec<rusqlite::types::Value>) = if with_analysis {
             (
                 format!(
                     "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
                             t.track_number, t.duration_secs, t.codec, a.bpm,
-                            a.path IS NOT NULL AND {FULLY_CURRENT}
+                            a.path IS NOT NULL AND {FULLY_CURRENT},
+                            CASE WHEN a.key_version = ?5 THEN a.camelot END
                      FROM tracks t LEFT {VALID_ANALYSIS_JOIN}"
                 ),
                 analysis_versions().into_iter().map(Into::into).collect(),
@@ -298,7 +301,7 @@ impl Library {
         } else {
             (
                 "SELECT t.id, t.path, COALESCE(t.title, t.file_name), t.artist, t.album,
-                        t.track_number, t.duration_secs, t.codec, NULL, 0
+                        t.track_number, t.duration_secs, t.codec, NULL, 0, NULL
                  FROM tracks t"
                     .to_owned(),
                 Vec::new(),
@@ -328,6 +331,7 @@ impl Library {
                 codec: r.get(7)?,
                 bpm: r.get(8)?,
                 analyzed: r.get(9)?,
+                key: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -342,15 +346,17 @@ const VALID_ANALYSIS_JOIN: &str = "JOIN analyses a ON a.path = t.path
     AND a.spectrum_version = ?1 AND a.rhythm_version = ?2";
 
 /// Eşlenen analizin geri kalan parçaları da güncel mi?
-const FULLY_CURRENT: &str = "a.loudness_version = ?3 AND a.bass_version = ?4";
+const FULLY_CURRENT: &str =
+    "a.loudness_version = ?3 AND a.bass_version = ?4 AND a.key_version = ?5";
 
-/// Sorgulardaki `?1`–`?4`: spektrum, ritim, ses yüksekliği, bas tepeleri sürümleri.
-fn analysis_versions() -> [i64; 4] {
+/// Sorgulardaki `?1`–`?5`: spektrum, ritim, ses yüksekliği, bas tepeleri ve ton sürümleri.
+fn analysis_versions() -> [i64; 5] {
     [
         VERSIONS.spectrum,
         VERSIONS.rhythm,
         VERSIONS.loudness,
         VERSIONS.bass,
+        VERSIONS.key,
     ]
 }
 
@@ -565,17 +571,18 @@ mod tests {
     }
 
     #[test]
-    fn bpm_yalnizca_gecerli_analizden_gelir() {
+    fn bpm_ve_ton_yalnizca_gecerli_analizden_gelir() {
         let lib = sample();
         let v = VERSIONS;
-        // Kayıt: boyut, parça sürümleri (spektrum, ritim, ses yüksekliği, bas), BPM.
-        let analyze = |path: &str, size: i64, parts: [i64; 4], bpm: Option<f64>| {
+        // Kayıt: boyut, parça sürümleri (spektrum, ritim, ses yüksekliği, bas, ton), BPM.
+        let analyze = |path: &str, size: i64, parts: [i64; 5], bpm: Option<f64>| {
             lib.conn
                 .execute(
                     "INSERT OR REPLACE INTO analyses
                          (path, file_size, modified, version, frames, bpm, levels, meters, onset,
-                          spectrum_version, rhythm_version, loudness_version, bass_version)
-                     VALUES (?1, ?2, ?3, 6, 0, ?4, x'', x'', x'', ?5, ?6, ?7, ?8)",
+                          spectrum_version, rhythm_version, loudness_version, bass_version,
+                          key_version, camelot)
+                     VALUES (?1, ?2, ?3, 6, 0, ?4, x'', x'', x'', ?5, ?6, ?7, ?8, ?9, '8A')",
                     params![
                         path,
                         size,
@@ -584,7 +591,8 @@ mod tests {
                         parts[0],
                         parts[1],
                         parts[2],
-                        parts[3]
+                        parts[3],
+                        parts[4]
                     ],
                 )
                 .unwrap();
@@ -596,7 +604,7 @@ mod tests {
                 .find(|t| t.path == path)
                 .unwrap()
         };
-        let current = [v.spectrum, v.rhythm, v.loudness, v.bass];
+        let current = [v.spectrum, v.rhythm, v.loudness, v.bass, v.key];
         let size = STAMP.size as i64;
         assert_eq!(
             (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
@@ -622,7 +630,7 @@ mod tests {
         analyze(
             "/muzik/a.flac",
             size,
-            [v.spectrum, v.rhythm, v.loudness - 1, v.bass],
+            [v.spectrum, v.rhythm, v.loudness - 1, v.bass, v.key],
             Some(128.0),
         );
         assert_eq!(
@@ -630,13 +638,28 @@ mod tests {
             (Some(128.0), false)
         );
         assert_eq!(lib.analyzed_count().unwrap(), 1);
+        assert_eq!(row("/muzik/a.flac").key.as_deref(), Some("8A"));
+
+        // Yalnızca ton eskidi (ör. ton hesabı değişti): BPM kalır, ton gösterilmez.
+        analyze(
+            "/muzik/a.flac",
+            size,
+            [v.spectrum, v.rhythm, v.loudness, v.bass, v.key - 1],
+            Some(128.0),
+        );
+        assert_eq!(
+            (row("/muzik/a.flac").bpm, row("/muzik/a.flac").analyzed),
+            (Some(128.0), false)
+        );
+        assert_eq!(row("/muzik/a.flac").key, None);
+        assert_eq!(row("/muzik/b.flac").key.as_deref(), Some("8A"));
 
         // Dosya değişti ya da ritim eskidi: BPM gösterilmez.
         analyze("/muzik/a.flac", size + 1, current, Some(128.0));
         analyze(
             "/muzik/b.flac",
             size,
-            [v.spectrum, v.rhythm - 1, v.loudness, v.bass],
+            [v.spectrum, v.rhythm - 1, v.loudness, v.bass, v.key],
             Some(90.0),
         );
         assert_eq!(

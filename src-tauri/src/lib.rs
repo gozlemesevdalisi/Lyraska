@@ -124,6 +124,7 @@ pub fn run() {
             commands::annotation_evaluate,
             commands::annotation_open_folder,
             commands::song_map,
+            commands::song_key,
             commands::headphone_get,
             commands::headphone_import,
             commands::headphone_set_enabled,
@@ -135,6 +136,12 @@ pub fn run() {
             commands::audio_delay_get,
             commands::audio_delay_set,
             commands::calibration_track,
+            commands::abx_start,
+            commands::abx_select,
+            commands::abx_pause,
+            commands::abx_answer,
+            commands::abx_status,
+            commands::abx_stop,
         ])
         .build(tauri::generate_context!());
     let app = match built {

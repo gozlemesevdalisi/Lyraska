@@ -65,6 +65,17 @@ describe("gece otoyolu", () => {
     expect(later.lamp - s.lamp).toBeCloseTo(0.5, 1);
   });
 
+  it("ölçü belirsizse lambalar ölçüye kilitlenmez, çizgiler vuruşa kilitli kalır", () => {
+    // Lamba, ölçü fazından çeyrek ölçü uzakta başlar.
+    const start = { ...HIGHWAY_AT_REST, dash: 0.37, lamp: 0.25 };
+    const s = drive(start, 3, (t) => music(t, { barPhase: null }));
+    const t = 3;
+    expect(phaseDistance(s.dash, fract(t * 2))).toBeLessThan(0.02);
+    // Lamba fazı başladığı yerden tempoyla ilerler (çekilmez): 3 sn'de 1,5 lamba.
+    expect(s.lamp - start.lamp).toBeCloseTo(1.5, 1);
+    expect(phaseDistance(s.lamp, fract((t * 2) / 4))).toBeGreaterThan(0.2);
+  });
+
   it("yakalarken bile yol geri gitmez", () => {
     let s = { ...HIGHWAY_AT_REST, dash: 0.49 };
     for (let i = 1; i <= 120; i++) {
@@ -194,6 +205,20 @@ describe("gece otoyolu", () => {
     const after = stepHighway(HIGHWAY_AT_REST, music(1, { release: 1 }), 30);
     expect(after.glow).toBeLessThanOrEqual(ENERGY_SLEW_PER_SECOND * 0.25 + 1e-12);
     expect(after.dash).toBeLessThan(2);
+  });
+});
+
+describe("gece otoyolunun doku katmanı", () => {
+  it("vuruş yoğunluğu yolun kıvrılmasını ve şehri hızlandırır; parlaklık ve vuruş kilidi aynı", () => {
+    const calm = drive(HIGHWAY_AT_REST, 6, (t) => music(t, { motion: 0 }));
+    const busy = drive(HIGHWAY_AT_REST, 6, (t) => music(t, { motion: 1 }));
+    const step = (from: HighwayState, motion: number) =>
+      drive(from, 1, (t) => music(t, { motion }), false, 6).time - from.time;
+    expect(step(busy, 1)).toBeGreaterThan(step(calm, 0) * 1.3);
+    expect(busy.glow).toBeCloseTo(calm.glow, 9);
+    expect(phaseDistance(busy.dash, calm.dash)).toBeLessThan(0.02);
+    // Doku yoksa olağan hız.
+    expect(drive(HIGHWAY_AT_REST, 6, (t) => music(t)).motion).toBeCloseTo(0.5, 6);
   });
 });
 

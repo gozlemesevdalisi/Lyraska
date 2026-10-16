@@ -1,6 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { previewEqState } from "./eq";
+import type { AbxChoice } from "./bindings/AbxChoice";
+import type { AbxResult } from "./bindings/AbxResult";
+import type { AbxSource } from "./bindings/AbxSource";
+import type { AbxStatus } from "./bindings/AbxStatus";
 import type { Annotation } from "./bindings/Annotation";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { BeatEvaluation } from "./bindings/BeatEvaluation";
@@ -13,9 +17,13 @@ import type { EqState } from "./bindings/EqState";
 import type { HeadphoneFilter } from "./bindings/HeadphoneFilter";
 import type { HeadphoneProfile } from "./bindings/HeadphoneProfile";
 import type { HeadphoneState } from "./bindings/HeadphoneState";
+import type { KeyMap } from "./bindings/KeyMap";
+import type { KeyRelation } from "./bindings/KeyRelation";
 import type { LibraryFolder } from "./bindings/LibraryFolder";
 import type { LibraryStatus } from "./bindings/LibraryStatus";
 import type { LibraryTrack } from "./bindings/LibraryTrack";
+import type { MarkedKey } from "./bindings/MarkedKey";
+import type { MusicalKey } from "./bindings/MusicalKey";
 import type { PlaybackOptions } from "./bindings/PlaybackOptions";
 import type { PlaybackState } from "./bindings/PlaybackState";
 import type { PlaybackStatus } from "./bindings/PlaybackStatus";
@@ -28,6 +36,10 @@ import type { VisualFrame } from "./bindings/VisualFrame";
 // Rust → arayüz veri tipleri Rust tanımlarından üretilir (ts-rs: `cd src-tauri && cargo test`,
 // çıktı `./bindings/`). Elle yazılmaz; CI üretilenin depodakiyle aynı olduğunu denetler.
 export type {
+  AbxChoice,
+  AbxResult,
+  AbxSource,
+  AbxStatus,
   Annotation,
   AppInfo,
   BeatEvaluation,
@@ -40,9 +52,13 @@ export type {
   HeadphoneFilter,
   HeadphoneProfile,
   HeadphoneState,
+  KeyMap,
+  KeyRelation,
   LibraryFolder,
   LibraryStatus,
   LibraryTrack,
+  MarkedKey,
+  MusicalKey,
   PlaybackOptions,
   PlaybackState,
   PlaybackStatus,
@@ -63,6 +79,12 @@ export async function getTrackCover(path: string): Promise<string | null> {
 export async function getSongMap(): Promise<SongMap | null> {
   if (!isTauri()) return null;
   return invoke<SongMap | null>("song_map");
+}
+
+/** Çalan şarkının tonu ve tonu farklı bölümleri; ton analizi bitmediyse `null`. */
+export async function getSongKey(): Promise<KeyMap | null> {
+  if (!isTauri()) return null;
+  return invoke<KeyMap | null>("song_key");
 }
 
 export const EMPTY_LIBRARY: LibraryStatus = {
@@ -105,6 +127,81 @@ export async function getAppInfo(): Promise<AppInfo> {
   return invoke<AppInfo>("app_info");
 }
 
+/** Kör test kurulu değilken çekirdeğin döndürdüğü durum (tarayıcı önizlemesinde de). */
+export const ABX_INACTIVE: AbxStatus = {
+  active: false,
+  aName: "",
+  bName: "",
+  startSecs: 0,
+  clipSecs: 0,
+  positionSecs: 0,
+  playing: null,
+  answered: 0,
+  total: 0,
+  result: null,
+  levelDiffDb: 0,
+  offsetMs: 0,
+  similarity: 0,
+  sampleRate: 0,
+  error: null,
+};
+
+export interface AbxRequest {
+  a: string;
+  b: string;
+  startSecs: number;
+  clipSecs: number;
+  trials: number;
+}
+
+/**
+ * Kör dinleme testini (ABX) kurar: iki dosyanın aynı bölümü belleğe çözülür, hizalanır ve ses
+ * yüksekliği eşitlenir. Çalan şarkı durur; test bitince kaldığı yerde duraklatılmış açılır.
+ */
+export function abxStart(request: AbxRequest): Promise<AbxStatus> {
+  return invoke<AbxStatus>("abx_start", {
+    a: request.a,
+    b: request.b,
+    startSecs: request.startSecs,
+    clipSecs: request.clipSecs,
+    trials: request.trials,
+  });
+}
+
+/** Testte A, B ya da X'i çalar (aynı konumdan, kısa geçişle). */
+export function abxSelect(choice: AbxChoice): Promise<AbxStatus> {
+  return invoke<AbxStatus>("abx_select", { choice });
+}
+
+export function abxPause(): Promise<AbxStatus> {
+  return invoke<AbxStatus>("abx_pause");
+}
+
+/** "X, A'dır" ya da "X, B'dir". */
+export function abxAnswer(guess: AbxSource): Promise<AbxStatus> {
+  return invoke<AbxStatus>("abx_answer", { guess });
+}
+
+export async function abxStatus(): Promise<AbxStatus> {
+  if (!isTauri()) return ABX_INACTIVE;
+  return invoke<AbxStatus>("abx_status");
+}
+
+export function abxStop(): Promise<AbxStatus> {
+  return invoke<AbxStatus>("abx_stop");
+}
+
+/** Kör test için tek bir ses dosyası seçtirir. */
+export async function pickAbxFile(label: string, extensions: string[]): Promise<string | null> {
+  const selected = await open({
+    title: `${label} dosyasını seçin`,
+    multiple: false,
+    directory: false,
+    filters: extensions.length > 0 ? [{ name: "Ses dosyaları", extensions }] : undefined,
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
 /** "Dosya aç" penceresini gösterir; seçilen dosyanın yolunu ya da `null` döndürür. */
 export async function pickAudioFile(extensions: string[]): Promise<string | null> {
   const selected = await open({
@@ -139,8 +236,9 @@ export async function saveAnnotation(
   path: string,
   beats: number[],
   drops: number[],
+  key: MarkedKey | null = null,
 ): Promise<string> {
-  return invoke<string>("annotation_save", { path, beats, drops });
+  return invoke<string>("annotation_save", { path, beats, drops, key });
 }
 
 /** Kayıtlı işaretleri programın beat analiziyle karşılaştırır (birkaç saniye sürer). */

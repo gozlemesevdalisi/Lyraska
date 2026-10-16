@@ -1,8 +1,9 @@
 import type { CSSProperties } from "react";
-import type { PlaybackStatus, SongMap } from "../lib/backend";
+import type { KeyMap, PlaybackStatus, SongMap } from "../lib/backend";
 import { coverGradient } from "../lib/cover";
 import { formatBpm, formatLabel } from "../lib/format";
-import { confidentDrops, dropCountdown, meterLabel } from "../lib/songMap";
+import { keyAt, keyLabel, keyLetters } from "../lib/musicalKey";
+import { confidentDrops, confidentMeterLabel, dropCountdown } from "../lib/songMap";
 
 export interface UpNext {
   title: string;
@@ -17,6 +18,8 @@ export interface InfoStackProps {
   /** Ekranda gösterilen (akıcı) konum. */
   positionSecs: number;
   songMap: SongMap | null;
+  /** Şarkının tonu ve tonu farklı bölümleri (yoksa ton gösterilmez). */
+  songKey?: KeyMap | null;
   /** Ekolayzer ya da kulaklık düzeltmesi sesi değiştiriyor mu? */
   soundShaped: boolean;
   safe: boolean;
@@ -25,12 +28,13 @@ export interface InfoStackProps {
 
 /**
  * Sahnenin sağ altındaki bilgi kartları: yaklaşan drop'un geri sayımı (Lyraska şarkıyı
- * önceden bildiği için; yalnızca güveni yüksek droplar), tempo ve ses biçimi, sıradaki şarkı.
+ * önceden bildiği için; yalnızca güveni yüksek droplar), tempo, ton ve ses biçimi, sıradaki şarkı.
  */
 export function InfoStack({
   status,
   positionSecs,
   songMap,
+  songKey = null,
   soundShaped,
   safe,
   next,
@@ -42,10 +46,11 @@ export function InfoStack({
       ? dropCountdown(confidentDrops(songMap), positionSecs)
       : null;
   const tempo = status.bpm
-    ? [formatBpm(status.bpm), songMap ? meterLabel(songMap.meter) : null]
+    ? [formatBpm(status.bpm), songMap ? confidentMeterLabel(songMap) : null]
         .filter(Boolean)
         .join(" · ")
     : null;
+  const key = keyAt(songKey, songMap?.sections ?? [], positionSecs);
 
   return (
     <aside className="info" aria-label="Şarkı bilgisi">
@@ -66,6 +71,14 @@ export function InfoStack({
       )}
       <ul className="info__chips">
         {tempo && <li className="info-chip">{tempo}</li>}
+        {key && (
+          <li
+            className={`info-chip${key.changed ? " is-on" : ""}`}
+            title={`Ton (Camelot çarkı): ${keyLetters(key.key)}${key.changed ? " — bu bölümde ton değişiyor" : ""}`}
+          >
+            {keyLabel(key.key)}
+          </li>
+        )}
         <li className="info-chip">{formatLabel(track, status.output)}</li>
         {soundShaped && <li className="info-chip is-on">EQ açık</li>}
         {safe && <li className="info-chip is-on">Güvenli mod</li>}

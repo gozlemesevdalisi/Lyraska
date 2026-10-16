@@ -65,16 +65,17 @@ lyraska/
 ├── src/                      # Arayüz (React + TypeScript)
 │   ├── components/           # React bileşenleri: PlayerScreen (sahne tüm pencere; üstünde cam katmanlar:
 │   │                         # NowPlaying büyük başlık, InfoStack drop sayacı ve sıradaki, SeekBar şarkı haritası
-│   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, ayarlar;
-│   │                         # her panel ve sahne bir ErrorBoundary içinde: hata yalnızca o bölümü kapatır)
+│   │                         # şeridi; sağdan açılan çekmecede kütüphane, ekolayzer, işaretleme, senkron, kör test,
+│   │                         # ayarlar; her panel ve sahne bir ErrorBoundary içinde: hata yalnızca o bölümü kapatır)
 │   ├── hooks/                # usePlayback (oynatıcı + çalma sırası), useLibrary, useEqualizer, useHeadphone,
 │   │                         # useMarker (işaretleme), useSync (ses–görüntü senkronu), useVisualFeed (görsel
 │   │                         # verisi), useSongMap (çalan şarkının haritası), useDrawer (çekmece), useScene
-│   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
+│   │                         # (sahne, 1–5), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
 │   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
-│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak)
+│   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak),
+│   │                         # useAbx (kör test), useSongKey (çalan şarkının tonu)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # timeline, cover, abx, stageLight, musicalKey), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
@@ -99,6 +100,7 @@ lyraska/
 │   │   │   ├── output.rs     #   çıkış soyutlaması, özel mod tamsayı biçimi; output/wasapi.rs = Windows WASAPI
 │   │   │   │                 #   (paylaşımlı; ayarla özel mod = bit-perfect), output/simulated.rs = testlerde
 │   │   │   │                 #   aygıtsız sanal çıkış
+│   │   │   ├── abx.rs        #   kör dinleme testi: iki sürümü hizalama, ses yüksekliği eşitleme, işlemsiz A/B/X
 │   │   │   └── player.rs     #   oturumlar, iş parçacıkları, halka tampon (rtrb), boşluksuz geçiş
 │   │   ├── library/          # Müzik kütüphanesi (SQLite, uygulama veri klasöründe)
 │   │   │   ├── db.rs         #   kaynak (klasör ya da tek şarkı) ve şarkı tabloları, Türkçe arama, BPM
@@ -107,14 +109,16 @@ lyraska/
 │   │   ├── storage.rs        # library.sqlite3 şeması ve sıralı göçleri (kütüphane + analiz önbelleği)
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, eşitleme, güvenli mod, ses gecikmesi)
-│   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
+│   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji, ton
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant), seviyeler, LUFS, bas tepeleri
 │   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
 │   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   ├── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
-│   │   │   ├── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
-│   │   │   ├── cache.rs      #   şarkı haritası önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
+│   │   │   ├── structure.rs  #   ölçü başları ve ölçü güveni, bölümler (Foote yeniliği), droplar, enerji eğrisi
+│   │   │   ├── meter.rs      #   aksak ölçü (5/8, 7/8, 9/8): sekizlik ızgarası, gruplama, grup başı vuruşlar
+│   │   │   ├── key.rs        #   ton tespiti: kroma, akort, Krumhansl–Kessler, Camelot, bölüm bölüm
+│   │   │   ├── cache.rs      #   analiz önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
 │   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)
 │   │   ├── director/         # Görsel Yönetmen: şarkı haritasından koreografi (atmosfer, ritim, doku),
 │   │   │                     # drop beklentisi/açılımı; nabız hız garantisi (≤ 3/sn, güvenli modda ≤ 1/sn)
@@ -150,9 +154,9 @@ Kurallar:
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
 - Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
   konumuna karşılık gelen analiz karesini `visual_bridge` üzerinden okur.
-- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Analiz dört parçadır ve her birinin kendi sürümü
+- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Analiz beş parçadır ve her birinin kendi sürümü
   vardır (`cache::VERSIONS`): spektrum (kareler), ritim (beat, ölçü, bölüm, drop, enerji), ses yüksekliği, bas
-  tepeleri. Bir hesabı değiştiren iş **yalnızca o parçanın** sürümünü artırır; kütüphanede yalnızca o parça yeniden
+  tepeleri, ton. Bir hesabı değiştiren iş **yalnızca o parçanın** sürümünü artırır; kütüphanede yalnızca o parça yeniden
   hesaplanır (ritim karelerden, şarkı çözülmeden). Bütün kütüphaneyi baştan analiz ettiren spektrum sürümü yalnızca
   karelerin kendisi değişince artırılır.
 - Sahneler hareket ve parlaklığı Görsel Yönetmen'in notundan (`VisualFrame.director`) türetir; parlaklığı
