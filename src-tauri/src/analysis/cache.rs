@@ -58,8 +58,8 @@ pub struct PartVersions {
 /// Parçaların şu anki sürümleri.
 pub const VERSIONS: PartVersions = PartVersions {
     spectrum: 1,
-    // 2: şarkı haritasında drop güveni.
-    rhythm: 2,
+    // 2: şarkı haritasında drop güveni. 3: aksak ölçü (9/8, 7/8, 5/8) ve ölçü güveni.
+    rhythm: 3,
     loudness: 1,
     bass: 1,
     key: 1,
@@ -489,6 +489,8 @@ mod tests {
             song_map: Some(SongMap {
                 meter: 4,
                 downbeat_phase: 1,
+                grouping: Vec::new(),
+                meter_confidence: 1.0,
                 downbeats: vec![0.72],
                 sections: vec![Section {
                     start: 0.0,

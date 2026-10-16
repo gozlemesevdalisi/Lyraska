@@ -66,8 +66,24 @@ export function dropCountdown(
 }
 
 /** Ölçü: "4/4", "3/4". */
-export function meterLabel(meter: number): string {
+export function meterLabel(meter: number, grouping: readonly number[] = []): string {
+  if (grouping.length > 0) {
+    const eighths = grouping.reduce((sum, g) => sum + g, 0);
+    return `${eighths}/8 (${grouping.join("+")})`;
+  }
   return `${meter}/4`;
+}
+
+/** Ölçü bilgi kartında gösterilecek kadar güvenli mi (çekirdekteki `METER_CONFIDENCE_MIN`)? */
+export const METER_CONFIDENCE_MIN = 0.5;
+
+/** Ölçü etiketi; ölçü belirsizse `null` (yanlış ölçü göstermektense hiç göstermemek). */
+export function confidentMeterLabel(map: {
+  meter: number;
+  grouping: readonly number[];
+  meterConfidence: number;
+}): string | null {
+  return map.meterConfidence >= METER_CONFIDENCE_MIN ? meterLabel(map.meter, map.grouping) : null;
 }
 
 /**

@@ -13,6 +13,9 @@
 //! - **Doku** (orta hız): ayrıntı (tiz bantların canlılığı) ve hareket (vuruş
 //!   yoğunluğu).
 //!
+//! **Ölçü güveni:** şarkı haritasının ölçüsü belirsizse ([`SongMap::bars_confident`]) ölçü başı
+//! vurgusu yapılmaz; güvenli moddaki seyrek nabız da ölçü başlarından değil vuruşlardan gelir.
+//!
 //! **Güvenlik:** Nabız olayları (vuruş, ölçü başı, boşalma) arasında en az
 //! [`MIN_PULSE_INTERVAL`] saniye vardır (saniyede en fazla 3); güvenli modda
 //! [`SAFE_PULSE_INTERVAL`] (saniyede en fazla 1). Hızlı tempoda nabız iki
@@ -76,6 +79,9 @@ pub struct Rhythm {
     pub anticipation: f32,
     /// Drop anındaki açılım: 1 → 0.
     pub release: f32,
+    /// Ölçü başları güvenli mi? Değilse ölçü başı vurgusu yoktur (`accent` 0) ve sahneler
+    /// `bar_phase`'e kilitlenmez (ör. otoyolun lambaları): yalnızca vuruşa tepki verilir.
+    pub bars_confident: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -117,9 +123,20 @@ impl Choreography {
         fps: f64,
     ) -> Self {
         let pulses = thin(&beats.beats, MIN_PULSE_INTERVAL);
-        // Güvenli mod: yalnızca ölçü başları (ve en fazla saniyede bir).
-        let safe_pulses = thin(&map.downbeats, SAFE_PULSE_INTERVAL);
-        let accents = thin(&map.downbeats, MIN_PULSE_INTERVAL);
+        // Ölçü başları yalnızca güvenliyse vurgulanır; yanlış ölçü vurgusu hiç vurgu olmamasından
+        // kötüdür.
+        let bars_confident = map.bars_confident();
+        // Güvenli mod: ölçü başları (ölçü belirsizse vuruşlar), en fazla saniyede bir.
+        let safe_pulses = if bars_confident {
+            thin(&map.downbeats, SAFE_PULSE_INTERVAL)
+        } else {
+            thin(&beats.beats, SAFE_PULSE_INTERVAL)
+        };
+        let accents = if bars_confident {
+            thin(&map.downbeats, MIN_PULSE_INTERVAL)
+        } else {
+            Vec::new()
+        };
 
         let frames = (bands.len() / bands_per_frame.max(1)).min(onset.len());
         let treble: Vec<f64> = (0..frames)
@@ -229,6 +246,7 @@ impl Choreography {
                 bar_phase: bar_phase as f32,
                 anticipation: anticipation as f32,
                 release: release as f32,
+                bars_confident: self.map.bars_confident(),
             },
             texture: Texture {
                 detail: sample(&self.detail),
@@ -327,6 +345,8 @@ mod tests {
         let map = SongMap {
             meter: 4,
             downbeat_phase: 0,
+            grouping: Vec::new(),
+            meter_confidence: 1.0,
             downbeats,
             sections: vec![
                 Section {
@@ -394,6 +414,30 @@ mod tests {
             .windows(2)
             .all(|w| w[1] - w[0] >= SAFE_PULSE_INTERVAL - 1e-9));
         assert_eq!(fast.frame_at(5.0, true).rhythm.accent, 0.0);
+    }
+
+    #[test]
+    fn olcu_belirsizse_olcu_basi_vurgulanmaz() {
+        let (grid, mut map) = song(120.0, 32);
+        let frames = (64.0 * 60.0) as usize + 120;
+        let bands: Vec<u8> = (0..frames * 32).map(|i| (i % 255) as u8).collect();
+        let onset: Vec<f32> = (0..frames).map(|i| (i % 30) as f32 / 30.0).collect();
+        let sure = Choreography::build(&grid, &map, &bands, 32, &onset, 60.0);
+        let downbeat = map.downbeats[4];
+        assert!(sure.frame_at(downbeat + 0.01, false).rhythm.accent > 0.3);
+        assert!(sure.frame_at(downbeat, false).rhythm.bars_confident);
+
+        map.meter_confidence = 0.2;
+        let unsure = Choreography::build(&grid, &map, &bands, 32, &onset, 60.0);
+        for i in 0..600 {
+            let frame = unsure.frame_at(i as f64 / 60.0 + 1.0, false);
+            assert_eq!(frame.rhythm.accent, 0.0);
+            assert!(!frame.rhythm.bars_confident);
+        }
+        // Vuruşa tepki sürer; güvenli moddaki seyrek nabız vuruşlardan gelir (saniyede ≤ 1).
+        assert!(pulse_rate(&unsure, false, 8.0) > 1.5);
+        let safe = pulse_rate(&unsure, true, 8.0);
+        assert!(safe > 0.5 && safe <= 1.0, "{safe}");
     }
 
     #[test]

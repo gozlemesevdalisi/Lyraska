@@ -105,6 +105,11 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 - Şarkı açılınca (ya da önceden, arka planda) analiz edilir: spektrum (60 kare/sn), seviyeler, vuruşlar,
   ölçü başları, bölümler, droplar, enerji. Sonuç `analysis::cache`'te saklanır.
 - Görsel Yönetmen (`director`) şarkı haritasından her an için bir not çıkarır (atmosfer, ritim, doku).
+- Ölçü (`analysis/meter.rs`, `structure.rs`): vuruş takipçisi eşit aralıklı vuruş arar; aksak ölçüde (9/8 = 2+2+2+3)
+  iki sekizlikte bir vuruş bulur ve üçlü grupları atlar. Bu yüzden ölçü sekizlik ızgarasında da çözümlenir; aksak
+  bulunursa şarkının vuruşları grup başları olur (`BeatGrid`), şarkı haritasında `grouping` ve ölçü başları
+  ızgaradan gelir. Her ölçünün bir güveni var (`meter_confidence`); düşükse yönetmen ölçü başını vurgulamaz
+  (`Rhythm.bars_confident`), otoyolun lambaları ölçüye kilitlenmez, bilgi kartında ölçü yazmaz.
 - Ton (`analysis/key.rs`): tam analizle aynı geçişte uzun pencereli (~0,37 sn) FFT'den kroma; akort kayması
   dairesel ortalamayla bulunur; Krumhansl–Kessler profilleriyle ilinti. Şarkının tonu 15 sn'lik pencerelerin
   oylamasıyla seçilir (ton değiştiren şarkıda iki tonun ortasındaki komşu ton çıkmasın), bölümlerin tonu ayrıca
@@ -197,6 +202,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Güveni düşük ton hiçbir yerde gösterilmez (kütüphane, bilgi kartı)      | `analysis::key` testleri, `library::db` testi `bpm_ve_ton_…`                  |
 | Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez                 | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)                          |
 | Güveni düşük drop hiçbir yerde drop sayılmaz (tek eşik)                 | `analysis::structure`, `director` testleri, bileşen testleri                  |
+| Aksak ölçüde vuruşlar grup başları, ölçü başları doğru (9/8, 7/8, 5/8)  | `analysis::meter` testleri, `analysis::structure` testi `aksak_…`             |
+| Düzenli ölçüler aksak sayılmaz                                          | `analysis::meter` testi `duzenli_olculer_aksak_sayilmaz`                      |
+| Ölçü belirsizse ölçü başı vurgulanmaz (yönetmen, otoyol, bilgi kartı)   | `structure` testi `olcu_basi_tutarsiz_…`, `director`, highway, bileşen testi  |
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri (`sky`, `highway`, `stageLight`) + `npm run check:scenes` (CI) |
 | Parlama sınırı her renk temasında ve her gök manzarasında               | `npm run check:scenes` (temaya göre renklenen sahneler, CI)                   |
 | Yasaklı lisans yok                                                      | `npm run check:licenses`, `cargo deny` (CI)                                   |

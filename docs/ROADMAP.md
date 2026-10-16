@@ -90,11 +90,15 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
     bölüm.
   - Kalite hedefi: işaretli şarkılarda ton isabeti (aynı ton ya da Camelot komşusu) ≥ %80; işaretleme aracına ton
     girişi eklenir.
-- [ ] **Aksak ölçü desteği** (plan, 9 Ekim 2026): 9/8, 7/8, 5/4 ve Türk müziğinin aksak usulleri (ör. 9/8 =
-      2+2+2+3, 7/8 = 2+2+3). Şu an yalnızca 4/4 ve 3/4 seçiliyor.
-  - Ölçü seçimi her ölçü ve gruplama için puanlanır; vuruşlar eşit aralıklı değilse (aksak) gruplar ayrı tutulur.
+- [x] **Aksak ölçü desteği** (0.0.43): 5/8, 7/8, 9/8 ve Türk müziğinin aksak usulleri (ör. 9/8 = 2+2+2+3, 7/8 =
+      2+2+3); bilgi kartında "9/8 (2+2+2+3)". Gerçek aksak şarkılarda isabet proje sahibinin işaretleriyle
+      ölçülecek.
+  - Ölçü sekizlik ızgarasında puanlanır: düzenli (2+2+2+2, 2+2+2, 3+3) ve aksak gruplamaların (dönüşleriyle) her
+    başlangıç konumu vurguyla (başlangıç gücü + bas vuruşu) ilintilenir. Aksak açıkça daha uygunsa şarkının
+    vuruşları grup başları olur (9/8'de ölçüde 4 uzun-kısa vuruş), ölçü başları ızgaradan gelir.
   - **Güven düşükse ölçü vurgusu kapanır:** görseller ölçü başını vurgulamaz (lamba, dalga), yalnızca vuruşa tepki
-    verir. Yanlış ölçü vurgusu, hiç vurgu olmamasından kötüdür.
+    verir; bilgi kartında ölçü yazmaz. Yanlış ölçü vurgusu, hiç vurgu olmamasından kötüdür. Düzenli ölçüde güven,
+    8 ölçülük pencerelerde aynı ölçü başı konumunun kazanma payından.
   - Yalnızca ritim parçasının sürümü artar: kütüphane çözülmeden yenilenir.
   - Kalite hedefi: işaretli aksak şarkılarda ölçü başı isabeti; test verisi sentetik 9/8 ve 7/8 davul kayıtları.
 - [ ] "Gece sürüşü" nostalji modu (proje sahibi onayladı, A'dan sonra): ön camdan gece otoyolu, torpidoda

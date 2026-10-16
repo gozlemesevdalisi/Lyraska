@@ -115,7 +115,8 @@ lyraska/
 │   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   ├── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
-│   │   │   ├── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
+│   │   │   ├── structure.rs  #   ölçü başları ve ölçü güveni, bölümler (Foote yeniliği), droplar, enerji eğrisi
+│   │   │   ├── meter.rs      #   aksak ölçü (5/8, 7/8, 9/8): sekizlik ızgarası, gruplama, grup başı vuruşlar
 │   │   │   ├── key.rs        #   ton tespiti: kroma, akort, Krumhansl–Kessler, Camelot, bölüm bölüm
 │   │   │   ├── cache.rs      #   analiz önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
 │   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)

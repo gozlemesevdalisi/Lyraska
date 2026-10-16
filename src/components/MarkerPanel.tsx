@@ -11,7 +11,7 @@ import {
   parseMarkedKey,
   relationText,
 } from "../lib/musicalKey";
-import { confidentDrops } from "../lib/songMap";
+import { confidentDrops, confidentMeterLabel } from "../lib/songMap";
 import { timelineLayout } from "../lib/timeline";
 
 export interface MarkerPanelProps {
@@ -73,7 +73,7 @@ function SongTimeline({ marker, durationSecs }: { marker: MarkerControls; durati
       </svg>
       <figcaption className="timeline__legend">
         {map
-          ? `Şarkı haritası: ${map.sections.length} bölüm · ${map.meter}/4 ölçü · ▼ programın dropları · ▲ sizin droplarınız`
+          ? `Şarkı haritası: ${map.sections.length} bölüm · ${confidentMeterLabel(map) ?? "belirsiz"} ölçü · ▼ programın dropları · ▲ sizin droplarınız`
           : "Şarkı haritası: analiz sürüyor… · ▲ sizin droplarınız"}
       </figcaption>
     </figure>

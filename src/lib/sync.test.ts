@@ -91,6 +91,7 @@ describe("görsel verinin ileri alınması", () => {
         barPhase: 0.9875,
         anticipation: 0,
         release: 0,
+        barsConfident: true,
       },
       texture: { detail: 0.5, motion: 0.5 },
     },

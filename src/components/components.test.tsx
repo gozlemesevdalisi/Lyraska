@@ -484,7 +484,15 @@ describe("sarma ve spektrum", () => {
 describe("VU ve spektrum sahnelerinin ışığı", () => {
   const director = (mood: number) => ({
     atmosphere: { section: 0, theme: 0, mood, warmth: 0.5 },
-    rhythm: { pulse: 0, accent: 0, beatPhase: 0, barPhase: 0, anticipation: 0, release: 0 },
+    rhythm: {
+      pulse: 0,
+      accent: 0,
+      beatPhase: 0,
+      barPhase: 0,
+      anticipation: 0,
+      release: 0,
+      barsConfident: true,
+    },
     texture: { detail: 0.5, motion: 0.5 },
   });
   const glowOf = (element: Element | null) =>
@@ -1116,6 +1124,7 @@ describe("sahneler", () => {
           barPhase: 0.81,
           anticipation: 0.4,
           release: 0,
+          barsConfident: true,
         },
         texture: { detail: 0.5, motion: 0.6 },
       },
@@ -1246,6 +1255,8 @@ describe("şarkı haritası ve bilgi kartları", () => {
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [
         { start: 0, end: 60, energy: 0.3, label: 0 },
@@ -1285,12 +1296,40 @@ describe("şarkı haritası ve bilgi kartları", () => {
     expect(container.querySelector("main")).toHaveAttribute("data-theme", "1");
   });
 
+  it("aksak ölçü bilgi kartında gruplamasıyla, belirsiz ölçü hiç görünmez", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused", bpm: 120 };
+    const map = {
+      meter: 4,
+      downbeatPhase: 0,
+      grouping: [2, 2, 2, 3],
+      meterConfidence: 0.9,
+      downbeats: [],
+      sections: [{ start: 0, end: 225, energy: 0.5, label: 0 }],
+      drops: [],
+      dropConfidence: [],
+      energy: [],
+    };
+    backend.songMap = map;
+    const { unmount } = render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByText("120 BPM · 9/8 (2+2+2+3)")).toBeInTheDocument();
+    unmount();
+
+    backend.songMap = { ...map, grouping: [], meterConfidence: 0.2 };
+    render(<App />);
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByText("120 BPM")).toBeInTheDocument();
+  });
+
   it("güveni düşük drop için sayaç görünmez", async () => {
     backend.desktop = true;
     backend.status = { ...playing, bpm: 128 };
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [{ start: 0, end: 225, energy: 0.6, label: 0 }],
       // 100. saniyedeki "drop" şüpheli (küçük bir bas artışı): "drop yaklaşıyor" denmez.
@@ -1758,6 +1797,8 @@ describe("işaretleme", () => {
     backend.songMap = {
       meter: 4,
       downbeatPhase: 0,
+      grouping: [],
+      meterConfidence: 0.9,
       downbeats: [],
       sections: [
         { start: 0, end: 60, energy: 0.3, label: 0 },

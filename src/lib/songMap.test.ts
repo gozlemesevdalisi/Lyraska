@@ -3,6 +3,7 @@ import {
   confidentDrops,
   dropCountdown,
   dropLabels,
+  confidentMeterLabel,
   meterLabel,
   sectionTheme,
   themeAt,
@@ -53,6 +54,12 @@ describe("şarkı haritası yazıları", () => {
   it("ölçüyü yazar", () => {
     expect(meterLabel(4)).toBe("4/4");
     expect(meterLabel(3)).toBe("3/4");
+    // Aksak: sekizlik gruplamasıyla.
+    expect(meterLabel(4, [2, 2, 2, 3])).toBe("9/8 (2+2+2+3)");
+    expect(meterLabel(3, [2, 2, 3])).toBe("7/8 (2+2+3)");
+    // Ölçü belirsizse hiç gösterilmez.
+    expect(confidentMeterLabel({ meter: 4, grouping: [], meterConfidence: 0.9 })).toBe("4/4");
+    expect(confidentMeterLabel({ meter: 4, grouping: [], meterConfidence: 0.2 })).toBeNull();
   });
 
   it("yakın drop'larda yalnızca ilkinin yazısı gösterilir", () => {

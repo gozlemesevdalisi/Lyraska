@@ -19,6 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::beats::BeatGrid;
+use super::meter::Aksak;
 
 /// Bas sayılan spektrum bantları (32 bandın ilk 8'i: ~30–150 Hz).
 const BASS_BANDS: usize = 8;
@@ -45,10 +46,19 @@ const DROP_SUSTAIN_BARS: usize = 8;
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct SongMap {
-    /// Ölçüdeki vuruş sayısı (3 ya da 4).
+    /// Ölçüdeki vuruş sayısı: düzenli ölçüde 3 ya da 4; aksak ölçüde grup sayısı (ör. 9/8 =
+    /// 2+2+2+3'te 4: vuruşlar grup başlarıdır).
     pub meter: usize,
     /// İlk tam ölçünün başladığı vuruşun sırası (0..meter).
     pub downbeat_phase: usize,
+    /// Aksak ölçünün sekizlik gruplaması (ör. [2, 2, 2, 3] = 9/8); düzenli ölçüde boş.
+    #[serde(default)]
+    pub grouping: Vec<u8>,
+    /// Ölçünün (ölçü başlarının) güveni (0..1). [`METER_CONFIDENCE_MIN`]'in altında görseller
+    /// ölçü başını vurgulamaz (lamba, dalga), yalnızca vuruşa tepki verir: yanlış ölçü vurgusu,
+    /// hiç vurgu olmamasından kötüdür.
+    #[serde(default)]
+    pub meter_confidence: f32,
     /// Ölçü başlarının zamanları (saniye).
     pub downbeats: Vec<f64>,
     pub sections: Vec<Section>,
@@ -82,7 +92,22 @@ pub struct Section {
 /// (testli).
 pub const DROP_CONFIDENCE_MIN: f32 = 0.6;
 
+/// Ölçü vurgusu için gereken en düşük ölçü güveni (bkz. [`SongMap::meter_confidence`]).
+pub const METER_CONFIDENCE_MIN: f32 = 0.5;
+/// Düzenli ölçüde güven, şarkı boyunca tutarlılıktan: 8 ölçülük pencerelerin (yarım adımla)
+/// kaçında aynı ölçü başı konumu kazanıyor. Bu payın altı güvensiz, üstü tam güvenli. Ölçü başı
+/// diğer vuruşlardan hiç ayrılmıyorsa (z-puanı farkı `METER_CONTRAST_MIN`'in altı) güven yok.
+const METER_WINDOW_BARS: usize = 8;
+const METER_AGREEMENT_LOW: f64 = 0.5;
+const METER_AGREEMENT_FULL: f64 = 0.85;
+const METER_CONTRAST_MIN: f64 = 0.2;
+
 impl SongMap {
+    /// Ölçü başları vurgulanacak kadar güvenli mi?
+    pub fn bars_confident(&self) -> bool {
+        self.meter_confidence >= METER_CONFIDENCE_MIN
+    }
+
     /// Güveni yeterli droplar (artan sırada). Güveni kayıtlı olmayan drop sayılmaz.
     pub fn confident_drops(&self) -> impl Iterator<Item = f64> + '_ {
         self.drops
@@ -117,13 +142,15 @@ impl SongMap {
 /// Analiz verilerinden şarkının yapısını çıkarır.
 ///
 /// `bands`: kare başına `bands_per_frame` seviye (0..255); `loudness_db`: kare başına
-/// ses yüksekliği (dBFS); `fps`: saniyedeki kare.
+/// ses yüksekliği (dBFS); `fps`: saniyedeki kare. `aksak`: aksak ölçü bulunduysa
+/// ([`super::meter::detect`]); o zaman `beats` grup başlarıdır ve ölçü ondan gelir.
 pub fn map_song(
     bands: &[u8],
     bands_per_frame: usize,
     loudness_db: &[f32],
     beats: &BeatGrid,
     fps: f64,
+    aksak: Option<&Aksak>,
 ) -> Option<SongMap> {
     let frames = loudness_db.len().min(bands.len() / bands_per_frame.max(1));
     if beats.beats.len() < 8 || frames == 0 || bands_per_frame < BASS_BANDS {
@@ -181,7 +208,25 @@ pub fn map_song(
     let kick_z = zscores(&kicks);
     let change_z = zscores(&changes);
     let score: Vec<f64> = kick_z.iter().zip(&change_z).map(|(k, c)| k + c).collect();
-    let (meter, downbeat_phase) = choose_meter(&score);
+    let (meter, downbeat_phase, meter_confidence, grouping) = match aksak {
+        Some(aksak) => (
+            aksak.grouping.len(),
+            aksak.downbeat_phase % aksak.grouping.len().max(1),
+            aksak.confidence,
+            aksak.grouping.clone(),
+        ),
+        None => {
+            let (meter, phase, contrast) = choose_meter(&score);
+            let confidence = if contrast < METER_CONTRAST_MIN {
+                0.0
+            } else {
+                ((phase_agreement(&score, meter, phase) - METER_AGREEMENT_LOW)
+                    / (METER_AGREEMENT_FULL - METER_AGREEMENT_LOW))
+                    .clamp(0.0, 1.0)
+            };
+            (meter, phase, confidence as f32, Vec::new())
+        }
+    };
     let downbeat_indices: Vec<usize> = (downbeat_phase..beats.beats.len()).step_by(meter).collect();
     let downbeats: Vec<f64> = downbeat_indices.iter().map(|&i| beats.beats[i]).collect();
 
@@ -296,6 +341,8 @@ pub fn map_song(
     Some(SongMap {
         meter,
         downbeat_phase,
+        grouping,
+        meter_confidence,
         downbeats,
         sections,
         drops,
@@ -304,8 +351,9 @@ pub fn map_song(
     })
 }
 
-/// Ölçü (3 ya da 4) ve ilk ölçü başının sırası.
-fn choose_meter(score: &[f64]) -> (usize, usize) {
+/// Ölçü (3 ya da 4), ilk ölçü başının sırası ve ölçü başlarının diğer vuruşlardan ayrılışı
+/// (ortalama z-puanı farkı).
+fn choose_meter(score: &[f64]) -> (usize, usize, f64) {
     let best = |meter: usize| {
         let phases: Vec<f64> = (0..meter)
             .map(|p| {
@@ -332,10 +380,40 @@ fn choose_meter(score: &[f64]) -> (usize, usize) {
     let (phase3, contrast3) = best(3);
     // 3/4 ancak açıkça daha uygunsa: müziğin çoğu 4/4.
     if contrast3 > 1.5 * contrast4.max(0.05) && contrast3 > 0.5 {
-        (3, phase3)
+        (3, phase3, contrast3)
     } else {
-        (4, phase4)
+        (4, phase4, contrast4)
     }
+}
+
+/// Ölçü başı konumunun şarkı boyunca tutarlılığı: 8 ölçülük pencerelerin (yarım pencere adımla)
+/// kaçında en yüksek puanlı konum `phase`. Pencere sayısı ikiden azsa bütün şarkı tek pencere.
+fn phase_agreement(score: &[f64], meter: usize, phase: usize) -> f64 {
+    let meter = meter.max(1);
+    let window = METER_WINDOW_BARS * meter;
+    let step = (window / 2).max(1);
+    let mut windows = 0usize;
+    let mut agree = 0usize;
+    let mut start = 0;
+    while start + window <= score.len() || (windows == 0 && start == 0) {
+        let end = (start + window).min(score.len());
+        let best = (0..meter)
+            .map(|p| {
+                let values: Vec<f64> = (start..end)
+                    .filter(|&i| i % meter == p)
+                    .map(|i| score[i])
+                    .collect();
+                (p, mean(&values))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(0, |(p, _)| p);
+        windows += 1;
+        if best == phase % meter {
+            agree += 1;
+        }
+        start += step;
+    }
+    agree as f64 / windows.max(1) as f64
 }
 
 /// Bölüm sınırları (ölçü sırası): Foote yenilik eğrisinin tepeleri.
@@ -581,6 +659,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn aksak_dokuz_sekizlikte_vurus_ve_olcu_baslari_dogru() {
+        let rate = 22_050;
+        let (samples, truth, downbeats) =
+            crate::analysis::meter::tests::aksak_drums(270.0, &[2, 2, 2, 3], 40.0, rate);
+        let spectrogram = analyze_samples(&samples, rate);
+        let map = spectrogram.song_map().expect("yapı bulunmalı");
+        assert_eq!(map.grouping, vec![2, 2, 2, 3]);
+        assert_eq!(map.meter, 4, "ölçüde 4 (uzun ve kısa) vuruş");
+        assert!(map.bars_confident(), "{}", map.meter_confidence);
+        // Vuruşlar grup başları (takipçinin eşit aralıklı vuruşları değil).
+        let grid = spectrogram.beat_grid().unwrap();
+        let f = crate::analysis::evaluate::f_measure(&grid.beats, &truth, 0.05);
+        assert!(f > 0.95, "F {f}");
+        // Ölçü başları gerçek ölçü başlarına oturur.
+        let hits = map
+            .downbeats
+            .iter()
+            .filter(|&&d| downbeats.iter().any(|t| (t - d).abs() < 0.05))
+            .count();
+        assert!(
+            hits as f64 >= 0.9 * map.downbeats.len() as f64,
+            "{hits}/{}",
+            map.downbeats.len()
+        );
+        // Her ölçü başı, vuruşların `meter` aralıklı dizisinde (ölçüdeki yer = 1).
+        let first = grid
+            .beats
+            .iter()
+            .position(|&b| (b - map.downbeats[1]).abs() < 1e-9)
+            .unwrap();
+        assert_eq!(map.bar_beat(first), 1);
+        assert_eq!(map.bar_beat(first + 3), 4);
+        assert_eq!(map.bar_beat(first + 4), 1);
+    }
+
+    #[test]
+    fn olcu_basi_tutarsiz_kayitta_olcu_vurgusu_kapanir() {
+        // Aynı davul; birinde ölçü başı her ölçüde aynı yerde, ötekinde her ölçüde başka vuruşta.
+        let rate = 22_050;
+        let (samples, _, _) =
+            crate::analysis::meter::tests::aksak_drums(240.0, &[2, 2, 2, 2], 60.0, rate);
+        let accented = analyze_samples(&samples, rate).song_map().unwrap();
+        assert!(accented.bars_confident(), "{}", accented.meter_confidence);
+        let shifting = crate::analysis::meter::tests::shifting_drums(240.0, 60.0, rate);
+        let unsure = analyze_samples(&shifting, rate).song_map().unwrap();
+        assert!(!unsure.bars_confident(), "{}", unsure.meter_confidence);
+        assert!(unsure.grouping.is_empty());
+    }
+
     /// Elektronik müzik kalıbı: ana kısım (8 ölçü) → sakin kısım (8) → yükseliş (4)
     /// → drop (8) → kapanış (4). 128 BPM, 0,5 sn sessiz başlangıç.
     fn edm_track(rate: u32) -> (Vec<f64>, f64, f64) {
@@ -733,6 +861,8 @@ mod tests {
         let map = SongMap {
             meter: 4,
             downbeat_phase: 2,
+            grouping: Vec::new(),
+            meter_confidence: 1.0,
             downbeats: vec![],
             sections: vec![],
             drops: vec![],
@@ -777,6 +907,8 @@ mod tests {
         let map = SongMap {
             meter: 4,
             downbeat_phase: 0,
+            grouping: Vec::new(),
+            meter_confidence: 1.0,
             downbeats: vec![],
             sections: vec![],
             drops: vec![30.0, 60.0, 90.0, 120.0],

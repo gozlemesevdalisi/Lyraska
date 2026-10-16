@@ -20,4 +20,9 @@ anticipation: number,
 /**
  * Drop anındaki açılım: 1 → 0.
  */
-release: number, };
+release: number, 
+/**
+ * Ölçü başları güvenli mi? Değilse ölçü başı vurgusu yoktur (`accent` 0) ve sahneler
+ * `bar_phase`'e kilitlenmez (ör. otoyolun lambaları): yalnızca vuruşa tepki verilir.
+ */
+barsConfident: boolean, };

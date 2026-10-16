@@ -183,9 +183,45 @@ pub fn track(onset: &[f32], fps: f64, latency: f64) -> Option<BeatGrid> {
     Some(BeatGrid { bpm, beats })
 }
 
+/// Verilen aralıkla (saniye) bir ızgara: [`track`] gibi dinamik programlamayla başlangıçlara
+/// oturur ama tempo aranmaz (ör. aksak ölçü çözümlemesi için sekizlik ızgarası). Izgara
+/// noktalarının zamanları ve her birindeki başlangıç gücü (yerel, normalleştirilmiş).
+pub(crate) fn track_period(
+    onset: &[f32],
+    fps: f64,
+    latency: f64,
+    period_secs: f64,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    let period = period_secs * fps;
+    if (onset.len() as f64) < MIN_SECONDS * fps || period < 2.0 {
+        return None;
+    }
+    let strength = normalize(onset, fps)?;
+    let local = smooth(&strength, period / 32.0);
+    let frames = trim_quiet_ends(&local, dynamic_beats(&local, period));
+    if frames.len() < 4 {
+        return None;
+    }
+    let times = frames
+        .iter()
+        .map(|&b| ((b as f64 + peak_offset(&local, b)) / fps - latency).max(0.0))
+        .collect();
+    // Nokta çevresindeki (±1 kare) en güçlü başlangıç: tepe kareye tam denk gelmeyebilir.
+    let strengths = frames
+        .iter()
+        .map(|&b| {
+            strength[b.saturating_sub(1)..(b + 2).min(strength.len())]
+                .iter()
+                .copied()
+                .fold(0.0, f64::max)
+        })
+        .collect();
+    Some((times, strengths))
+}
+
 /// Ortalama vuruş aralığı: vuruş anlarına doğru uydurma (en küçük kareler).
 /// Tek tek aralıklara göre kare ızgarasından etkilenmez.
-fn mean_interval(beats: &[f64]) -> f64 {
+pub(crate) fn mean_interval(beats: &[f64]) -> f64 {
     let n = beats.len() as f64;
     let mean_index = (n - 1.0) / 2.0;
     let mean_time = beats.iter().sum::<f64>() / n;
