@@ -275,6 +275,12 @@ fn run(
     let mut started = false;
     // Şarkı bitince taşma korumasının gecikme hattında kalan son kareler de yazılır.
     let mut tail_left = renderer.latency_frames();
+    // Özel modda şarkının ardına yazılan sessizlik (kare). Yoklamalı özel modda arabelleğin
+    // boşalması bir kesinti sayılır ve bazı sürücüler döngüsel arabellekteki eski veriyi yeniden
+    // çalar (şarkı sonunda tık). Son kareden sonra bir arabellek dolusu sessizlik yazılır; "bitti"
+    // ancak aygıtta yalnızca o sessizlik kalınca denir (#79).
+    let exclusive = stream.int.is_some();
+    let mut silence_written: u64 = 0;
     // Duraklatma geçişi hoparlöre ulaştı mı (oturum ancak o zaman kapatılır)?
     let mut fade = FadeWatch::default();
 
@@ -357,8 +363,23 @@ fn run(
             .fetch_max(consumed.saturating_sub(latency), Ordering::AcqRel);
 
         if draining {
-            if padding == 0 {
-                // Her şey çalındı: konum tam şarkı sonu.
+            if exclusive && silence_written == 0 {
+                let space = client
+                    .get_available_space_in_frames()
+                    .map_err(fail("Ses aygıtı okunamadı"))? as usize;
+                let frames = space.min(buffer_frames);
+                if frames > 0 {
+                    let len = frames * stream.block_align;
+                    bytes[..len].fill(0);
+                    render_client
+                        .write_to_device(frames, &bytes[..len], None)
+                        .map_err(fail("Ses aygıtına yazılamadı"))?;
+                    silence_written = frames as u64;
+                }
+            }
+            if padding <= silence_written {
+                // Şarkının bütün kareleri çalındı (aygıtta yalnızca sessizlik kaldı): konum tam
+                // şarkı sonu.
                 shared.output_heard.fetch_max(consumed, Ordering::AcqRel);
                 shared.ended.store(true, Ordering::Release);
                 break Ok(());

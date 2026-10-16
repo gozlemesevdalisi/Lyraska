@@ -177,7 +177,7 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Nasıl: autoeq.app'ten kulaklığınızın "Equalizer APO" (ParametricEQ.txt) dosyasını indirin; **Ekolayzer →
   Kulaklık profili** ile yükleyin; açıp kapatın.
 - Neye bakılır: profil adı görünür; açıkken ses dengesi değişir; kapalıyken eski hâline döner.
-- 0.0.45'ten beri Equalizer APO'nun bütün süzgeç türleri okunur (REW gibi programların dosyaları da): LS/HS, eğimli
+- 0.0.47'den beri Equalizer APO'nun bütün süzgeç türleri okunur (REW gibi programların dosyaları da): LS/HS, eğimli
   raflar ("LSC 6 dB"), "BW Oct", LP, HP, BP, NO, AP. Elinizde böyle bir dosya varsa yükleyin; Equalizer APO'da
   nasıl duyuluyorsa Lyraska'da da öyle duyulmalı. Okunamayan satır olursa hangi satır olduğu yazar.
 

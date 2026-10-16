@@ -1,7 +1,7 @@
 {
   "name": "lyraska",
   "private": true,
-  "version": "0.0.45",
+  "version": "0.0.47",
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {

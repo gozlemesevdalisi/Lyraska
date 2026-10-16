@@ -18,9 +18,9 @@ use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
 use super::meter;
 use super::structure::{self, SongMap};
 use crate::audio::bass::{BassPeakMeter, BassPeaks};
-use crate::audio::decode::Decoder;
+use crate::audio::decode::{Decoder, TrackInfo};
 use crate::audio::loudness::{Loudness, LoudnessMeter};
-use crate::audio::Sample;
+use crate::audio::{AudioError, Sample};
 use crate::director::Choreography;
 
 /// Saniyedeki analiz karesi sayısı (ekran tazeleme hızıyla aynı).
@@ -69,6 +69,9 @@ pub struct Spectrogram {
     ready: AtomicUsize,
     done: AtomicBool,
     cancelled: AtomicBool,
+    /// Çözme yarıda kesildi (EOF dışı hata): kareler çalma için kullanılır ama analiz
+    /// "tamamlanmış" diye önbelleğe yazılmaz; şarkı bir dahaki açılışta baştan analiz edilir.
+    truncated: AtomicBool,
 }
 
 impl Spectrogram {
@@ -89,6 +92,7 @@ impl Spectrogram {
             ready: AtomicUsize::new(0),
             done: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
+            truncated: AtomicBool::new(false),
         })
     }
 
@@ -104,6 +108,19 @@ impl Spectrogram {
     /// Analiz iptal edildi mi (bitmeden başka şarkı açıldı)?
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Çözme yarıda kesildi mi (dosya sonu değil, hata)? Böyle bir analiz saklanmaz.
+    pub fn is_truncated(&self) -> bool {
+        self.truncated.load(Ordering::Acquire)
+    }
+
+    fn mark_truncated(&self, error: &AudioError) {
+        if !self.truncated.swap(true, Ordering::AcqRel) {
+            crate::diagnostics::error(&format!(
+                "Analiz yarıda kesildi, sonuç saklanmayacak: {error}"
+            ));
+        }
     }
 
     /// Önbellekteki sonuçtan hazır (bitmiş) bir spektrogram kurar: şarkı yeniden
@@ -122,9 +139,9 @@ impl Spectrogram {
         spectrogram
     }
 
-    /// Bitmiş analizin saklanacak hâli; analiz bitmediyse (ya da yarıda kesildiyse) `None`.
+    /// Bitmiş analizin saklanacak hâli; analiz bitmediyse ya da çözme yarıda kesildiyse `None`.
     pub fn saved(&self) -> Option<SavedAnalysis> {
-        if !self.is_done() {
+        if !self.is_done() || self.is_truncated() {
             return None;
         }
         Some(SavedAnalysis {
@@ -379,9 +396,33 @@ pub fn analyze(decoder: Decoder, target: &Spectrogram) {
     analyze_paced(decoder, target, &mut || {});
 }
 
+/// Analizin okuduğu ses kaynağı. Gerçek kaynak [`Decoder`]'dır; testler yarıda kesilen bir
+/// kaynağı taklit eder.
+pub trait ChunkSource {
+    fn info(&self) -> &TrackInfo;
+    fn next_chunk(&mut self) -> Result<Option<&[Sample]>, AudioError>;
+}
+
+impl ChunkSource for Decoder {
+    fn info(&self) -> &TrackInfo {
+        Decoder::info(self)
+    }
+
+    fn next_chunk(&mut self) -> Result<Option<&[Sample]>, AudioError> {
+        Decoder::next_chunk(self)
+    }
+}
+
 /// [`analyze`] gibi; ama her çözülen parçadan sonra `pace` çağrılır (arka plan
 /// analizi burada bekleyerek işlemciyi çalan şarkıya bırakır).
 pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn FnMut()) {
+    analyze_source(&mut decoder, target, pace);
+}
+
+/// [`analyze_paced`]'in kaynağı soyutlanmış hâli. Çözme dosya sonuna gelmeden hata verirse
+/// (ağ kopması, okunamayan disk) eldeki kareler yayımlanır ama analiz saklanmaz
+/// ([`Spectrogram::is_truncated`]): geçici bir hata o şarkının görsellerini kalıcı kısaltmasın.
+pub fn analyze_source(decoder: &mut dyn ChunkSource, target: &Spectrogram, pace: &mut dyn FnMut()) {
     let info = decoder.info().clone();
     let channels = info.channels.max(1);
     let mut analyzer = BandAnalyzer::new(info.sample_rate);
@@ -413,7 +454,11 @@ pub fn analyze_paced(mut decoder: Decoder, target: &Spectrogram, pace: &mut dyn 
         pace();
         let chunk = match decoder.next_chunk() {
             Ok(Some(chunk)) => chunk,
-            Ok(None) | Err(_) => break,
+            Ok(None) => break,
+            Err(error) => {
+                target.mark_truncated(&error);
+                break;
+            }
         };
         for frame in chunk.chunks_exact(channels) {
             meters.add(frame);
@@ -541,8 +586,12 @@ pub fn refresh_paced(
             pace();
             let chunk = match decoder.next_chunk() {
                 Ok(Some(chunk)) => chunk,
-                // Tam analizdeki gibi: çözülemeyen yerde durulur.
-                Ok(None) | Err(_) => break,
+                Ok(None) => break,
+                // Tam analizdeki gibi: yarıda kesilen ölçüm saklanmaz.
+                Err(error) => {
+                    target.mark_truncated(&error);
+                    break;
+                }
             };
             for frame in chunk.chunks_exact(channels) {
                 if let Some(meter) = loudness_meter.as_mut() {
@@ -719,6 +768,54 @@ mod tests {
         let spectrogram = Spectrogram::new();
         analyze(Decoder::open(path).unwrap(), &spectrogram);
         spectrogram
+    }
+
+    /// Çözme ortasında hata veren kaynak (ağ kopması, okunamayan disk).
+    struct Kopan {
+        decoder: Decoder,
+        remaining: usize,
+    }
+
+    impl ChunkSource for Kopan {
+        fn info(&self) -> &TrackInfo {
+            self.decoder.info()
+        }
+
+        fn next_chunk(&mut self) -> Result<Option<&[Sample]>, AudioError> {
+            if self.remaining == 0 {
+                return Err(AudioError::Decode("ağ paylaşımı koptu".to_owned()));
+            }
+            self.remaining -= 1;
+            self.decoder.next_chunk()
+        }
+    }
+
+    #[test]
+    fn yarida_kesilen_cozme_bitmis_sayilir_ama_saklanmaz() {
+        let path = drum_song("kopan");
+        let mut source = Kopan {
+            decoder: Decoder::open(&path).unwrap(),
+            remaining: 20,
+        };
+        let spectrogram = Spectrogram::new();
+        analyze_source(&mut source, &spectrogram, &mut || {});
+        assert!(
+            spectrogram.is_done(),
+            "bekleyenler (sıradaki şarkı) serbest kalır"
+        );
+        assert!(spectrogram.is_truncated());
+        assert!(
+            spectrogram.ready_frames() > 0,
+            "eldeki kareler görseller için kullanılır"
+        );
+        assert!(
+            spectrogram.saved().is_none(),
+            "kısa analiz dosya damgasıyla önbelleğe yazılmaz"
+        );
+        // Dosya sonuna kadar çözülen analiz saklanır (kesilme bayrağı yanlışlıkla kalkmaz).
+        let full = analyze_file(&path);
+        assert!(!full.is_truncated());
+        assert!(full.saved().is_some());
     }
 
     /// Davullu 22,05 kHz test şarkısı (vuruş, ölçü ve bölüm bulunacak kadar uzun).

@@ -117,7 +117,7 @@ Proje sahibi, 16 Ekim 2026: "Faz 1 tamam."
       ([#25](https://github.com/gozlemesevdalisi/Lyraska/issues/25))
 - [ ] Parametrik EQ (motor hazır: kulaklık düzeltmesi bunu kullanıyor; kullanıcının elle ayarlayacağı arayüz yok).
       Ekolayzerle ilgili kalan işler tek yerde: [#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)
-  - [x] Süzgeç çekirdeği (0.0.45; proje sahibi, 16 Ekim 2026: "en üst düzey mühendislik, en üst düzey matematik"):
+  - [x] Süzgeç çekirdeği (0.0.47; proje sahibi, 16 Ekim 2026: "en üst düzey mühendislik, en üst düzey matematik"):
         sekiz tür (tepe, raflar, alçak/yüksek/bant geçiren, çentik, tüm geçiren); RBJ'nin yanında analog eğriye
         eşlenmiş tasarım (44,1 kHz'te ortalama sapma tepe süzgecinde 0,70 → 0,16 dB, alçak geçirende 3,97 → 0,16 dB;
         hiçbir ayarda RBJ'den uzak değil). Kulaklık profilleri Equalizer APO'nun kaynak kodundaki anlamlarla okunur

@@ -53,7 +53,7 @@ describe("senkron ayarı", () => {
 
   it("tıklamalara basılınca gecikmeyi ölçer, uygular ve geri alınabilir", async () => {
     let position = 0;
-    const openPath = vi.fn(async () => {});
+    const openPath = vi.fn(async () => true);
     const { result } = renderHook(() => useSync(openPath, () => position, null));
     await waitFor(() => expect(result.current.delayMs).toBe(40));
 
