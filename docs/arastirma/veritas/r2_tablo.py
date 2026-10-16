@@ -1,5 +1,5 @@
 """R2 sonuç tabloları: r2_degerlendir.py'nin JSON çıktılarını VERITAS.md için Markdown tablolarına çevirir.
-Kullanım: python r2_tablo.py <çıktı.json> […]  (aynı parça birden çok dosyada varsa sözlükleri birleştirilir)."""
+Kullanım: python r2_tablo.py <çıktı.json> […] [--sec <yöntem alt dizesi> …]  (aynı parça birden çok dosyada varsa sözlükleri birleştirilir)."""
 import json
 import sys
 
@@ -14,7 +14,8 @@ def tr1(x, sign=True):
     return (f"{x:+.2f}" if sign else f"{x:.2f}").replace(".", ",")
 
 
-def main(paths):
+def main(paths, secim=None):
+    """secim: yöntem adlarında aranan alt dizeler; verilirse yalnızca eşleşen yöntemler (ve çözücü/kâhin) yazılır."""
     rows = {}
     for p in paths:
         for r in json.load(open(p)):
@@ -35,6 +36,8 @@ def main(paths):
         print("| Yöntem | " + " | ".join(names) + " | Ortalama |")
         print("|" + "---|" * (len(names) + 2))
         methods = list(parts[names[0]]["yöntem"])
+        if secim:
+            methods = [m for m in methods if m == "çözücü" or m.startswith("kâhin:") or any(x in m for x in secim)]
         for m in methods:
             vals, cells = [], []
             for n in names:
@@ -79,4 +82,9 @@ def main(paths):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    args = sys.argv[1:]
+    secim = None
+    if "--sec" in args:
+        i = args.index("--sec")
+        secim, args = args[i + 1 :], args[:i]
+    main(args, secim)
