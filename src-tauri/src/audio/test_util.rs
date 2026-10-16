@@ -28,7 +28,20 @@ pub fn write_wav(
     frames: usize,
     sample: impl Fn(usize, usize) -> f64,
 ) {
-    let data_len = frames * usize::from(channels) * 2;
+    write_wav_bits(path, rate, channels, 16, frames, sample);
+}
+
+/// `bits` (16 ya da 24) bitlik PCM WAV yazar.
+pub fn write_wav_bits(
+    path: &Path,
+    rate: u32,
+    channels: u16,
+    bits: u16,
+    frames: usize,
+    sample: impl Fn(usize, usize) -> f64,
+) {
+    let bytes_per_sample = usize::from(bits / 8);
+    let data_len = frames * usize::from(channels) * bytes_per_sample;
     let mut bytes = Vec::with_capacity(44 + data_len);
     bytes.extend_from_slice(b"RIFF");
     bytes.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
@@ -37,15 +50,16 @@ pub fn write_wav(
     bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
     bytes.extend_from_slice(&channels.to_le_bytes());
     bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(channels) * 2).to_le_bytes());
-    bytes.extend_from_slice(&(channels * 2).to_le_bytes());
-    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(&(rate * u32::from(channels) * bytes_per_sample as u32).to_le_bytes());
+    bytes.extend_from_slice(&(channels * bytes_per_sample as u16).to_le_bytes());
+    bytes.extend_from_slice(&bits.to_le_bytes());
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&(data_len as u32).to_le_bytes());
+    let full_scale = ((1i64 << (bits - 1)) - 1) as f64;
     for frame in 0..frames {
         for channel in 0..usize::from(channels) {
-            let value = (sample(frame, channel).clamp(-1.0, 1.0) * 32767.0).round() as i16;
-            bytes.extend_from_slice(&value.to_le_bytes());
+            let value = (sample(frame, channel).clamp(-1.0, 1.0) * full_scale).round() as i32;
+            bytes.extend_from_slice(&value.to_le_bytes()[..bytes_per_sample]);
         }
     }
     std::fs::File::create(path)

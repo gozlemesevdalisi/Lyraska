@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use rtrb::{Producer, RingBuffer};
 use serde::Serialize;
 
-use super::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus, AbxTest};
+use super::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus, AbxTest, PreparedAbx};
 use super::decode::{Decoder, TrackInfo};
 use super::eq::{protection_db, Design, EqControl, EqSettings, EqState};
 use super::normalize::{LoudnessControl, TrackLevels};
@@ -297,7 +297,19 @@ impl Session {
         let channels = Converter::output_channels(info.channels);
         let (mode, notice) = if bit_perfect {
             match output::exclusive_format(info.sample_rate, channels) {
-                Ok(format) => (OutputMode::Exclusive(format), None),
+                // Aygıtın biçimi şarkıdan dar olamaz: 24 bit şarkı 16 bit aygıtta bit bit aynı
+                // çıkmaz (yuvarlanır); o zaman "bit-perfect" denmez, paylaşımlı yol kullanılır (#79).
+                Ok(format) => match decoder.source_bits() {
+                    Some(bits) if u32::from(format.valid_bits) < bits => (
+                        OutputMode::Shared,
+                        Some(format!(
+                            "şarkı {bits} bit, aygıt özel modda en çok {} bit kabul ediyor; \
+                             bit-perfect yerine paylaşımlı yol kullanıldı",
+                            format.valid_bits
+                        )),
+                    ),
+                    _ => (OutputMode::Exclusive(format), None),
+                },
                 Err(reason) => (OutputMode::Shared, Some(reason)),
             }
         } else {
@@ -687,11 +699,19 @@ impl Player {
     /// Kör dinleme testini kurar. Çalan şarkı durur (ses aygıtı teste geçer); test bitince
     /// kaldığı yerde duraklatılmış açılır.
     pub fn abx_start(&mut self, request: &AbxRequest) -> Result<AbxStatus, AudioError> {
+        self.abx_install(AbxTest::prepare(request))
+    }
+
+    /// Hazırlığı (uzun sürebilir: iki dosya çözülür, hizalanır) oynatıcının kilidi **dışında**
+    /// yapılmış testi kurar; görseller ve durum sorguları hazırlık boyunca beklemez (#81).
+    /// Hazırlık başarısızsa şarkı kesilmez; süren bir test yeniden kuruluyorduysa o test kapanır
+    /// ve sakladığı şarkı kaldığı yerde geri gelir.
+    pub fn abx_install(
+        &mut self,
+        prepared: Result<PreparedAbx, AudioError>,
+    ) -> Result<AbxStatus, AudioError> {
         self.abx = None;
-        // Önce hazırlık (uzun sürebilir, başarısız olabilir): bu sırada şarkı çalmayı sürdürür;
-        // kurulamazsa şarkı kesilmez. Süren bir test yeniden kuruluyorduysa o test kapanır ve
-        // sakladığı şarkı kaldığı yerde geri gelir.
-        let prepared = match AbxTest::prepare(request) {
+        let prepared = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.abx_stop();
@@ -2243,6 +2263,40 @@ mod tests {
         assert!(output.resampled);
         assert_eq!(output.bit_depth, None);
         assert!(!player.session.as_ref().unwrap().shared.controls.bit_perfect);
+        reset_device();
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn bit_perfect_aygit_sarkidan_dar_bit_derinligindeyse_acilmaz_ve_nedenini_soyler() {
+        // Aygıt özel modda yalnızca 16 bit kabul ediyor; 24 bit şarkı orada bit bit aynı çıkamaz.
+        exclusive_device(Some(output::IntFormat::new(16, 16)), false);
+        let path = temp_path("bit-perfect-24.wav");
+        crate::audio::test_util::write_wav_bits(&path, 44_100, 2, 24, 44_100, |frame, _| {
+            0.3 * crate::audio::test_util::sine(440.0, 44_100, frame)
+        });
+        let mut player = Player::new();
+        player.set_playback_options(bit_perfect(true)).unwrap();
+        player.load(&path, false).unwrap();
+        let output = player.status().output.unwrap();
+        assert!(
+            !output.bit_perfect,
+            "16 bit aygıtta 24 bit şarkı bit-perfect sayılmaz"
+        );
+        assert_eq!(output.bit_depth, None);
+        let notice = output.notice.unwrap();
+        assert!(
+            notice.contains("24 bit") && notice.contains("16 bit"),
+            "{notice}"
+        );
+        assert!(!player.session.as_ref().unwrap().shared.controls.bit_perfect);
+
+        // Aynı şarkı 24 bit kabul eden aygıtta bit-perfect açılır.
+        exclusive_device(Some(output::IntFormat::new(32, 24)), false);
+        player.load(&path, false).unwrap();
+        let output = player.status().output.unwrap();
+        assert!(output.bit_perfect);
+        assert_eq!(output.bit_depth, Some(24));
         reset_device();
         std::fs::remove_file(path).ok();
     }

@@ -32,7 +32,7 @@ export interface SyncControls {
  * tıklamaya basılınca sonuç kendiliğinden uygulanır.
  */
 export function useSync(
-  openPath: (path: string) => Promise<void>,
+  openPath: (path: string) => Promise<boolean | undefined>,
   positionNow: () => number,
   /** Sonuna kadar çalınıp biten kaydın yolu (yoksa `null`). */
   endedPath: string | null,

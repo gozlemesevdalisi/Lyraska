@@ -17,7 +17,7 @@ use crate::analysis::annotation::{AnnotatedTrack, Annotation, AnnotationStore};
 use crate::analysis::background::BackgroundAnalysis;
 use crate::analysis::cache::AnalysisCache;
 use crate::analysis::evaluate;
-use crate::audio::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus};
+use crate::audio::abx::{AbxChoice, AbxRequest, AbxSource, AbxStatus, AbxTest};
 use crate::audio::decode::{Decoder, TrackInfo, SUPPORTED_EXTENSIONS};
 use crate::audio::eq::{EqSettings, EqState};
 use crate::audio::peq::{HeadphoneProfile, HeadphoneSettings, HeadphoneState};
@@ -621,7 +621,12 @@ pub async fn abx_start(
         clip_secs,
         trials,
     };
-    player.lock()?.abx_start(&request).map_err(reported)
+    // Hazırlık (iki dosyayı çözme, hizalama) saniyeler sürebilir: oynatıcının kilidi dışında ve
+    // ayrı bir iş parçacığında yapılır; görseller ve durum sorguları bu sırada beklemez.
+    let prepared = tauri::async_runtime::spawn_blocking(move || AbxTest::prepare(&request))
+        .await
+        .map_err(reported)?;
+    player.lock()?.abx_install(prepared).map_err(reported)
 }
 
 /// Testte A, B ya da X'i çalar (aynı konumdan).

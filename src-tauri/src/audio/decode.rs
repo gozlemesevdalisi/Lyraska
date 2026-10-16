@@ -63,6 +63,9 @@ pub struct Decoder {
     skip_until: Option<f64>,
     /// Boşluksuz çalma: baştaki ve sondaki kodlayıcı dolgusu (MP4/AAC).
     trim: Option<Trim>,
+    /// Kaynağın örnek çözünürlüğü (bit): bit-perfect modda aygıt biçimi bundan dar olamaz.
+    /// Kayan noktalı kaynak 32 sayılır; kodek bildirmiyorsa (MP3, Vorbis, AAC) `None`.
+    source_bits: Option<u32>,
 }
 
 impl Decoder {
@@ -95,6 +98,12 @@ impl Decoder {
             .map(|c| c.count())
             .filter(|&c| c > 0)
             .ok_or_else(|| AudioError::Unsupported("kanal sayısı bilinmiyor".to_owned()))?;
+
+        let source_bits = match params.sample_format {
+            Some(symphonia::core::audio::sample::SampleFormat::F32)
+            | Some(symphonia::core::audio::sample::SampleFormat::F64) => Some(32),
+            _ => params.bits_per_sample,
+        };
 
         // MP3 ve Vorbis'te dolguyu çözücü atar; MP4'te bilgiyi dosyadan biz okuruz.
         let is_mp4 = path
@@ -138,12 +147,18 @@ impl Decoder {
             buffer: Vec::new(),
             skip_until: None,
             trim,
+            source_bits,
         })
     }
 
     /// Şarkı bilgileri.
     pub fn info(&self) -> &TrackInfo {
         &self.info
+    }
+
+    /// Kaynağın örnek çözünürlüğü (bit); kodek bildirmiyorsa `None`.
+    pub fn source_bits(&self) -> Option<u32> {
+        self.source_bits
     }
 
     /// Şarkıda verilen saniyeye atlar ve gerçekten atlanan kareyi döndürür.
@@ -198,9 +213,13 @@ impl Decoder {
             if packet.track_id != self.track_id {
                 continue;
             }
+            // Çözücünün verdiği tampon paketin `pts` anından değil, kodlayıcı gecikmesi
+            // kırpıldıktan sonraki (`pts + trim_start`) andan başlar: symphonia MP3'te ilk
+            // paketlere eksi pts verip gecikmeyi kendisi kırpar. `pts`'ten saymak o kırpmayı
+            // bir kez daha yapıyor ve her MP3'ün ilk 47 örneğini atıyordu (#73).
             let packet_start = self
                 .time_base
-                .and_then(|tb| tb.calc_time(packet.pts))
+                .and_then(|tb| tb.calc_time(packet.pts.checked_add(packet.trim_start)?))
                 .map(|t| t.as_secs_f64());
             match self.decoder.decode(&packet) {
                 Ok(audio) => {
