@@ -37,12 +37,14 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
-    /// Ayarları dosyadan okur; okunamazsa varsayılanlarla başlar.
+    /// Ayarları dosyadan okur; okunamazsa varsayılanlarla başlar. Tek bir alan bozuksa yalnızca
+    /// o alan varsayılana döner (ekolayzer, kulaklık profili ve gecikme birbirini götürmez); dosya
+    /// hiç JSON değilse `settings.json.bozuk` olarak saklanır ve günlüğe yazılır.
     pub fn open(path: &Path) -> Self {
-        let settings = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-            .unwrap_or_default();
+        let settings = match std::fs::read_to_string(path) {
+            Ok(text) => parse_lenient(&text, path),
+            Err(_) => Settings::default(),
+        };
         Self {
             path: Some(path.to_path_buf()),
             current: Mutex::new(Settings {
@@ -81,13 +83,66 @@ impl SettingsStore {
     }
 }
 
+/// Dosyayı alan alan çözer: bozuk alan varsayılana döner ve günlüğe yazılır; JSON bile değilse
+/// dosya `.bozuk` uzantısıyla kenara alınır (ilk kayıt üstüne yazmadan önce iz kalsın).
+fn parse_lenient(text: &str, path: &Path) -> Settings {
+    if let Ok(settings) = serde_json::from_str::<Settings>(text) {
+        return settings;
+    }
+    let value = match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Object(map)) => map,
+        _ => {
+            let backup = path.with_extension("json.bozuk");
+            let kept = std::fs::copy(path, &backup).is_ok();
+            crate::diagnostics::error(&format!(
+                "Ayar dosyası okunamadı, varsayılanlarla başlandı{}: {}",
+                if kept {
+                    " (bozuk dosya .bozuk olarak saklandı)"
+                } else {
+                    ""
+                },
+                path.display()
+            ));
+            return Settings::default();
+        }
+    };
+    fn field<T: serde::de::DeserializeOwned + Default>(
+        map: &serde_json::Map<String, serde_json::Value>,
+        name: &str,
+    ) -> T {
+        match map.get(name) {
+            None => T::default(),
+            Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|e| {
+                crate::diagnostics::error(&format!(
+                    "Ayar dosyasında '{name}' alanı bozuk, varsayılana döndü: {e}"
+                ));
+                T::default()
+            }),
+        }
+    }
+    Settings {
+        equalizer: field(&value, "equalizer"),
+        headphone: field(&value, "headphone"),
+        visual_safe: field(&value, "visualSafe"),
+        audio_delay_ms: field(&value, "audioDelayMs"),
+        playback: field(&value, "playback"),
+    }
+}
+
+/// Önce geçici dosyaya yazılır, diske işlenir (`sync_all`), sonra adı değiştirilir: yazma ya da
+/// yeniden adlandırma sırasında elektrik kesilse de eski ayarlar bozulmaz.
 fn save(path: &Path, settings: &Settings) -> io::Result<()> {
+    use std::io::Write;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let text = serde_json::to_string_pretty(settings).map_err(io::Error::other)?;
     let temp = path.with_extension("json.tmp");
-    std::fs::write(&temp, text)?;
+    {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+    }
     std::fs::rename(&temp, path)
 }
 
@@ -128,6 +183,39 @@ mod tests {
         assert_eq!(
             settings.equalizer.gains_db[9], 12.0,
             "sınır dışı değer kırpılır"
+        );
+    }
+
+    #[test]
+    fn tek_alani_bozuk_dosyada_digerleri_korunur() {
+        // Gecikme alanı yanlış türde (gelecek sürüm ya da elle düzenleme): ekolayzer ve kulaklık
+        // ayarları kaybolmaz, yalnızca gecikme varsayılana döner.
+        let path = temp_path("yari-bozuk-ayarlar.json");
+        std::fs::write(
+            &path,
+            r#"{"equalizer":{"enabled":false,"gainsDb":[1,2,3,4,5,6,7,8,9,10],"bassDb":6},
+                "visualSafe":true,"audioDelayMs":"x"}"#,
+        )
+        .unwrap();
+        let settings = SettingsStore::open(&path).get();
+        assert!(!settings.equalizer.enabled);
+        assert_eq!(settings.equalizer.gains_db[2], 3.0);
+        assert_eq!(settings.equalizer.bass_db, 6.0);
+        assert!(settings.visual_safe);
+        assert_eq!(
+            settings.audio_delay_ms, 0,
+            "yalnızca bozuk alan varsayılana döner"
+        );
+    }
+
+    #[test]
+    fn json_olmayan_dosya_kenara_alinir() {
+        let path = temp_path("cop-ayarlar.json");
+        std::fs::write(&path, "\u{0}\u{0}bozuk").unwrap();
+        assert_eq!(SettingsStore::open(&path).get(), Settings::default());
+        assert!(
+            path.with_extension("json.bozuk").exists(),
+            "bozuk dosya silinmeden önce yedeklenir"
         );
     }
 

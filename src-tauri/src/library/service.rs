@@ -262,8 +262,17 @@ fn run_scan(library: &Mutex<Library>, scan: &ScanState, request: &ScanRequest) -
     folders
         .iter()
         .filter(|folder| request.all || request.folders.contains(&folder.id))
-        .filter_map(|folder| scan::scan_folders(library, std::slice::from_ref(folder), scan).err())
-        .map(|e| e.to_string())
+        .filter_map(|folder| {
+            match scan::scan_folders(library, std::slice::from_ref(folder), scan) {
+                Ok(summary) if summary.unreadable > 0 => Some(format!(
+                    "{}: {} alt klasör ya da dosya okunamadı (izin, ağ ya da disk hatası); \
+                     oradaki şarkılara dokunulmadı.",
+                    folder.path, summary.unreadable
+                )),
+                Ok(_) => None,
+                Err(e) => Some(e.to_string()),
+            }
+        })
         .collect()
 }
 
