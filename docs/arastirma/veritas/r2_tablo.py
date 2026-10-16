@@ -1,5 +1,5 @@
 """R2 sonuç tabloları: r2_degerlendir.py'nin JSON çıktılarını VERITAS.md için Markdown tablolarına çevirir.
-Kullanım: python r2_tablo.py <çıktı.json> […]  (aynı ad birden çok dosyada varsa sonuncusu alınır)."""
+Kullanım: python r2_tablo.py <çıktı.json> […]  (aynı parça birden çok dosyada varsa sözlükleri birleştirilir)."""
 import json
 import sys
 
@@ -18,7 +18,14 @@ def main(paths):
     rows = {}
     for p in paths:
         for r in json.load(open(p)):
-            rows[r["ad"]] = r
+            if r["ad"] in rows:  # aynı parça birden çok dosyada: sözlükler birleştirilir (yöntem, bit, enerji, eğri)
+                for k, v in r.items():
+                    if isinstance(v, dict) and isinstance(rows[r["ad"]].get(k), dict):
+                        rows[r["ad"]][k].update(v)
+                    else:
+                        rows[r["ad"]][k] = v
+            else:
+                rows[r["ad"]] = r
     by_rate = {}
     for ad, r in rows.items():
         by_rate.setdefault(ad.rsplit("_", 1)[1], {})[ad.rsplit("_", 1)[0]] = r
