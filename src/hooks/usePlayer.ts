@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IDLE_STATUS,
   errorMessage,
+  getAppInfo,
   getPlaybackStatus,
   isDesktop,
   openTrack,
@@ -172,7 +173,10 @@ export function usePlayer(extensions: string[], options: PlayerOptions = {}): Pl
   const openFile = useCallback(async () => {
     if (!available || busy.current) return;
     try {
-      const path = await pickAudioFile(extensions);
+      // Uzantı listesi program bilgisiyle gelir; henüz gelmediyse önce onu al ki pencere
+      // süzgeçsiz açılmasın.
+      const filters = extensions.length > 0 ? extensions : (await getAppInfo()).supportedExtensions;
+      const path = await pickAudioFile(filters);
       if (path) await openPath(path);
     } catch (e) {
       setError(errorMessage(e));

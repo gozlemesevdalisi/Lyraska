@@ -670,6 +670,22 @@ describe("kütüphane", () => {
     backend.appInfoGate = null;
   });
 
+  it("program bilgisi gelmeden Dosya aç'a basılırsa pencere yine uzantı süzgeciyle açılır", async () => {
+    // Uzantı listesi çekirdekten gelir; gelmeden basılan Dosya aç eskiden süzgeçsiz pencere
+    // açıyordu (CI'da yarış olarak da görüldü).
+    backend.desktop = true;
+    let release = () => {};
+    backend.appInfoGate = new Promise<void>((resolve) => (release = resolve));
+    backend.pick.mockResolvedValue(null);
+    render(<App />);
+    const open = screen.getByRole("button", { name: /Dosya aç/ });
+    await waitFor(() => expect(open).toBeEnabled());
+    await act(async () => fireEvent.click(open));
+    await act(async () => release());
+    await waitFor(() => expect(backend.pick).toHaveBeenCalledWith(["mp3", "flac"]));
+    backend.appInfoGate = null;
+  });
+
   it("eklenemeyen dosyayı hangi sekmede olursa olsun bildirir", async () => {
     backend.desktop = true;
     backend.dropOutcome = {

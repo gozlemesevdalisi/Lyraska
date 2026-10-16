@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  getAppInfo,
   EMPTY_LIBRARY,
   addDroppedPaths,
   addLibraryFolder,
@@ -142,7 +143,10 @@ export function useLibrary(): LibraryControls {
       if (!available) return;
       let paths: string[];
       try {
-        paths = await pickAudioFiles(extensions);
+        // Uzantı listesi henüz gelmediyse önce program bilgisini al (süzgeçsiz pencere açılmasın).
+        const filters =
+          extensions.length > 0 ? extensions : (await getAppInfo()).supportedExtensions;
+        paths = await pickAudioFiles(filters);
       } catch (e) {
         setError(errorMessage(e));
         return;
