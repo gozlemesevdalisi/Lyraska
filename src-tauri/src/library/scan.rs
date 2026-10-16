@@ -30,6 +30,8 @@ pub struct ScanState {
     found: AtomicUsize,
     processed: AtomicUsize,
     cancel: AtomicBool,
+    /// Yalnızca süren klasörün taraması durdurulsun (kaynak kütüphaneden çıkarıldı).
+    cancel_folder: AtomicBool,
     current: Mutex<Option<String>>,
 }
 
@@ -59,6 +61,9 @@ pub struct ScanSummary {
     pub failed: usize,
     /// Diskten silindiği için kütüphaneden çıkarılan dosya sayısı.
     pub removed: usize,
+    /// Okunamayan (izin, ağ kopması, G/Ç hatası) alt klasör ya da dosya sayısı. Bunların
+    /// altındaki bilinen şarkılar "silinmiş" sayılmaz: tarama onlara dokunmaz.
+    pub unreadable: usize,
 }
 
 impl ScanState {
@@ -80,9 +85,14 @@ impl ScanState {
         self.cancel.store(true, Ordering::Release);
     }
 
+    fn cancel_folder(&self) {
+        self.cancel_folder.store(true, Ordering::Release);
+    }
+
     fn begin(&self, folder: &str) {
         self.found.store(0, Ordering::Relaxed);
         self.processed.store(0, Ordering::Relaxed);
+        self.cancel_folder.store(false, Ordering::Release);
         if let Ok(mut current) = self.current.lock() {
             *current = Some(folder.to_owned());
         }
@@ -113,6 +123,7 @@ pub fn scan_folders(
         total.unchanged += summary.unchanged;
         total.failed += summary.failed;
         total.removed += summary.removed;
+        total.unreadable += summary.unreadable;
         Ok(())
     });
     state.set_scanning(false);
@@ -131,7 +142,7 @@ pub fn scan_folder(
         return Err(LibraryError::FolderMissing(folder.path.clone()));
     }
 
-    let files = find_audio_files(root);
+    let (files, unreadable) = find_audio_files(root);
     state.found.store(files.len(), Ordering::Relaxed);
     let known = lock(library)?.known_files(folder.id)?;
 
@@ -139,11 +150,7 @@ pub fn scan_folder(
         .iter()
         .map(|(p, _)| p.to_string_lossy().into_owned())
         .collect();
-    let removed: Vec<String> = known
-        .keys()
-        .filter(|p| !on_disk.contains(*p))
-        .cloned()
-        .collect();
+    let removed = removal_candidates(known.keys(), &on_disk, &unreadable);
     let to_read: Vec<(PathBuf, FileStamp)> = files
         .into_iter()
         .filter(|(path, stamp)| {
@@ -157,8 +164,9 @@ pub fn scan_folder(
 
     let mut summary = ScanSummary {
         found: on_disk.len(),
-        unchanged: on_disk.len() - to_read.len(),
+        unchanged: on_disk.len().saturating_sub(to_read.len()),
         removed: removed.len(),
+        unreadable: unreadable.len(),
         ..ScanSummary::default()
     };
     state.processed.store(summary.unchanged, Ordering::Relaxed);
@@ -174,7 +182,9 @@ pub fn scan_folder(
             let tx = tx.clone();
             let (next, to_read) = (&next, &to_read);
             scope.spawn(move || loop {
-                if state.cancel.load(Ordering::Acquire) {
+                if state.cancel.load(Ordering::Acquire)
+                    || state.cancel_folder.load(Ordering::Acquire)
+                {
                     break;
                 }
                 let i = next.fetch_add(1, Ordering::Relaxed);
@@ -197,30 +207,66 @@ pub fn scan_folder(
                 None => summary.failed += 1,
             }
             if batch.len() >= BATCH {
+                // Kaynak bu arada kütüphaneden çıkarıldıysa yazılmaz (yabancı anahtar
+                // hatası yerine sessizce biter) ve kalan etiketler okunmaz.
+                let mut lib = lock(library)?;
+                if lib.folder(folder.id)?.is_none() {
+                    state.cancel_folder();
+                    return Ok(());
+                }
                 summary.updated += batch.len();
-                lock(library)?.apply_changes(folder.id, &batch, &[])?;
+                lib.apply_changes(folder.id, &batch, &[])?;
                 batch.clear();
             }
         }
+        let mut lib = lock(library)?;
+        if lib.folder(folder.id)?.is_none() {
+            return Ok(());
+        }
         summary.updated += batch.len();
-        lock(library)?.apply_changes(folder.id, &batch, &removed)
+        lib.apply_changes(folder.id, &batch, &removed)
     });
     write_result?;
     Ok(summary)
 }
 
-/// Klasördeki (alt klasörler dahil) desteklenen ses dosyaları ve damgaları.
-fn find_audio_files(root: &Path) -> Vec<(PathBuf, FileStamp)> {
-    WalkDir::new(root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file() && is_audio(entry.path()))
-        .filter_map(|entry| {
-            let meta = entry.metadata().ok()?;
-            Some((entry.into_path(), FileStamp::of_metadata(&meta)))
-        })
+/// Kütüphaneden çıkarılacak yollar: bilinen ama diskte bulunmayanlar. Okunamayan bir klasörün
+/// (ya da dosyanın) altındakiler bulunmamış sayılmaz: orası okunamadı, silinmedi.
+fn removal_candidates<'a>(
+    known: impl Iterator<Item = &'a String>,
+    on_disk: &HashSet<String>,
+    unreadable: &[PathBuf],
+) -> Vec<String> {
+    known
+        .filter(|p| !on_disk.contains(*p))
+        .filter(|p| !unreadable.iter().any(|u| Path::new(p).starts_with(u)))
+        .cloned()
         .collect()
+}
+
+/// Klasördeki (alt klasörler dahil) desteklenen ses dosyaları ve damgaları; ikinci değer
+/// okunamayan yollar (izin reddi, ağ kopması, G/Ç hatası). Okunamayan yer bilinmiyorsa kökün
+/// kendisi sayılır: o taramada hiçbir şey silinmez.
+fn find_audio_files(root: &Path) -> (Vec<(PathBuf, FileStamp)>, Vec<PathBuf>) {
+    let mut files = Vec::new();
+    let mut unreadable = Vec::new();
+    for entry in WalkDir::new(root).follow_links(false) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                unreadable.push(error.path().unwrap_or(root).to_path_buf());
+                continue;
+            }
+        };
+        if !(entry.file_type().is_file() && is_audio(entry.path())) {
+            continue;
+        }
+        match entry.metadata() {
+            Ok(meta) => files.push((entry.into_path(), FileStamp::of_metadata(&meta))),
+            Err(_) => unreadable.push(entry.into_path()),
+        }
+    }
+    (files, unreadable)
 }
 
 /// Uzantısı desteklenen bir ses dosyası mı? (Büyük/küçük harf fark etmez.)
@@ -348,6 +394,36 @@ mod tests {
         drop(lib);
         // Bir daha okunmaz.
         assert_eq!(scan_folder(&library, &folder, &state).unwrap().updated, 0);
+    }
+
+    #[test]
+    fn okunamayan_klasorun_altindakiler_silinmis_sayilmaz() {
+        // Bilinen üç şarkı; "Ağ" klasörü bu taramada okunamadı (izin, kopma): altındaki
+        // "Ağ/a.flac" listede yok ama silinmemiş sayılır. Gerçekten silinen "c.mp3" çıkarılır.
+        let known = ["Ağ/a.flac", "b.mp3", "c.mp3"].map(str::to_owned);
+        let on_disk: HashSet<String> = ["b.mp3".to_owned()].into_iter().collect();
+        let removed = removal_candidates(known.iter(), &on_disk, &[PathBuf::from("Ağ")]);
+        assert_eq!(removed, vec!["c.mp3".to_owned()]);
+        // Kök okunamadıysa hiçbir şey silinmez.
+        let none = removal_candidates(known.iter(), &HashSet::new(), &[PathBuf::from("")]);
+        assert!(none.is_empty());
+        // "Ağ2" klasörü "Ağ"ın altı sayılmaz (bileşen bileşen karşılaştırma).
+        let known2 = ["Ağ2/x.mp3".to_owned()];
+        let removed2 = removal_candidates(known2.iter(), &HashSet::new(), &[PathBuf::from("Ağ")]);
+        assert_eq!(removed2.len(), 1);
+    }
+
+    #[test]
+    fn tarama_sirasinda_cikarilan_kaynak_yazilmaz_ve_hata_vermez() {
+        let (library, folder, _dir) = setup();
+        let state = ScanState::default();
+        scan_folder(&library, &folder, &state).unwrap();
+        library.lock().unwrap().remove_folder(folder.id).unwrap();
+        assert_eq!(library.lock().unwrap().track_count().unwrap(), 0);
+        // Eski klasör kaydıyla tarama sürüyormuş gibi: yabancı anahtar hatası yok, yazma yok.
+        let summary = scan_folder(&library, &folder, &state).unwrap();
+        assert_eq!(library.lock().unwrap().track_count().unwrap(), 0);
+        assert_eq!(summary.removed, 0);
     }
 
     #[test]
