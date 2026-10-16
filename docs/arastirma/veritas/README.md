@@ -78,7 +78,7 @@ done
 cd $BETIK && VERITAS_LAME=$W/lame-3.100 $W/venv/bin/python r1.py $W/dokum pop_64 piyano_64 pop_128
 ```
 
-## R2: öğrenmeli önsel (bölüm 9)
+## R2: öğrenmeli önsel (bölüm 8)
 
 Ek gerekenler: `venv/bin/pip install torch` (işlemci sürümü yeter; GPU kullanılmaz). Eğitim müziği R1'in altı
 parçasını içermez; onlar yalnızca sınamada kullanılır.
@@ -107,7 +107,7 @@ $W/venv/bin/python r2_tonal.py $W/dokum pop_64 piyano_64 akustik_64 elektronik_6
 $W/venv/bin/python r2_tablo.py $W/r2_64.json
 ```
 
-Model ağırlıkları depoya konmaz (kapı geçilmedi; bkz. VERITAS.md bölüm 9).
+Model ağırlıkları depoya konmaz (kapı geçilmedi; bkz. VERITAS.md bölüm 8).
 
 `hibrit.py`'nin polifaz penceresi LAME kaynağındaki `mpglib/tabinit.c`'den çalışma anında okunur (depoya kopyalanmaz).
 LAME 64 kbps stereo'yu 24 kHz'e (MPEG-2), 96 kbps'i 32 kHz'e indirir; çözücümüz ikisini de doğru çözer.

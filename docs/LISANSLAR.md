@@ -46,7 +46,7 @@ kuralları). Kod bağımlılıklarının lisanslarını CI denetler (`npm run ch
 
 ### R2 öğrenmeli önsel araştırması
 
-- **Ne için:** Veritas R2 ([VERITAS.md](VERITAS.md) bölüm 9): delik katsayıları için koşullu yoğunluk ve akış
+- **Ne için:** Veritas R2 ([VERITAS.md](VERITAS.md) bölüm 8): delik katsayıları için koşullu yoğunluk ve akış
   örnekleyici eğitimi. Programa girmez, dağıtılmaz; yalnızca araştırma betiklerinde (`r2_model.py`,
   `r2_degerlendir.py`) kullanılır.
 - **PyTorch:** PyPI `torch` 2.14.1 (işlemci kullanımı); lisans BSD-3-Clause (`LICENSE`), paket üst verisi bileşenler

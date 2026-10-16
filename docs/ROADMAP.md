@@ -121,7 +121,12 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
   - R1 sonucu (gerçek dalga biçimi, algısal ölçü): kutulara sadık klasik yöntemler SNR'ı 0,2–1,3 dB artırıyor ama
     duyulur bir iyileşme vermiyor; algısal kayıp tizdeki deliklerde ve onları dolduracak bilgi bit akışında yok.
     Klasik yol kapıdan geçmedi, ürüne alınmaz.
-  - Sıradaki (proje sahibinin kararı): kör dinleme aracı (ABX); kutularla sınırlanmış öğrenmeli önsel araştırması (R2).
+  - R2 sonucu (15–16 Ekim 2026, öğrenmeli önsel; VERITAS.md bölüm 8): kutularla sınırlanmış öğrenilmiş model de
+    kapıdan geçmedi (en iyi +0,006 MOS; örnekleyen yöntemler ortalamada çözücüden kötü). Nedeni ölçüldü: deliklerin
+    ince yapısı hakkında bit akışı ve bağlam ≈ 0,1 bit taşıyor, komşu granüllerin gerçek değeri bile bilgi eklemiyor;
+    duyulur kazanç için doğru seviye ve ≥ 0,5 bit yapı gerekiyor. **MP3 kolu kapandı**; yeniden açılması için yeni bir
+    bilgi kaynağı gerekir (aynı şarkının ikinci kopyası ya da kayıpsız referans).
+  - Sıradaki (proje sahibinin kararı): kör dinleme aracı (ABX).
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
       kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
       aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
@@ -207,9 +212,8 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
   `unsafe` kod gerektirdiği için onay şart. Öneri: şimdilik yapılmasın, takılma görülürse ilk bu açılsın.
 - **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
-- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): öneri, önce kör dinleme aracı (ABX); "320 kbps
-  ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. Öğrenmeli önsel araştırması (R2) daha büyük bir iş; ayrı
-  karar.
+- **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): R1 ve R2 kapıdan geçmedi, MP3 kolu kapandı.
+  Kalan öneri kör dinleme aracı (ABX): "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)
