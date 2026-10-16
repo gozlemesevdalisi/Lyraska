@@ -118,6 +118,12 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
     live, zero = hole & ~tr.zero_band, hole & tr.zero_band
     regions = {"tümü": hole, "canlı bant": live, "sıfır bant": zero, "< 5 kHz": hole & (f < 5000), "≥ 5 kHz": hole & (f >= 5000)}
     res["delik payı"] = float(hole.mean())
+    # Boş granül kuralı: bir kanalın bütün q'ları 0 ise LAME'in global_gain'i anlamsızdır (ölçülen: Δ_genel = 181,
+    # gerçek |θ| ~ 1e-4). Kutu geçerli ama bilgisizdir; oraya yazılan her şey patlamadır. Model doldurmaları bu
+    # granüllere dokunmaz (çözücünün bildiği bir olgu; kâhin değil).
+    empty = ~np.any(tr.q != 0, axis=2)
+    fillable = hole & ~empty[:, :, None]
+    res["boş granül payı"] = float(empty.mean())
     s = M.scale_of(d)
     u_true = np.clip(tr.theta / s, -0.5, 0.5)
 
@@ -136,10 +142,10 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
         res["bit"][label] = summarize(-bits)  # kazanılan bit = −NLL
         pred_ms = e2 * s * s
         res.setdefault("enerji hatası", {})[label] = band_energy_error(tr, pred_ms, hole)
-        ests[f"{label}: örnek"] = np.where(hole, sample * s, tr.r)
-        ests[f"{label}: ortalama (MMSE)"] = np.where(hole, mean * s, tr.r)
-        ests[f"{label}: ortalama, model enerjisine ölçekli"] = scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, hole)
-        ests[f"{label}: model enerjisiyle gürültü"] = D.noise_fill(tr, pred_ms, seed)
+        ests[f"{label}: örnek"] = np.where(fillable, sample * s, tr.r)
+        ests[f"{label}: ortalama (MMSE)"] = np.where(fillable, mean * s, tr.r)
+        ests[f"{label}: ortalama, model enerjisine ölçekli"] = scale_to_energy(tr, ests[f"{label}: ortalama (MMSE)"], pred_ms, fillable)
+        ests[f"{label}: model enerjisiyle gürültü"] = np.where(fillable, D.noise_fill(tr, pred_ms, seed), tr.r)
         # Sıfır bantların seviyesi bit akışında yok ve modelin oradaki hatası büyük: yalnızca canlı bant deliklerini
         # örnekle, sıfır bantları 0'da bırak (kâhin tavanı "yalnız canlı bant delikleri").
         ests[f"{label}: örnek, yalnız canlı bant"] = np.where(live, sample * s, tr.r)
@@ -151,7 +157,7 @@ def evaluate(tr, d, name, models, akis, egri, seed=0):
         t0 = time.time()
         _, sample, _, _ = model_bits_and_fill(net, td, hole, "akis", gen)
         res.setdefault("süre", {})["akış"] = time.time() - t0
-        ests["akış: örnek"] = np.where(hole, sample * s, tr.r)
+        ests["akış: örnek"] = np.where(fillable, sample * s, tr.r)
         ests["akış: örnek + bant enerjisi koruma"] = D.energy_match(tr, ests["akış: örnek"])
     ests["kâhin: delikler gerçek"] = np.where(hole, tr.theta, tr.r)
     if egri:
