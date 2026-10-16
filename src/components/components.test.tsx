@@ -56,6 +56,11 @@ const backend = vi.hoisted(() => ({
   /** Kör test: süren testin durumu ve dosya seçicinin vereceği yollar. */
   abx: null as import("../lib/backend").AbxStatus | null,
   abxPicks: [] as string[],
+  /** Parametrik ekolayzer: çekirdeğe giden ayarlar, karşılaştırma, dosya işlemleri. */
+  setParametric: vi.fn(),
+  parametricCompare: vi.fn(),
+  parametricImport: vi.fn(),
+  parametricExport: vi.fn(),
 }));
 
 // Kütüphane paneli aynen çizilir; yalnızca çizim sayılır.
@@ -209,6 +214,31 @@ vi.mock("../lib/backend", async (importOriginal) => {
     }),
     setNextTrack: async (path: string | null) => {
       backend.setNext(path);
+    },
+    setParametric: async (settings: import("../lib/backend").ParametricSettings) => {
+      backend.setParametric(settings);
+      return null;
+    },
+    setParametricCompare: async (compare: boolean) => {
+      backend.parametricCompare(compare);
+      return null;
+    },
+    pickParametricFile: async () => "C:/eq/HD 600 ParametricEQ.txt",
+    importParametric: async (path: string) => {
+      backend.parametricImport(path);
+      const { previewParametricState } = await import("../lib/parametric");
+      return previewParametricState({
+        enabled: true,
+        bands: [
+          { kind: "lowShelf", freqHz: 105, gainDb: 5.5, q: 0.7, enabled: true },
+          { kind: "peaking", freqHz: 1923, gainDb: -3.2, q: 1.31, enabled: true },
+        ],
+        design: "rbj",
+      });
+    },
+    pickParametricSavePath: async () => "C:/eq/Lyraska ParametricEQ.txt",
+    exportParametric: async (path: string) => {
+      backend.parametricExport(path);
     },
     getHeadphone: async () => backend.headphone ?? actual.NO_HEADPHONE,
     pickHeadphoneProfile: async () => backend.pickProfile(),
@@ -1565,6 +1595,119 @@ describe("spectrumColumns", () => {
   it("aralık dışı değerleri sınırlar", () => {
     const [column] = spectrumColumns([2, -1], [0, 0], 4);
     expect(column!.every(Boolean)).toBe(true);
+  });
+});
+
+describe("parametrik ekolayzer", () => {
+  const openParametric = async () => {
+    render(<App />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Ekolayzer" })));
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Parametrik/ })));
+    return screen.getByRole("region", { name: "Parametrik ekolayzer" });
+  };
+  const lastSent = () =>
+    backend.setParametric.mock.calls.at(-1)?.[0] as
+      import("../lib/backend").ParametricSettings | undefined;
+
+  it("seçili bandın kutularıyla ayarlanır, çekirdeğe gider ve grafikte görünür", async () => {
+    const panel = await openParametric();
+    // Düz beş bant; grafikte beş düğüm.
+    expect(within(panel).getAllByRole("button", { name: /^Bant \d:/ })).toHaveLength(5);
+    await act(async () => fireEvent.click(within(panel).getByRole("button", { name: /^3 · PK/ })));
+    const gain = within(panel).getByRole("textbox", { name: "Kazanç" });
+    fireEvent.change(gain, { target: { value: "+4,5" } });
+    await act(async () => fireEvent.keyDown(gain, { key: "Enter" }));
+    expect(lastSent()?.bands[2]?.gainDb).toBe(4.5);
+    expect(
+      within(panel).getByRole("button", { name: "Bant 3: Tepe / çukur, 1 kHz, +4,5 dB, Q 1" }),
+    ).toBeInTheDocument();
+    // Frekans "k" ekiyle ve Türkçe virgülle yazılabilir; Q da.
+    const freq = within(panel).getByRole("textbox", { name: "Frekans" });
+    fireEvent.change(freq, { target: { value: "2,5k" } });
+    await act(async () => fireEvent.keyDown(freq, { key: "Enter" }));
+    const q = within(panel).getByRole("textbox", { name: "Q" });
+    fireEvent.change(q, { target: { value: "2,2" } });
+    await act(async () => fireEvent.blur(q));
+    expect(lastSent()?.bands[2]).toMatchObject({ freqHz: 2500, gainDb: 4.5, q: 2.2 });
+    // Tür değişince kazanç kutusu kazancı olmayan türde kapanır.
+    await act(async () =>
+      fireEvent.change(within(panel).getByRole("combobox", { name: "Tür" }), {
+        target: { value: "lowPass" },
+      }),
+    );
+    expect(within(panel).getByRole("textbox", { name: "Kazanç" })).toBeDisabled();
+    expect(lastSent()?.bands[2]?.kind).toBe("lowPass");
+  });
+
+  it("klavyeyle frekans, kazanç, Q ayarlanır; Delete bandı siler; kısayollar şarkıyı sarmaz", async () => {
+    backend.status = playing;
+    const panel = await openParametric();
+    const node = within(panel).getByRole("button", { name: /^Bant 2:/ });
+    await act(async () => node.focus());
+    await act(async () => fireEvent.keyDown(node, { key: "ArrowUp" }));
+    expect(lastSent()?.bands[1]?.gainDb).toBe(0.5);
+    await act(async () => fireEvent.keyDown(node, { key: "ArrowUp", shiftKey: true }));
+    expect(lastSent()?.bands[1]?.gainDb).toBe(0.6);
+    await act(async () => fireEvent.keyDown(node, { key: "ArrowRight" }));
+    expect(lastSent()?.bands[1]?.freqHz).toBeGreaterThan(250);
+    await act(async () => fireEvent.keyDown(node, { key: "PageUp" }));
+    expect(lastSent()?.bands[1]?.q).toBeCloseTo(1.06, 2);
+    expect(backend.seek).not.toHaveBeenCalled();
+    await act(async () => fireEvent.keyDown(node, { key: "Delete" }));
+    expect(lastSent()?.bands).toHaveLength(4);
+  });
+
+  it("düğüm sürüklenince frekans ve kazanç değişir; boş yere çift tıklayınca bant eklenir", async () => {
+    const panel = await openParametric();
+    const plot = panel.querySelector(".peq__plot") as HTMLDivElement;
+    plot.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1000, height: 360, right: 1000, bottom: 360 }) as DOMRect;
+    const node = within(panel).getByRole("button", { name: /^Bant 3:/ });
+    await act(async () =>
+      fireEvent.pointerDown(node, { button: 0, clientX: 500, clientY: 180, pointerId: 1 }),
+    );
+    // Sağa bir oktav kadar (1000/ log2(1000) ≈ 100 piksel), yukarı 60 piksel (±18 dB'de 6 dB).
+    await act(async () =>
+      fireEvent.pointerMove(node, { clientX: 600.3, clientY: 120, pointerId: 1 }),
+    );
+    await act(async () => fireEvent.pointerUp(node, { pointerId: 1 }));
+    const band = lastSent()?.bands[2];
+    expect(band?.freqHz).toBeGreaterThan(1950);
+    expect(band?.freqHz).toBeLessThan(2050);
+    expect(band?.gainDb).toBe(6);
+    // Çift tıklama: yeni tepe bandı ve seçili.
+    await act(async () => fireEvent.doubleClick(plot, { clientX: 250, clientY: 240 }));
+    expect(lastSent()?.bands).toHaveLength(6);
+    expect(lastSent()?.bands[5]).toMatchObject({ kind: "peaking", gainDb: -6 });
+    expect(within(panel).getByRole("button", { name: /^Bant 6:/ })).toHaveClass("is-selected");
+  });
+
+  it("A/B karşılaştırma ekolayzersiz ve eşit yükseklikte dinletir; dosyadan yükler ve kaydeder", async () => {
+    const panel = await openParametric();
+    const compare = within(panel).getByRole("button", { name: "A/B karşılaştır" });
+    expect(compare).toBeDisabled();
+    await act(async () => fireEvent.click(within(panel).getByRole("button", { name: /^1 · LS/ })));
+    const gain = within(panel).getByRole("textbox", { name: "Kazanç" });
+    fireEvent.change(gain, { target: { value: "3" } });
+    await act(async () => fireEvent.keyDown(gain, { key: "Enter" }));
+    await act(async () => fireEvent.click(compare));
+    expect(backend.parametricCompare).toHaveBeenCalledWith(true);
+    expect(
+      within(panel).getByRole("button", { name: "Karşılaştırma: ekolayzersiz" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await act(async () =>
+      fireEvent.click(within(panel).getByRole("button", { name: "Dosyadan yükle" })),
+    );
+    expect(backend.parametricImport).toHaveBeenCalledWith("C:/eq/HD 600 ParametricEQ.txt");
+    expect(within(panel).getAllByRole("button", { name: /^Bant \d:/ })).toHaveLength(2);
+    expect(within(panel).getByRole("button", { name: "Equalizer APO ile aynı" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await act(async () =>
+      fireEvent.click(within(panel).getByRole("button", { name: "Dosyaya kaydet" })),
+    );
+    expect(backend.parametricExport).toHaveBeenCalledWith("C:/eq/Lyraska ParametricEQ.txt");
   });
 });
 

@@ -4,25 +4,29 @@ Bu klasör [docs/VERITAS.md](../../VERITAS.md)'deki sayıları üreten araştır
 parçası değildir: derlenmez, paketlenmez, CI'da çalışmaz. Ses dosyası içermez; deney sesi çalışma anında üretilir
 ve depo dışındaki bir çalışma klasörüne yazılır.
 
-| Dosya                           | Ne yapar                                                                                       |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `sinyal.py`                     | Müziğe benzer sentetik stereo deney sesi (piyano benzeri, titreşimli yaylı, kick, hi-hat)      |
-| `bit_hizi.py`                   | ffmpeg'in LAME'iyle 96–320 kbps: SNR, yan kanal hatası, üst kesim frekansı                     |
-| `sartname_dogrulama.py`         | Şartnamenin hesapları: kutu tablosu, Seviye 0 kazancı, 2·MMSE, çoklu kopya, dither             |
-| `lame-3.100-veritas-dump.patch` | LAME 3.100'e ölçüm yaması: nicemlemeden sonra her granülün θ, q ve yan bilgisini döker         |
-| `kapsama.py`                    | F0 kapsama testi: θ çözücünün kurabildiği kutunun içinde mi (ISO, LAME ve bant kuralıyla)      |
-| `hibrit.py`                     | MP3 hibrit süzgeç bankası: çözücünün sentezi S ve eşleniği Sᵀ (ffmpeg'e göre −125 dB)          |
-| `beste.py`                      | R1 deney müziği: programla yazılmış altı MIDI parça, FluidSynth + FluidR3_GM (MIT) ile çalınır |
-| `deney.py`                      | R1 düzeneği: döküm → çözücü görünümü, kutular, yöntemler, SNR ve Zimtohrli MOS                 |
-| `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                      |
-| `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)     |
-| `R2_GOREV.md`                   | R2 görev tanımı: devralacak model için kendi başına anlaşılır, kanıtlı olgular ve kapılarla    |
-| `r2_beste.py`                   | R2 eğitim/sınama müziği: tohumdan rastgele ton, tempo, çalgı, ritim; FluidR3_GM ile çalınır    |
-| `r2_veri.py`                    | R2 veri hazırlığı: dökümleri `deney.Track` ile çözücü görünümüne çevirip sıkışık .npz yazar    |
-| `r2_model.py`                   | R2 model: delikler için kesik Gauss karışımı (bilgi ölçümü) ve akış eşleme örnekleyici; CPU    |
-| `r2_degerlendir.py`             | R2 ölçüm: bit kazancı, enerji hatası, örnekleyiciler (SNR, MOS, kutu dışı), bilgi–algı eğrisi  |
-| `r2_tonal.py`                   | R2 / S3: kâhin ayrıştırması, tonal tavan (gerçek sinyalin tepeleri) ve tonal POCS              |
-| `r2_tablo.py`                   | R2 JSON sonuçlarını VERITAS.md için Markdown tablolarına çevirir                               |
+| Dosya                           | Ne yapar                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `sinyal.py`                     | Müziğe benzer sentetik stereo deney sesi (piyano benzeri, titreşimli yaylı, kick, hi-hat)       |
+| `bit_hizi.py`                   | ffmpeg'in LAME'iyle 96–320 kbps: SNR, yan kanal hatası, üst kesim frekansı                      |
+| `sartname_dogrulama.py`         | Şartnamenin hesapları: kutu tablosu, Seviye 0 kazancı, 2·MMSE, çoklu kopya, dither              |
+| `lame-3.100-veritas-dump.patch` | LAME 3.100'e ölçüm yaması: nicemlemeden sonra her granülün θ, q ve yan bilgisini döker          |
+| `kapsama.py`                    | F0 kapsama testi: θ çözücünün kurabildiği kutunun içinde mi (ISO, LAME ve bant kuralıyla)       |
+| `hibrit.py`                     | MP3 hibrit süzgeç bankası: çözücünün sentezi S ve eşleniği Sᵀ (ffmpeg'e göre −125 dB)           |
+| `beste.py`                      | R1 deney müziği: programla yazılmış altı MIDI parça, FluidSynth + FluidR3_GM (MIT) ile çalınır  |
+| `deney.py`                      | R1 düzeneği: döküm → çözücü görünümü, kutular, yöntemler, SNR ve Zimtohrli MOS                  |
+| `r1.py`                         | R1 ölçümleri: çözücü doğrulaması, yöntem karşılaştırması, kâhin tavanları                       |
+| `r2_dogrusal.py`                | R2 yapılabilirlik: deliklerin komşu değerlerden doğrusal kestirimi (birini dışarıda bırak)      |
+| `R2_GOREV.md`                   | R2 görev tanımı: devralacak model için kendi başına anlaşılır, kanıtlı olgular ve kapılarla     |
+| `r2_beste.py`                   | R2 eğitim/sınama müziği: tohumdan rastgele ton, tempo, çalgı, ritim; FluidR3_GM ile çalınır     |
+| `r2_veri.py`                    | R2 veri hazırlığı: dökümleri `deney.Track` ile çözücü görünümüne çevirip sıkışık .npz yazar     |
+| `r2_model.py`                   | R2 model: delikler için kesik Gauss karışımı (bilgi ölçümü) ve akış eşleme örnekleyici; CPU     |
+| `r2_degerlendir.py`             | R2 ölçüm: bit kazancı, enerji hatası, örnekleyiciler (SNR, MOS, kutu dışı), bilgi–algı eğrisi   |
+| `r2_tonal.py`                   | R2 / S3: kâhin ayrıştırması, tonal tavan (gerçek sinyalin tepeleri) ve tonal POCS               |
+| `r2_tablo.py`                   | R2 JSON sonuçlarını VERITAS.md için Markdown tablolarına çevirir                                |
+| `r2_bagimsiz_kahin.py`          | R2'nin bağımsız denetimi: kâhin ayrıştırması (8.2) kendi kodumuzla + genlik/işaret ayrımı       |
+| `r2_bagimsiz_komsu.py`          | Bağımsız denetim: gerçek komşu granüller deliklere doğrusal ve KSG ile ne kadar bilgi taşıyor   |
+| `r2_bagimsiz_kosullu.py`        | Bağımsız denetim: çözücü bağlamına EK bilgi (KSG koşullu karşılıklı bilgi), seviye kestirimi    |
+| `r2_bagimsiz_isaret.py`         | Bağımsız denetim: deliklerin işareti gerçek komşulardan kestirilebilir mi (kNN, olumlu denetim) |
 
 ## Gerekenler
 

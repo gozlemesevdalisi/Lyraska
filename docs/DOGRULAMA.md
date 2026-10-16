@@ -181,6 +181,21 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
   raflar ("LSC 6 dB"), "BW Oct", LP, HP, BP, NO, AP. Elinizde böyle bir dosya varsa yükleyin; Equalizer APO'da
   nasıl duyuluyorsa Lyraska'da da öyle duyulmalı. Okunamayan satır olursa hangi satır olduğu yazar.
 
+**C5. Parametrik ekolayzer (0.0.47)**
+
+- Nasıl: **Ekolayzer** panelinin üstünde **Parametrik**'i seçin. Grafikteki numaralı yuvarlakları sürükleyin
+  (sağa-sola frekans, yukarı-aşağı kazanç; Shift basılıyken ince ayar). Fare tekerleği seçili bandın Q'sunu
+  (genişliğini) değiştirir; boş bir yere çift tıklamak bant ekler. Alttaki kutulara değer de yazabilirsiniz ("2,5k",
+  "−3,5").
+- Neye bakılır:
+  - Ses sürüklerken tıksız değişir; eğri duyduğunuzu gösterir.
+  - **A/B karşılaştır** ekolayzersiz dinletir ama ses yüksekliği aynı kalır (yüksek olan daha iyi gelir yanılgısı
+    olmasın).
+  - **Dosyaya kaydet** ile kaydedilen dosya Equalizer APO'da aynı duyulur (tasarım "Equalizer APO ile aynı"
+    seçiliyken bire bir).
+  - Programı kapatıp açınca ayarlar yerinde.
+- Bildirin: kullanması rahat mı, eksik bir şey var mı?
+
 ## D. Görseller
 
 **D1. Kuzey ışıklarının manzaraları (#30, 0.0.30)**

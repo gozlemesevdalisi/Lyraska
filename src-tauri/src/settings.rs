@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::eq::EqSettings;
-use crate::audio::peq::HeadphoneSettings;
+use crate::audio::peq::{HeadphoneSettings, ParametricSettings};
 use crate::audio::PlaybackOptions;
 
 /// Kalıcı ayarlar. Yeni alanlar eklendiğinde eski dosyalar varsayılanla tamamlanır.
@@ -21,6 +21,8 @@ pub struct Settings {
     pub equalizer: EqSettings,
     /// Kulaklık düzeltmesi (AutoEq profili).
     pub headphone: HeadphoneSettings,
+    /// Elle parametrik ekolayzer.
+    pub parametric: ParametricSettings,
     /// Epilepsi güvenli modu: görseller daha seyrek nabız atar, parlaklık yarı hızla değişir.
     pub visual_safe: bool,
     /// Ses aygıtının ek gecikmesi (ms; ör. Bluetooth): görseller bu kadar geriden okunur.
@@ -50,6 +52,7 @@ impl SettingsStore {
             current: Mutex::new(Settings {
                 equalizer: settings.equalizer.sanitized(),
                 headphone: settings.headphone.sanitized(),
+                parametric: settings.parametric.sanitized(),
                 visual_safe: settings.visual_safe,
                 audio_delay_ms: crate::visual_bridge::clamp_audio_delay_ms(settings.audio_delay_ms),
                 playback: settings.playback,
@@ -123,6 +126,7 @@ fn parse_lenient(text: &str, path: &Path) -> Settings {
     Settings {
         equalizer: field(&value, "equalizer"),
         headphone: field(&value, "headphone"),
+        parametric: field(&value, "parametric"),
         visual_safe: field(&value, "visualSafe"),
         audio_delay_ms: field(&value, "audioDelayMs"),
         playback: field(&value, "playback"),
@@ -161,11 +165,14 @@ mod tests {
             .update(|s| {
                 s.equalizer.gains_db[0] = 4.5;
                 s.equalizer.enabled = false;
+                s.parametric.bands[2].gain_db = -3.5;
             })
             .unwrap();
         let reopened = SettingsStore::open(&path);
         assert_eq!(reopened.get().equalizer.gains_db[0], 4.5);
         assert!(!reopened.get().equalizer.enabled);
+        // Parametrik ekolayzer de kalıcı (alan alan okumada da).
+        assert_eq!(reopened.get().parametric.bands[2].gain_db, -3.5);
         assert!(!path.with_extension("json.tmp").exists());
     }
 

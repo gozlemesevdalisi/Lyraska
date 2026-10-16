@@ -54,6 +54,9 @@ const fakeCore = (level = null, theme = 1) => `
         bandsHz: [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], maxGainDb: 12, preampDb: 0,
         curveHz: [20, 20000], curveDb: [0, 0] };
       case "headphone_get": return { enabled: false, profile: null, curveHz: [], curveDb: [] };
+      case "parametric_get": return { settings: { enabled: true, bands: [], design: "matched" },
+        comparing: false, curveHz: [], curveDb: [], bandCurvesDb: [], boostDb: 0, loudnessDb: 0,
+        maxBands: 20, maxGainDb: 24, minQ: 0.1, maxQ: 30 };
       case "visual_safe_get": return false;
       case "audio_delay_get": return 0;
       // Tek bölümlük harita: arayüzün vurgu rengi (VU ve spektrum sahnelerinin halesi) de temada.

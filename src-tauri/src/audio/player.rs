@@ -25,7 +25,7 @@ use super::decode::{Decoder, TrackInfo};
 use super::eq::{protection_db, Design, EqControl, EqSettings, EqState};
 use super::normalize::{LoudnessControl, TrackLevels};
 use super::output::{self, DeviceInfo, OutputMode, OutputSpec};
-use super::peq::{HeadphoneSettings, PeqControl};
+use super::peq::{HeadphoneSettings, ParametricSettings, PeqControl};
 use super::render::RenderControls;
 use super::resample::Converter;
 use super::{AudioError, Sample};
@@ -593,6 +593,10 @@ pub struct Player {
     eq: Arc<EqControl>,
     /// Kulaklık düzeltmesi: ses çıkışının okuduğu kanal ve son ayar.
     headphone_control: Arc<PeqControl>,
+    /// Elle parametrik ekolayzer: ses çıkışının okuduğu kanal, son ayar ve karşılaştırma.
+    parametric_control: Arc<PeqControl>,
+    parametric: ParametricSettings,
+    parametric_compare: bool,
     /// Ses yüksekliği eşitlemesi açık mı (ses çıkışı okur).
     loudness: Arc<LoudnessControl>,
     /// Bit-perfect (özel mod) isteniyor mu? Yeni oturumlarda uygulanır.
@@ -915,11 +919,50 @@ impl Player {
         settings
     }
 
+    /// Elle parametrik ekolayzer ayarı.
+    pub fn parametric(&self) -> ParametricSettings {
+        self.parametric.clone()
+    }
+
+    /// Karşılaştırma (A/B) açık mı?
+    pub fn parametric_comparing(&self) -> bool {
+        self.parametric_compare && self.parametric.is_active()
+    }
+
+    /// Elle parametrik ekolayzeri değiştirir; çalan ses ~30 ms içinde yumuşakça geçer. En büyük
+    /// yükseltme taşma korumasına bildirilir (şarkının boşluğu yetmiyorsa ses o kadar kısılır).
+    pub fn set_parametric(&mut self, settings: ParametricSettings) -> ParametricSettings {
+        let settings = settings.sanitized();
+        self.parametric_control.set_filters(
+            &settings.filters(),
+            0.0,
+            settings.boost_db(),
+            settings.design,
+            settings.enabled,
+        );
+        self.parametric = settings.clone();
+        self.apply_parametric_compare();
+        settings
+    }
+
+    /// Karşılaştırmayı (A/B) açar ya da kapatır: açıkken parametrik ekolayzer atlanır, ses
+    /// müziğe benzer seste ekolayzerli hâliyle aynı yükseklikte çalar.
+    pub fn set_parametric_compare(&mut self, compare: bool) {
+        self.parametric_compare = compare;
+        self.apply_parametric_compare();
+    }
+
+    fn apply_parametric_compare(&self) {
+        self.parametric_control
+            .set_compare(self.parametric_comparing(), self.parametric.loudness_db());
+    }
+
     /// Oturumların ses işlemesinin ayarları (şarkı seviyeleri her oturumda yeniden kurulur).
     fn render_controls(&self) -> RenderControls {
         RenderControls {
             eq: Arc::clone(&self.eq),
             headphone: Arc::clone(&self.headphone_control),
+            parametric: Arc::clone(&self.parametric_control),
             loudness: Arc::clone(&self.loudness),
             levels: Arc::new(TrackLevels::new()),
             // Oturum, aygıtı özel modda açabildiyse kendisi açar.
@@ -1129,7 +1172,8 @@ impl Player {
     /// kısması. (Küçük hoparlörün harmonikleri doğrusal olmadığı için eklenmez.)
     /// Tepki, ayar ya da örnekleme hızı değişmedikçe yeniden hesaplanmaz.
     fn visual_eq_offsets(&mut self, rate: u32) -> [f64; BANDS] {
-        let version = self.eq.version();
+        // Grafik ve parametrik ekolayzerin sürümleri birlikte (biri değişince yeniden hesaplanır).
+        let version = self.eq.version() ^ self.parametric_control.version().rotate_left(32);
         let (response, eq_db, bass) = match self.visual_eq {
             Some((v, r, response, eq_db, bass)) if v == version && r == rate => {
                 (response, eq_db, bass)
@@ -1148,6 +1192,20 @@ impl Player {
                 } else {
                     ([0.0; BANDS], 0.0)
                 };
+                // Parametrik ekolayzer de görsellerde: çizilen spektrum duyulan sese uysun.
+                let (response, eq_db) =
+                    if self.parametric.is_active() && !self.parametric_comparing() {
+                        let rate_hz = f64::from(rate);
+                        let centers = spectrogram::band_centers(rate_hz);
+                        let curve = self.parametric.response_db(&centers, rate_hz);
+                        let mut combined = response;
+                        for (value, db) in combined.iter_mut().zip(curve) {
+                            *value += db;
+                        }
+                        (combined, eq_db + self.parametric.boost_db())
+                    } else {
+                        (response, eq_db)
+                    };
                 let bass = settings.bass_boost();
                 self.visual_eq = Some((version, rate, response, eq_db, bass));
                 (response, eq_db, bass)

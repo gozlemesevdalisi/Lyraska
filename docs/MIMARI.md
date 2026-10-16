@@ -39,7 +39,8 @@ PlayerScreen ── usePlayback ── invoke ──▶ commands.rs (ince) ─�
 
 ```
 dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rubato (aygıt hızına) ─▶ halka tampon
-      ─▶ [ses çıkışı] kulaklık düzeltmesi ─▶ ekolayzer ─▶ bas ─▶ eşitleme × ekolayzer koruması
+      ─▶ [ses çıkışı] kulaklık düzeltmesi ─▶ parametrik ekolayzer ─▶ grafik ekolayzer ─▶ bas
+      ─▶ eşitleme × ekolayzer koruması
       ─▶ geçiş (fade) ─▶ taşma koruması (sınırlayıcı) ─▶ f32 ─▶ WASAPI
 ```
 
@@ -53,6 +54,17 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
     duyulur bantta analog eğriye göre ölçülür, en yakını seçilir; RBJ de aday olduğu için hiçbir ayarda RBJ'den uzak
     değildir. 44,1 kHz'te ortalama sapma: tepe 0,70 → 0,16 dB, raflar ~0,6 → ~0,2 dB, alçak geçiren
     3,97 → 0,16 dB, bant geçiren 4,06 → 0,33 dB (`biquad::tests::dogruluk_tablosu`).
+- **Elle parametrik ekolayzer** (`audio/peq.rs`, arayüz `ParametricEq.tsx`): en çok 20 bant, sekiz tür, varsayılan
+  eşlenmiş tasarım (çizilen eğri duyulan eğridir). Kulaklık düzeltmesiyle aynı kilitsiz kanal (`PeqControl`) ve
+  30 ms çapraz geçiş. En büyük yükseltme taşma korumasına bildirilir (grafik ekolayzerinkiyle toplanır).
+  Karşılaştırma (A/B): filtreler atlanır, ses ekolayzerin pembe gürültüde ve BS.1770 K ağırlığında ölçülen ses
+  yüksekliği farkı kadar değiştirilir; iki taraf eşit yükseklikte ve aynı korumayla dinlenir. Equalizer APO
+  biçiminde içe/dışa aktarılır. Görseller (spektrum) parametrik ekolayzeri de yansıtır.
+- **Crossfeed** (`audio/crossfeed.rs`; çekirdek hazır, ses yoluna ve arayüze henüz bağlanmadı): orta/yan biçimi;
+  orta (mono) bileşen bit bit aynı, yan bileşen G(s) = (s + ωc(1 − r0))/(s + ωc(1 + r0)) süzgecinden geçer. Bu,
+  sola kaydırılmış seste kulaklar arası oranı tam ρ = r0/(1 + s/ωc) yapar (alçak frekansta seviye farkı
+  −20·log₁₀ r0, zaman farkı 1/ωc) ve |G| ≤ 1'dir: hiçbir frekans yükselmez. Hazır ayarlar bs2b'nin değerleri ve
+  küresel baş modeline (Brown–Duda, ±30°) uyum.
 - **Kulaklık profili okuma** (`audio/peq.rs`): Equalizer APO biçimi, APO'nun kaynak kodundaki anlamlarla: LSC/HSC
   orta frekanslı, LS/HS köşe frekanslı raf; eğim ("6 dB" → S = 0,5) ya da Q'suz rafta S = 0,9; tepe süzgecinde
   "BW Oct"; LP/HP/BP'de Q yoksa 0,707, çentikte 30.
@@ -209,6 +221,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Kör test farklı kayıtları karşılaştırmaz                                  | `audio::abx` testi `farkli_kayitlar_reddedilir`                               |
 | Eşlenmiş süzgeç kararlı, en küçük fazlı, hiçbir ayarda RBJ'den uzak değil | `audio::biquad` testleri `eslenmis_…`, `tipik_ayarlarda_…`                    |
 | Kulaklık profili Equalizer APO'nun anlamlarıyla okunur                    | `audio::peq` testleri `apo_…`                                                 |
+| Parametrik EQ karşılaştırması filtresiz ve eşit yükseklikte               | `audio::peq` testleri `karsilastirma_…`, `ses_yuksekligi_telafisi_…`          |
+| Parametrik EQ Equalizer APO dosyasıyla gidip gelir                        | `audio::peq` testi `parametrik_apo_ile_gidip_gelir`                           |
+| Crossfeed'de orta ses bit bit aynı, yan kanal hiçbir frekansta yükselmez  | `audio::crossfeed` testleri                                                   |
 | Kör test bitince önceki şarkı kaldığı yerde geri gelir, ekranda görünür   | `audio::player` testi `kor_test_sarkiyi_durdurur_…`, bileşen testi "kör test" |
 | Kör test kurulamazsa çalan şarkı kesilmez                                 | `audio::player` testi `kor_test_kurulamazsa_calan_sarki_durmaz`               |
 | Analiz hesabı değişince eski sonuçlar kullanılmaz                         | `cache::VERSIONS` ve önbellek testleri                                        |

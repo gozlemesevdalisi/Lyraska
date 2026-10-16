@@ -9,7 +9,9 @@
 //! - [`decode`]: symphonia ile dosyayı açar ve 64-bit örneklere çözer.
 //! - [`eq`]: 10 bantlı grafik ekolayzer (bantlar arası taşmayı düzelten tasarım, kilitsiz ayar).
 //! - [`bass`]: bas düğmesi (raf süzgeci) ve küçük hoparlörler için psikoakustik bas.
-//! - [`biquad`]: ortak ikinci dereceden süzgeçler (RBJ).
+//! - [`biquad`]: ortak ikinci dereceden süzgeçler (RBJ ve analog eğriye eşlenmiş).
+//! - [`crossfeed`]: kulaklıkta hoparlörden dinler gibi (orta ses bit bit aynı; çekirdek hazır,
+//!   ses yoluna henüz bağlanmadı).
 //! - [`loudness`]: ses yüksekliği (EBU R128) ve gerçek tepe ölçümü (analizde).
 //! - [`normalize`]: çalarken ses yüksekliği eşitlemesi ve ekolayzer için boşluk yönetimi.
 //! - [`render`]: halka tampondan aygıt arabelleğini doldurur; ekolayzeri uygular,
@@ -26,6 +28,7 @@
 pub mod abx;
 pub mod bass;
 pub mod biquad;
+pub mod crossfeed;
 pub mod decode;
 pub mod eq;
 pub mod gapless;
