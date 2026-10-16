@@ -350,7 +350,7 @@ describe("oynatıcı ekranı", () => {
     expect(screen.getByText(/Windows'ta açın/)).toBeInTheDocument();
     // Program bilgisi ayarlar panelinde.
     await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
-    await waitFor(() => expect(screen.getByText(/Faz 1 · Sürüm/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Faz 2 · Sürüm/)).toBeInTheDocument());
     // Lisanslar: GPL ve kaynak kodu bağlantısı; üçüncü taraf bildirimleri açılınca yüklenir (C3).
     expect(screen.getByText(/GNU GPL 3.0/)).toBeInTheDocument();
     expect(screen.queryByTitle("Üçüncü taraf lisans bildirimleri")).not.toBeInTheDocument();

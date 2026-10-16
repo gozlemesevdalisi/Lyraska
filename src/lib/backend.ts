@@ -109,7 +109,7 @@ export const IDLE_STATUS: PlaybackStatus = {
 export const BROWSER_FALLBACK: AppInfo = {
   name: "Lyraska",
   version: __APP_VERSION__,
-  phase: "Faz 1",
+  phase: "Faz 2",
   audioEngine: "tarayıcı önizlemesi",
   analysis: "tarayıcı önizlemesi",
   visualBridge: "tarayıcı önizlemesi",

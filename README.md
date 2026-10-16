@@ -1,7 +1,9 @@
 # Lyraska
 
-> **Early development** — Phase 1 is in progress. Lyraska can already open and play local audio
-> files on Windows (MP3, FLAC, WAV, AIFF, OGG Vorbis, AAC/ALAC); visuals and the library come next.
+> **Early development** — Phase 1 (a playing program) is complete and Phase 2 (the Visual Director)
+> is in progress. Lyraska plays local audio files on Windows (MP3, FLAC, WAV, AIFF, OGG Vorbis,
+> AAC/ALAC), keeps a library, analyses every track (beats, bars, sections, drops, key) and drives
+> five WebGL2 scenes from that analysis. Test builds are published continuously; see **Download**.
 
 An offline music player for Windows whose visuals **know the song before it plays**.
 
@@ -21,8 +23,8 @@ headphone profiles, EBU R128 loudness normalisation, crossfeed and a bit-perfect
   compensation targeting ±20 ms audio/visual sync.
 - **Nostalgia modes** — original designs inspired by classic car-stereo displays and VU meters.
   No third-party brand names or assets are used.
-- **Photosensitivity-safe** — a safe mode caps flashes at three per second, and the app honours
-  the system "reduce motion" preference.
+- **Photosensitivity-safe** — no scene pulses more than three times per second; a safe mode lowers
+  that to one per second, and the app honours the system "reduce motion" preference.
 - **Pro audio** — 64-bit internal processing, WASAPI output, parametric EQ, AutoEq, loudness,
   crossfeed, bit-perfect mode.
 
@@ -35,8 +37,9 @@ The latest test build of the Windows installer is always available at the same l
 
 **<https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe>**
 
-It is rebuilt automatically every time `main` changes. Builds are not code-signed yet, so Windows
-SmartScreen will show an "unknown publisher" warning: click **More info → Run anyway**.
+It is rebuilt automatically every time `main` changes and CI passes. Builds are not code-signed
+yet, so Windows SmartScreen will show an "unknown publisher" warning: click **More info → Run
+anyway**.
 
 ## Tech stack
 
@@ -62,11 +65,13 @@ npm run tauri dev     # run the app in development mode
 npm run tauri build   # build the installer
 ```
 
-Checks:
+Checks (the same ones CI runs):
 
 ```sh
-npm run lint && npm run typecheck && npm test
+npm run format:check && npm run lint && npm run typecheck && npm test
+npm run check:commands && npm run check:licenses && npm run check:audio && npm run check:notices
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd src-tauri && cargo deny check licenses bans sources advisories
 ```
 
 ## Project layout
@@ -85,4 +90,6 @@ Turkish; code identifiers are in English.
 ## License
 
 [GPL-3.0-only](LICENSE). Dependencies licensed under the AGPL or under terms that forbid
-commercial use are not accepted; this is enforced in CI.
+commercial use are not accepted; this is enforced in CI. Third-party notices for everything
+shipped in the installer are generated into `public/lisanslar/UCUNCU-TARAF.txt` and shown under
+**Settings → Licenses** in the app.

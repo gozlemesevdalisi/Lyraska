@@ -56,7 +56,7 @@ impl AppInfo {
         Self {
             name: "Lyraska".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            phase: "Faz 1".to_owned(),
+            phase: "Faz 2".to_owned(),
             audio_engine: audio::status().label().to_owned(),
             analysis: analysis::status().label().to_owned(),
             visual_bridge: visual_bridge::status().label().to_owned(),

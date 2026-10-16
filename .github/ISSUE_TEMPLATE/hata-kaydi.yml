@@ -66,8 +66,8 @@ body:
     id: surum
     attributes:
       label: Program sürümü
-      description: Karşılama ekranının altında "Sürüm ..." olarak yazar.
-      placeholder: "0.0.1"
+      description: Sağ üstteki **Ayarlar** düğmesine basın; "Program" bölümünde "Sürüm ..." olarak yazar.
+      placeholder: "0.0.46"
 
   - type: dropdown
     id: windows
@@ -83,7 +83,7 @@ body:
     attributes:
       label: Hata günlüğü
       description: |
-        Programın en altındaki **Hata günlüğü** yazısına basın; açılan klasörde seçili duran
+        Sağ üstteki **Ayarlar** düğmesine basın, "Program" bölümündeki **Hata günlüğü** düğmesine basın; açılan klasörde seçili duran
         `lyraska.log` dosyasını bu kutuya sürükleyip bırakın. Program çöktüyse yeniden açıp aynı şeyi yapın:
         çökme bilgisi dosyada kalır. Dosyada program sürümü, Windows sürümü ve hata mesajları vardır;
         hata mesajlarında şarkı dosyalarının adı ve klasör yolu (Windows kullanıcı adınız dahil) geçebilir.
