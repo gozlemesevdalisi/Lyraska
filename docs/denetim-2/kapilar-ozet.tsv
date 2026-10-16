@@ -1,0 +1,15 @@
+format_check	0	11.3	npm run format:check
+lint	0	17.1	npm run lint
+typecheck	0	11.6	npm run typecheck
+vitest	0	54.2	npx vitest run
+build	0	11.1	npm run build
+check_commands	0	0.3	npm run check:commands
+check_licenses	0	0.3	npm run check:licenses
+check_audio	0	0.3	npm run check:audio
+cargo_fmt	0	0.5	cargo fmt --check
+cargo_clippy	0	238.4	cargo clippy --all-targets --locked -- -D warnings
+cargo_test	0	303.6	cargo test --locked
+cargo_deny_lic	0	1.5	cargo deny check licenses bans sources
+cargo_deny_adv	1	2.1	cargo deny check advisories
+npm_audit	0	1.0	npm audit --omit=dev
+DONE

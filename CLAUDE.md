@@ -136,6 +136,8 @@ lyraska/
 │   ├── ISARETLEME.md         # İşaretleme aracı kılavuzu (proje sahibi için)
 │   ├── DOGRULAMA.md          # Gerçek cihazda denenecekler listesi ve proje sahibinin bildirdiği sonuçlar
 │   ├── DENETIM.md            # Kalite denetimi (16 Ekim 2026): sağlık, matematik doğrulaması, bulgular, öncelik sırası
+│   ├── DENETIM-2.md          # İkinci denetim (16 Ekim 2026): düzeltmelerin yeniden denetimi + altı bağımsız denetçi
+│   │                         # (tam raporlar ve doğrulama betikleri denetim-2/ altında)
 │   ├── LISANSLAR.md          # Dışarıdan alınan varlıklar (yazı tipleri vb.) ve lisansları
 │   ├── VERITAS.md            # Kayıplı dosyaları kanıtla iyileştirme araştırması (yol haritasında Faz 3, Retriever); betikleri arastirma/veritas/
 │   └── devlog/               # Oturum devir notları (Türkçe)
