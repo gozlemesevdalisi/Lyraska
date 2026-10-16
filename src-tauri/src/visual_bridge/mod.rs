@@ -33,11 +33,16 @@ pub fn clamp_audio_delay_ms(ms: i32) -> i32 {
     ms.clamp(MIN_AUDIO_DELAY_MS, MAX_AUDIO_DELAY_MS)
 }
 
-/// Görsellerin okunacağı şarkı anı: duyulan an + ekran gecikmesi − ses aygıtının
-/// ek gecikmesi. Şarkının başından önceye gitmez.
+/// Görsellerin duyulan ana göre kaydırması (saniye): + ekran gecikmesi − ses aygıtının ek
+/// gecikmesi. Oynatıcı şarkıyı ve konumu bu kaydırılmış ana göre seçer.
+pub fn visual_offset_secs(audio_delay_ms: i32) -> f64 {
+    DISPLAY_LEAD_SECONDS - f64::from(clamp_audio_delay_ms(audio_delay_ms)) / 1000.0
+}
+
+/// Görsellerin okunacağı şarkı anı: duyulan an + [`visual_offset_secs`]. Şarkının başından
+/// önceye gitmez.
 pub fn visual_time(heard_secs: f64, audio_delay_ms: i32) -> f64 {
-    let delay = f64::from(clamp_audio_delay_ms(audio_delay_ms)) / 1000.0;
-    (heard_secs + DISPLAY_LEAD_SECONDS - delay).max(0.0)
+    (heard_secs + visual_offset_secs(audio_delay_ms)).max(0.0)
 }
 
 /// Arayüzün her ekran karesinde istediği görsel veri.

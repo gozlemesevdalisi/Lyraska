@@ -104,16 +104,28 @@ impl SharedState {
 
     /// Şu an duyulan şarkı ve o şarkıdaki konumu (saniye).
     fn now_playing(&self) -> Option<(TrackInfo, f64)> {
+        self.playing_at(0.0)
+    }
+
+    /// Duyulan andan `offset_secs` ötedeki (eksi: önceki) şarkı ve konumu. Görseller ekran
+    /// gecikmesi kadar ileriden, ses aygıtının ek gecikmesi kadar geriden okunur; boşluksuz
+    /// geçişte şarkı da bu kaydırılmış ana göre seçilir ki Bluetooth'ta yeni şarkının ilk
+    /// 200 ms'inde eski şarkının sonu gösterilsin, yeni şarkı 0. karede donmasın.
+    fn playing_at(&self, offset_secs: f64) -> Option<(TrackInfo, f64)> {
         let heard = self.output_heard.load(Ordering::Acquire);
         let segments = self.segments.lock().ok()?;
+        let first = segments.first()?;
+        // Aygıt hızı oturum boyunca sabittir: şarkı hızı / oran.
+        let device_rate = f64::from(first.info.sample_rate.max(1)) / first.rate_ratio.max(1e-9);
+        let target = (heard as f64 + offset_secs * device_rate).max(0.0);
         let segment = segments
             .iter()
             .rev()
-            .find(|s| s.first_output_frame <= heard)
-            .or(segments.first())?;
+            .find(|s| s.first_output_frame as f64 <= target)
+            .unwrap_or(first);
         let frames = segment.start_frame as f64
-            + heard.saturating_sub(segment.first_output_frame) as f64 * segment.rate_ratio;
-        let mut seconds = frames.round() / f64::from(segment.info.sample_rate.max(1));
+            + (target - segment.first_output_frame as f64).max(0.0) * segment.rate_ratio;
+        let mut seconds = frames / f64::from(segment.info.sample_rate.max(1));
         if let Some(duration) = segment.info.duration_secs {
             seconds = seconds.min(duration);
         }
@@ -392,6 +404,13 @@ impl Session {
     fn now_playing(&self) -> (TrackInfo, f64) {
         self.shared
             .now_playing()
+            .unwrap_or_else(|| (self.info.clone(), 0.0))
+    }
+
+    /// Duyulan andan `offset_secs` ötedeki şarkı ve konumu (görseller için).
+    fn playing_at(&self, offset_secs: f64) -> (TrackInfo, f64) {
+        self.shared
+            .playing_at(offset_secs)
             .unwrap_or_else(|| (self.info.clone(), 0.0))
     }
 
@@ -1044,9 +1063,10 @@ impl Player {
     pub fn visual_now(&mut self) -> Option<VisualData> {
         // Boşluksuz geçişle gelen şarkının ölçümü de vaktinde ses yoluna yazılsın.
         self.sync_levels();
-        let (track, heard) = self.session.as_ref()?.now_playing();
-        // Gecikme telafisi: ekranda görüneceği an ve ses aygıtının ek gecikmesi.
-        let seconds = crate::visual_bridge::visual_time(heard, self.audio_delay_ms);
+        // Gecikme telafisi: ekranda görüneceği an ve ses aygıtının ek gecikmesi. Boşluksuz
+        // geçişte şarkı da bu kaydırılmış ana göre seçilir (A3).
+        let offset = crate::visual_bridge::visual_offset_secs(self.audio_delay_ms);
+        let (track, seconds) = self.session.as_ref()?.playing_at(offset);
         // Boşluksuz geçişle şarkı değiştiyse analizi de değiştir.
         self.adopt_analysis(&track.path);
         let rate = track.sample_rate;
@@ -1585,6 +1605,19 @@ mod tests {
         let (track, seconds) = shared.now_playing().unwrap();
         assert_eq!(track.path, b);
         assert!((seconds - 0.05).abs() < 1e-9, "{seconds}");
+        // Görsel zaman (A3): ses aygıtı 200 ms geç çalıyorsa duyulan B'nin 50. ms'i olsa da
+        // görseller hâlâ A'nın sonunu göstermeli (B'nin 0. karesinde donmamalı).
+        let (track, seconds) = shared.playing_at(-0.2).unwrap();
+        assert_eq!(track.path, PathBuf::from("deneme.wav"), "{seconds}");
+        assert!((seconds - 0.225).abs() < 1e-9, "{seconds}");
+        // Ekran gecikmesi kadar ileri okurken sınırın hemen öncesinde B'ye geçilir.
+        shared.output_heard.store(2_999, Ordering::Release);
+        let (track, seconds) = shared.playing_at(0.05).unwrap();
+        assert_eq!(track.path, b);
+        assert!((seconds - 0.049875).abs() < 1e-9, "{seconds}");
+        // Şarkının başından önceye gitmez.
+        shared.output_heard.store(100, Ordering::Release);
+        assert_eq!(shared.playing_at(-0.2).unwrap().1, 0.0);
         std::fs::remove_file(a).ok();
         std::fs::remove_file(b).ok();
     }
@@ -1951,10 +1984,11 @@ mod tests {
         let lead = crate::visual_bridge::DISPLAY_LEAD_SECONDS;
         assert!((seconds - (1.0 + lead)).abs() < 1e-9, "{seconds}");
         assert_eq!(bands.len(), BANDS);
-        // Ses aygıtı 200 ms geç çalıyorsa görseller o kadar geriden okunur.
+        // Ses aygıtı 200 ms geç çalıyorsa görseller o kadar geriden okunur; sarmanın hemen
+        // ardından (henüz hiçbir kare duyulmadı) sarılan noktada bekler, öncesine gitmez.
         assert_eq!(player.set_audio_delay_ms(200), 200);
         let delayed = player.visual_now().unwrap().seconds;
-        assert!((delayed - (1.0 + lead - 0.2)).abs() < 1e-9, "{delayed}");
+        assert!((delayed - 1.0).abs() < 1e-9, "{delayed}");
         assert_eq!(player.set_audio_delay_ms(10_000), 400, "sınır");
         player.set_audio_delay_ms(0);
         // Aynı şarkıda sarma analizi yeniden başlatmaz.
