@@ -22,6 +22,9 @@ beat F-ölçüsü en az **%80**; ton isabeti (aynı ton ya da Camelot komşusu) 
 gecikmesini ölçün. Bu tür aygıtlar sesi 150–250 ms geç çalar; program ölçülen gecikmeyi işaretlerden düşer
 (0.0.33'ten önce düşmüyordu: o sürümlerle Bluetooth'ta yapılan işaretler geç kalmış olabilir).
 
+**Aksak usullerde** (9/8, 7/8, 5/8) her **uzun ve kısa vuruşta** basın: 9/8'de (2+2+2+3) ölçüde 4 kez, sonuncusu
+biraz geç gelir. Program da aksak şarkıda vuruşları böyle sayar.
+
 İpucu: Şarkının tamamını işaretlemek gerekmez; 30–60 saniyelik bir bölüm de işe yarar. Farklı türlerden
 (pop, rock, Türk sanat/halk, elektronik, rap, akustik) şarkılar en faydalısıdır.
 

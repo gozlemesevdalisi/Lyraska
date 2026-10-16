@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.42 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.43 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -263,6 +263,15 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
   bir şarkıda o bölüme gelince bilgi kartı vurgulu olarak bölümün tonunu gösterir. Yalnızca davul ya da konuşma
   olan kayıtlarda ton boş kalır ("—").
 - Bildirin: şarkı adı, sizin bildiğiniz ton ve programın yazdığı ton (✓ olmayanlar en değerlisi).
+
+**E5. Aksak ölçü (0.0.43)**
+
+- Nasıl: Aksak usullü birkaç şarkı çalın (ör. 9/8 roman havası, 7/8 ya da 5/8 bir halk şarkısı). Kütüphanedeki
+  şarkıların ritmi arka planda saniyeler içinde yenilenir (şarkılar yeniden çözülmez).
+- Neye bakılır: sağ alttaki bilgi kartında "9/8 (2+2+2+3)" gibi ölçü yazar. **Gece otoyolu**'nda sokak lambaları
+  ölçü başlarında geçer; **Senkron** panelindeki vuruş noktası uzun ve kısa vuruşlara uyar. Düz 4/4 şarkılar
+  "4/4" kalmalı. Ölçüsü belirsiz bir şarkıda ölçü hiç yazmaz; bu bilerek yapıldı.
+- Bildirin: aksak olduğunu bildiğiniz şarkıda programın yazdığı ölçü (ya da hiç yazmaması) ve şarkının adı.
 
 ## F. Hata günlüğü
 

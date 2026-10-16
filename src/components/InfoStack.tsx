@@ -3,7 +3,7 @@ import type { KeyMap, PlaybackStatus, SongMap } from "../lib/backend";
 import { coverGradient } from "../lib/cover";
 import { formatBpm, formatLabel } from "../lib/format";
 import { keyAt, keyLabel, keyLetters } from "../lib/musicalKey";
-import { confidentDrops, dropCountdown, meterLabel } from "../lib/songMap";
+import { confidentDrops, confidentMeterLabel, dropCountdown } from "../lib/songMap";
 
 export interface UpNext {
   title: string;
@@ -46,7 +46,7 @@ export function InfoStack({
       ? dropCountdown(confidentDrops(songMap), positionSecs)
       : null;
   const tempo = status.bpm
-    ? [formatBpm(status.bpm), songMap ? meterLabel(songMap.meter) : null]
+    ? [formatBpm(status.bpm), songMap ? confidentMeterLabel(songMap) : null]
         .filter(Boolean)
         .join(" · ")
     : null;

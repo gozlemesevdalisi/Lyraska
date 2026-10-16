@@ -5,6 +5,7 @@
 //! - [`beats`]: vuruşlar ve tempo (BPM), spektrogramla aynı geçişte.
 //! - [`annotation`]: kullanıcının işaretlediği beat ve drop anları (ses içermez).
 //! - [`structure`]: ölçü başları, bölümler, droplar ve enerji eğrisi.
+//! - [`meter`]: aksak ölçüler (5/8, 7/8, 9/8): sekizlik ızgarası ve gruplama.
 //! - [`key`]: ton tespiti (kroma, Krumhansl–Kessler profilleri, Camelot kodu, bölüm bölüm).
 //! - [`evaluate`]: analizin doğruluğunu insan işaretlerine göre ölçme (F-ölçüsü).
 //! - [`cache`]: analiz sonuçlarının SQLite önbelleği (yol + boyut + değiştirilme
@@ -21,6 +22,7 @@ pub mod cache;
 pub mod evaluate;
 pub mod key;
 pub mod levels;
+pub mod meter;
 pub mod spectrogram;
 pub mod structure;
 

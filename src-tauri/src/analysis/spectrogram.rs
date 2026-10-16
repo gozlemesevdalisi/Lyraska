@@ -15,6 +15,7 @@ use super::beats::{self, BeatGrid, OnsetDetector};
 use super::cache::CachedAnalysis;
 use super::key::{ChromaAnalyzer, KeyAnalysis};
 use super::levels::{self, ChannelLevels, LevelAccumulator, VALUES_PER_FRAME};
+use super::meter;
 use super::structure::{self, SongMap};
 use crate::audio::bass::{BassPeakMeter, BassPeaks};
 use crate::audio::decode::Decoder;
@@ -465,7 +466,15 @@ pub fn rhythm_from_frames(
     sample_rate: u32,
 ) -> (Option<BeatGrid>, Option<SongMap>) {
     let latency = beats::onset_latency(sample_rate, FFT_SIZE);
-    let grid = beats::track(onset, FRAMES_PER_SECOND, latency);
+    let tracked = beats::track(onset, FRAMES_PER_SECOND, latency);
+    // Aksak ölçü (9/8, 7/8, 5/8): vuruşlar grup başları olur, ölçü başları sekizlik ızgarasından.
+    let aksak = tracked
+        .as_ref()
+        .and_then(|g| meter::detect(onset, levels, BANDS, g, FRAMES_PER_SECOND, latency));
+    let grid = match &aksak {
+        Some(aksak) => Some(aksak.beat_grid()),
+        None => tracked,
+    };
     let map = grid.as_ref().and_then(|grid| {
         // Kare başına ses yüksekliği: iki kanalın etkin seviyesinin ortalaması.
         let loudness: Vec<f32> = meters
@@ -473,7 +482,14 @@ pub fn rhythm_from_frames(
             .filter_map(levels::decode_frame)
             .map(|m| 0.5 * (m.rms_db[0] + m.rms_db[1]))
             .collect();
-        structure::map_song(levels, BANDS, &loudness, grid, FRAMES_PER_SECOND)
+        structure::map_song(
+            levels,
+            BANDS,
+            &loudness,
+            grid,
+            FRAMES_PER_SECOND,
+            aksak.as_ref(),
+        )
     });
     (grid, map)
 }

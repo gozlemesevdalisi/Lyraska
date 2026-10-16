@@ -65,6 +65,17 @@ describe("gece otoyolu", () => {
     expect(later.lamp - s.lamp).toBeCloseTo(0.5, 1);
   });
 
+  it("ölçü belirsizse lambalar ölçüye kilitlenmez, çizgiler vuruşa kilitli kalır", () => {
+    // Lamba, ölçü fazından çeyrek ölçü uzakta başlar.
+    const start = { ...HIGHWAY_AT_REST, dash: 0.37, lamp: 0.25 };
+    const s = drive(start, 3, (t) => music(t, { barPhase: null }));
+    const t = 3;
+    expect(phaseDistance(s.dash, fract(t * 2))).toBeLessThan(0.02);
+    // Lamba fazı başladığı yerden tempoyla ilerler (çekilmez): 3 sn'de 1,5 lamba.
+    expect(s.lamp - start.lamp).toBeCloseTo(1.5, 1);
+    expect(phaseDistance(s.lamp, fract((t * 2) / 4))).toBeGreaterThan(0.2);
+  });
+
   it("yakalarken bile yol geri gitmez", () => {
     let s = { ...HIGHWAY_AT_REST, dash: 0.49 };
     for (let i = 1; i <= 120; i++) {

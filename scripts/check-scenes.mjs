@@ -57,7 +57,8 @@ const fakeCore = (level = null, theme = 1) => `
       case "visual_safe_get": return false;
       case "audio_delay_get": return 0;
       // Tek bölümlük harita: arayüzün vurgu rengi (VU ve spektrum sahnelerinin halesi) de temada.
-      case "song_map": return { meter: 4, downbeatPhase: 0, downbeats: [], drops: [], dropConfidence: [],
+      case "song_map": return { meter: 4, downbeatPhase: 0, grouping: [], meterConfidence: 1, downbeats: [],
+        drops: [], dropConfidence: [],
         energy: [], sections: [{ start: 0, end: 240, energy: 0.8, label: ${theme} }] };
       case "annotation_get": case "song_key": return null;
       case "visual_frame": return {
@@ -71,7 +72,7 @@ const fakeCore = (level = null, theme = 1) => `
         director: {
           atmosphere: { section: 1, theme: ${theme}, mood: 0.9, warmth: 0.6 },
           rhythm: { pulse: 0.5, accent: 0.2, beatPhase: beats % 1, barPhase: (beats / 4) % 1,
-            anticipation: 0, release: 0.4 },
+            anticipation: 0, release: 0.4, barsConfident: true },
           texture: { detail: 0.6, motion: 0.6 },
         },
       };

@@ -70,7 +70,8 @@ export interface HighwayInput {
   director: {
     mood: number;
     theme: number;
-    barPhase: number;
+    /** Ölçünün içindeki yer; ölçü belirsizse `null` (lambalar ölçüye kilitlenmez). */
+    barPhase: number | null;
     anticipation: number;
     release: number;
     /** Doku katmanının vuruş yoğunluğu (yoksa olağan hız). */
@@ -158,7 +159,7 @@ export function stepHighway(
   const lamp = advance(
     prev.lamp,
     (dashRate / DASHES_PER_LAMP) * motion * step,
-    locked && beat && director ? director.barPhase * multiple : null,
+    locked && beat && director?.barPhase != null ? director.barPhase * multiple : null,
     step,
     (safe ? SAFE_LAMP_RATE : MAX_LAMP_RATE) * step,
   );
