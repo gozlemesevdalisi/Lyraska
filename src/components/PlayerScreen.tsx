@@ -385,7 +385,12 @@ export function PlayerScreen() {
           hidden={drawer.panel !== "sync"}
         >
           <ErrorBoundary name="Senkron">
-            <SyncPanel sync={sync} playing={playing} available={player.available} />
+            <SyncPanel
+              sync={sync}
+              playing={playing}
+              available={player.available}
+              visible={drawer.open && drawer.panel === "sync"}
+            />
           </ErrorBoundary>
         </div>
         <div

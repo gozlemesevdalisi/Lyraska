@@ -549,17 +549,32 @@ pub fn rhythm_from_frames(
 /// `open` şarkıyı açar; yalnızca gerektiğinde çağrılır (çözme ya da örnekleme hızı
 /// bilinmeyen eski kayıtta başlığı okumak için). Açılamaz ya da iptal edilirse analiz bitmiş
 /// sayılmaz ve `false` döner. `pace` her çözülen parçadan sonra çağrılır ([`analyze_paced`]).
+/// Önbellekteki kareleri ve (eskimemişse) ses yüksekliğini hemen yayımlar. Yenileme ayrı iş
+/// parçacığında ve belki bekleyerek (önce çalan şarkı) başlar; görseller onu beklemesin diye
+/// çağıran bunu iş parçacığını açmadan önce çağırır.
+pub fn publish_cached(target: &Spectrogram, cached: &CachedAnalysis) {
+    target.push(
+        &cached.saved.levels,
+        &cached.saved.meters,
+        &cached.saved.onset,
+    );
+    if !cached.stale.loudness {
+        target.set_measured_loudness(cached.saved.loudness);
+    }
+}
+
 pub fn refresh_paced(
     cached: CachedAnalysis,
     open: &mut dyn FnMut() -> Option<Decoder>,
     target: &Spectrogram,
     pace: &mut dyn FnMut(),
 ) -> bool {
-    let CachedAnalysis { saved, stale } = cached;
-    target.push(&saved.levels, &saved.meters, &saved.onset);
-    if !stale.loudness {
-        target.set_measured_loudness(saved.loudness);
+    // Kareler çağıran tarafından önceden yayımlanmış olabilir ([`publish_cached`]); iki kez
+    // eklenmesin.
+    if target.ready_frames() == 0 {
+        publish_cached(target, &cached);
     }
+    let CachedAnalysis { saved, stale } = cached;
     let mut sample_rate = saved.sample_rate;
     let mut loudness = saved.loudness;
     let mut bass_peaks = saved.bass_peaks;
