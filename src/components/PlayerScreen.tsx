@@ -219,7 +219,7 @@ export function PlayerScreen() {
         fallback={() => (
           <div className="stage" data-scene="error">
             <p className="stage__error" role="alert">
-              Sahne çizilemedi; hata günlüğe yazıldı. Başka bir sahne seçebilirsiniz (1–4).
+              Sahne çizilemedi; hata günlüğe yazıldı. Başka bir sahne seçebilirsiniz (1–5).
             </p>
           </div>
         )}
@@ -230,6 +230,11 @@ export function PlayerScreen() {
           hasTrack={hasTrack}
           safe={visualSafe.safe}
           skyLook={skyLook.look}
+          title={
+            status.track
+              ? [status.track.artist, status.track.title].filter(Boolean).join(" · ")
+              : null
+          }
         />
       </ErrorBoundary>
       <div className="stage__shade" aria-hidden />

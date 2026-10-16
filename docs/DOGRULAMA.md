@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.43 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.44 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -189,7 +189,7 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 **D2. Akıcılık (0.0.33)**
 
-- Nasıl: Büyük kütüphaneyle bir şarkı çalarken **Kütüphane** panelini açık bırakın; sahneleri 1–4 tuşlarıyla
+- Nasıl: Büyük kütüphaneyle bir şarkı çalarken **Kütüphane** panelini açık bırakın; sahneleri 1–5 tuşlarıyla
   değiştirin.
 - Neye bakılır: görüntü takılmadan akar (saniyede 60 kare); panel açıkken de kapalıyken de aynı.
 
@@ -233,6 +233,16 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 
 - Nasıl: Çalarken fareye ve klavyeye birkaç saniye dokunmayın.
 - Neye bakılır: düğmeler ve yazılar çekilir, yalnızca sahne kalır; fare kıpırdayınca geri gelir.
+
+**D9. Gece sürüşü (0.0.44)**
+
+- Nasıl: Üstteki **Gece sürüşü** düğmesine (ya da 5 tuşuna) basın, bir şarkı çalın; fareye birkaç saniye dokunmayın
+  (sinema görünümü).
+- Neye bakılır: ön camdan gece otoyolu (çizgiler vuruşla, lambalar ölçü başıyla); torpidoda teyp: kasetin
+  makaraları çalarken döner, nokta matris ekranda sanatçı ve şarkı adı kayar, altında spektrum; iki VU ibresi sesle
+  oynar; çal düğmesinin halkası yanar. Teyp, düğmeler ve başlık görünürken kısık durur, sinema görünümünde yavaşça
+  belirir. Hiçbir yerde marka adı ya da logosu yok. Ani parlama yok.
+- Bildirin: beğendiniz mi, değişmesini istediğiniz bir şey var mı (renk, teybin boyutu, kaset)?
 
 ## E. Senkron ve işaretleme
 

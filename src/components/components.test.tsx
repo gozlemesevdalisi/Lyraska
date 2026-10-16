@@ -1054,7 +1054,53 @@ describe("sahneler", () => {
     expect(window.localStorage.getItem("lyraska.scene")).toBe("vu");
   });
 
-  it("1–4 tuşları sahne seçer; arama kutusuna yazarken seçmez", async () => {
+  it("gece sürüşü: ön camdan yol, torpidoda teyp; kaset çalarken döner, ekranda şarkı kayar", async () => {
+    backend.desktop = true;
+    backend.status = { ...playing, state: "paused" };
+    backend.bands = new Array<number>(32).fill(0.6);
+    backend.director = {
+      atmosphere: { section: 0, theme: 0, mood: 1, warmth: 0.5 },
+      rhythm: {
+        pulse: 0,
+        accent: 0,
+        beatPhase: 0,
+        barPhase: 0,
+        anticipation: 0,
+        release: 0,
+        barsConfident: true,
+      },
+      texture: { detail: 0.5, motion: 0.5 },
+    };
+    const { container } = render(<App />);
+    // Oynatıcı çalan şarkıyı ilk komutla öğrenir (duraklatılmış).
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    await act(async () => fireEvent.keyDown(window, { key: "5" }));
+    expect(screen.getByRole("button", { name: "Gece sürüşü" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Ön camda gece otoyolunun çizimi; torpidoda teyp ve iki VU ibresi.
+    expect(screen.getByRole("img", { name: /Gece otoyolu/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Teyp" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Kaset duruyor" })).toBeInTheDocument();
+    // Ekranda çalan şarkı kayar (sanatçı · başlık).
+    expect(screen.getByRole("img", { name: "Lyra · Gece Otoyolu" })).toBeInTheDocument();
+
+    backend.status = playing;
+    await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
+    expect(await screen.findByRole("img", { name: "Kaset dönüyor" })).toBeInTheDocument();
+    // Torpidonun ışığı Görsel Yönetmen'i izler.
+    await waitFor(
+      () => {
+        const dash = container.querySelector<HTMLElement>(".drive-scene__dash");
+        expect(Number(dash?.style.getPropertyValue("--stage-glow") || 0)).toBeGreaterThan(0.3);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("1–5 tuşları sahne seçer; arama kutusuna yazarken seçmez", async () => {
     render(<App />);
     await act(async () => fireEvent.keyDown(window, { key: "3" }));
     expect(screen.getByRole("img", { name: "Sol kanal VU ölçer" })).toBeInTheDocument();

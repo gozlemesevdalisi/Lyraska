@@ -366,6 +366,8 @@ const SCENES = [
     themed: true,
   },
   { id: "highway", name: "Gece otoyolu", extra: () => null, themed: true },
+  // Ön camdan aynı yol; torpidonun ışığı ve teyp de temada.
+  { id: "drive", name: "Gece sürüşü", extra: () => null, themed: true },
 ];
 
 /**
