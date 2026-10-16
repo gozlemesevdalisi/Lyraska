@@ -1,11 +1,14 @@
-# Her push ve PR'da: arayüz (TypeScript) ve çekirdek (Rust) testleri, lint ve
-# lisans denetimi. PR'larda ayrıca Windows kurulum dosyası derlenir ve
-# "Artifacts" bölümüne eklenir.
+# main'e push ve her PR'da: arayüz (TypeScript) ve çekirdek (Rust) testleri, lint, lisans
+# ve güvenlik uyarısı denetimi. PR'larda ayrıca Windows kurulum dosyası derlenir ve
+# "Artifacts" bölümüne eklenir. main'de CI yeşil bitince "Test sürümü" iş akışı çalışır.
+#
+# Üçüncü taraf eylemler commit SHA'sıyla sabitlenir (yorumdaki etiket bilgi içindir);
+# Rust araç zinciri sabit sürümdür: yeni clippy lint'leri ilgisiz PR'ları kırmaz.
 name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -18,14 +21,18 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.97.0
 
 jobs:
   arayuz:
     name: Arayüz (TypeScript)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -50,13 +57,16 @@ jobs:
   cekirdek:
     name: Çekirdek (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Linux derleme bağımlılıkları
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -65,10 +75,11 @@ jobs:
         run: |
           npm ci
           npm run build
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
       - name: Biçim denetimi (rustfmt)
@@ -77,10 +88,13 @@ jobs:
       - name: Lint (Clippy)
         working-directory: src-tauri
         run: cargo clippy --all-targets --locked -- -D warnings
+      # Testler Rust → arayüz veri tiplerini src/lib/bindings/ altına yeniden üretir (ts-rs).
+      # Klasör önce boşaltılır: silinen bir Rust tipinin eski .ts dosyası da fark edilir.
+      - name: Eski arayüz tiplerini kaldır
+        run: rm -f src/lib/bindings/*.ts
       - name: Testler
         working-directory: src-tauri
         run: cargo test --locked
-      # Testler Rust → arayüz veri tiplerini src/lib/bindings/ altına yeniden üretir (ts-rs).
       # Depodakiyle aynı olmalı: Rust'ta değişen bir tip arayüzde fark edilmeden kalamaz.
       - name: Arayüz tipleri güncel mi (ts-rs)
         run: |
@@ -91,10 +105,33 @@ jobs:
             exit 1
           fi
       - name: Lisans ve kaynak denetimi (cargo-deny)
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           manifest-path: src-tauri/Cargo.toml
           command: check licenses bans sources
+
+  guvenlik:
+    name: Güvenlik uyarıları
+    # Bilinen açıklar: Rust crate'leri (RustSec) ve pakete giren npm bağımlılıkları. Güvenilmeyen
+    # ses dosyası açan bir programda ayrıştırıcı açığı fark edilmeden kalmamalı. Bu iş kırmızıysa
+    # test sürümü yayımlanmaz.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Rust güvenlik uyarıları (cargo-deny)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check advisories
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: npm güvenlik uyarıları (yalnızca pakete giren bağımlılıklar)
+        run: npm audit --omit=dev --audit-level=high
 
   sahneler:
     name: Sahneler (Windows, Edge)
@@ -102,9 +139,12 @@ jobs:
     # açılır: gölgelendiriciler Windows'ta (ANGLE → Direct3D 11) derlenir mi, görüntü
     # çiziliyor mu, Lyra yıldızları görünüyor mu? Ayrıntı: scripts/check-scenes.mjs
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -128,16 +168,20 @@ jobs:
     # main için kurulum dosyası "Test sürümü" iş akışında derlenir.
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
       - run: npm ci
@@ -153,12 +197,11 @@ jobs:
       - name: Gerçek ses aygıtıyla deneme
         working-directory: src-tauri
         run: cargo run --locked --example ses_denemesi
-      - name: Kurulum dosyasını derle (tauri-action)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Kurulum dosyasını derle
+        # Tauri CLI doğrudan: üçüncü taraf eylem ve token gerekmez.
+        run: npm run tauri build -- --ci -- --locked
       - name: Kurulum dosyasını yükle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Lyraska-Kurulum-PR
           path: src-tauri/target/release/bundle/nsis/*-setup.exe

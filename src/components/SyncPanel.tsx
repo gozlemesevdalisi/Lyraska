@@ -9,6 +9,8 @@ export interface SyncPanelProps {
   playing: boolean;
   /** Ses çalınabilir mi (tarayıcı önizlemesinde hayır). */
   available: boolean;
+  /** Panel ekranda mı (çekmece açık ve bu sekme seçili)? Değilse vuruş göstergesi veri istemez. */
+  visible?: boolean;
 }
 
 /**
@@ -37,7 +39,7 @@ function BeatIndicator({ playing }: { playing: boolean }) {
 }
 
 /** Ses–görüntü senkronu: ses gecikmesi ayarı, tıklamayla ölçüm ve vuruş göstergesi. */
-export function SyncPanel({ sync, playing, available }: SyncPanelProps) {
+export function SyncPanel({ sync, playing, available, visible = true }: SyncPanelProps) {
   const { delayMs, calibration } = sync;
   const listening = calibration.phase === "listening";
 
@@ -105,7 +107,7 @@ export function SyncPanel({ sync, playing, available }: SyncPanelProps) {
             Bir şarkı çalarken nokta her vuruşta bir kenara değmeli. Kenara vuruştan önce değiyorsa
             gecikmeyi artırın, sonra değiyorsa azaltın.
           </p>
-          <BeatIndicator playing={playing} />
+          <BeatIndicator playing={playing && visible} />
         </div>
 
         <div className="marker__help sync__measure" aria-live="polite">

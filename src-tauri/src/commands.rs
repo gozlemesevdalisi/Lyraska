@@ -753,6 +753,19 @@ mod tests {
     }
 
     #[test]
+    fn surum_package_json_ile_ayni() {
+        // Sürüm numarası `package.json`'da; Cargo.toml aynı tutulur (CLAUDE.md). Biri unutulursa
+        // ekrandaki sürüm ile kurulu farklı olur (DENETIM.md C7).
+        let package: serde_json::Value =
+            serde_json::from_str(include_str!("../../package.json")).unwrap();
+        assert_eq!(
+            package["version"].as_str(),
+            Some(env!("CARGO_PKG_VERSION")),
+            "package.json ile src-tauri/Cargo.toml sürümleri farklı"
+        );
+    }
+
+    #[test]
     fn surum_cargo_toml_ile_ayni() {
         assert_eq!(AppInfo::current().version, env!("CARGO_PKG_VERSION"));
     }

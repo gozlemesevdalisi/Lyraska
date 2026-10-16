@@ -18,7 +18,8 @@
 //!
 //! **Güvenlik:** Nabız olayları (vuruş, ölçü başı, boşalma) arasında en az
 //! [`MIN_PULSE_INTERVAL`] saniye vardır (saniyede en fazla 3); güvenli modda
-//! [`SAFE_PULSE_INTERVAL`] (saniyede en fazla 1). Hızlı tempoda nabız iki
+//! [`SAFE_PULSE_INTERVAL`] (saniyede en fazla 1). Seyreltme sabit adımlıdır ([`stride`]):
+//! eşiğe yakın tempoda (174 BPM) vuruş titreşimi deseni bozmaz. Hızlı tempoda nabız iki
 //! vuruşta bire iner. Diğer bütün değerler yumuşak değişir. Sahneler parlaklığı
 //! yalnızca bu değerlerden türetir; kendi parlama testlerini de taşırlar.
 
@@ -122,18 +123,28 @@ impl Choreography {
         onset: &[f32],
         fps: f64,
     ) -> Self {
-        let pulses = thin(&beats.beats, MIN_PULSE_INTERVAL);
         // Ölçü başları yalnızca güvenliyse vurgulanır; yanlış ölçü vurgusu hiç vurgu olmamasından
         // kötüdür.
         let bars_confident = map.bars_confident();
+        let anchor = map.downbeats.first().copied();
+        let pulses = stride(&beats.beats, MIN_PULSE_INTERVAL, anchor);
         // Güvenli mod: ölçü başları (ölçü belirsizse vuruşlar), en fazla saniyede bir.
         let safe_pulses = if bars_confident {
-            thin(&map.downbeats, SAFE_PULSE_INTERVAL)
+            stride(&map.downbeats, SAFE_PULSE_INTERVAL, anchor)
         } else {
-            thin(&beats.beats, SAFE_PULSE_INTERVAL)
+            stride(&beats.beats, SAFE_PULSE_INTERVAL, anchor)
         };
+        // Vurgu yalnızca nabız da olan ölçü başlarında: nabız ∪ vurgu için de hız garantisi
+        // geçerli kalır.
         let accents = if bars_confident {
-            thin(&map.downbeats, MIN_PULSE_INTERVAL)
+            map.downbeats
+                .iter()
+                .copied()
+                .filter(|d| {
+                    let i = pulses.partition_point(|&p| p < d - 1e-6);
+                    pulses.get(i).is_some_and(|&p| (p - d).abs() < 1e-6)
+                })
+                .collect()
         } else {
             Vec::new()
         };
@@ -254,6 +265,36 @@ impl Choreography {
             },
         }
     }
+}
+
+/// Titreşim payı (saniye): vuruş aralığı eşiğe bundan yakınsa bir sonraki adım seçilir.
+const STRIDE_MARGIN: f64 = 0.02;
+
+/// Olayları düzenli adımla seyrekleştirir: ızgaranın tipik aralığının `min_gap`'i (titreşim
+/// payıyla) aşan en küçük katı adım olur ve her `adım`. olay alınır; faz `anchor`'a (ilk ölçü
+/// başı) hizalanır ki ölçü başları nabza düşsün. Açgözlü seyreltme eşiğe yakın tempoda (174 BPM,
+/// 0,345 s) ±6 ms titreşimle "her vuruş / iki vuruşta bir" arasında gidip gelirdi; sabit adım
+/// bunu önler. Düzensiz ızgarada (tempo değişimi) son güvence yine [`thin`].
+fn stride(events: &[f64], min_gap: f64, anchor: Option<f64>) -> Vec<f64> {
+    let mut gaps: Vec<f64> = events.windows(2).map(|w| w[1] - w[0]).collect();
+    if gaps.is_empty() {
+        return thin(events, min_gap);
+    }
+    gaps.sort_by(f64::total_cmp);
+    let typical = gaps[gaps.len() / 2];
+    if !typical.is_finite() || typical <= 1e-3 {
+        return thin(events, min_gap);
+    }
+    let step = ((min_gap + STRIDE_MARGIN) / typical).ceil().max(1.0) as usize;
+    let anchor_index = anchor.map_or(0, |a| events.partition_point(|&e| e < a - 1e-6));
+    let phase = anchor_index % step;
+    let picked: Vec<f64> = events
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i % step == phase)
+        .map(|(_, &e)| e)
+        .collect();
+    thin(&picked, min_gap)
 }
 
 /// Olayları seyrekleştirir: bir öncekine `min_gap`'ten yakın olan atılır.
@@ -414,6 +455,92 @@ mod tests {
             .windows(2)
             .all(|w| w[1] - w[0] >= SAFE_PULSE_INTERVAL - 1e-9));
         assert_eq!(fast.frame_at(5.0, true).rhythm.accent, 0.0);
+    }
+
+    /// Vuruşlara ±6 ms'lik belirlenimci titreşim ekler (dinamik programlamanın gerçek çıktısı gibi).
+    fn jittered(beats: &[f64]) -> Vec<f64> {
+        beats
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| {
+                let r = ((i as f64 * 12.9898).sin() * 43758.5453).rem_euclid(1.0);
+                b + (r - 0.5) * 0.012
+            })
+            .collect()
+    }
+
+    fn build_with(grid: &BeatGrid, map: &SongMap) -> Choreography {
+        let bars = map.downbeats.len();
+        let frames = (bars as f64 * 4.0 * 60.0 / grid.bpm * 60.0) as usize + 120;
+        let bands: Vec<u8> = (0..frames * 32).map(|i| (i % 255) as u8).collect();
+        let onset: Vec<f32> = (0..frames).map(|i| (i % 30) as f32 / 30.0).collect();
+        Choreography::build(grid, map, &bands, 32, &onset, 60.0)
+    }
+
+    /// Aralıkların hepsi `expected ± 0.02` ise desen düzenlidir.
+    fn regular(events: &[f64], expected: f64) -> bool {
+        events.len() > 4
+            && events
+                .windows(2)
+                .all(|w| (w[1] - w[0] - expected).abs() < 0.02)
+    }
+
+    #[test]
+    fn esik_yakininda_titresim_nabiz_desenini_bozmaz() {
+        // 174 BPM (DnB): vuruş aralığı 0,345 s, eşik 0,34 s. Açgözlü seyreltme ±6 ms titreşimle
+        // bazen her vuruşta bazen iki vuruşta bir nabız üretirdi (A1). Beklenen: hep iki vuruşta bir.
+        let (mut grid, mut map) = song(174.0, 40);
+        grid.beats = jittered(&grid.beats);
+        map.downbeats = grid.beats.iter().step_by(4).copied().collect();
+        let c = build_with(&grid, &map);
+        let two_beats = 2.0 * 60.0 / 174.0;
+        assert!(
+            regular(&c.pulses, two_beats),
+            "nabız iki vuruşta bir ve düzenli olmalı: {:?}",
+            c.pulses
+                .windows(2)
+                .map(|w| w[1] - w[0])
+                .take(12)
+                .collect::<Vec<_>>()
+        );
+        assert!(c
+            .pulses
+            .windows(2)
+            .all(|w| w[1] - w[0] >= MIN_PULSE_INTERVAL - 1e-9));
+        // Vurgular nabızların alt kümesi: nabız ∪ vurgu için de hız garantisi geçerli (A4).
+        assert!(c.accents.iter().all(|a| c.pulses.contains(a)));
+        assert!(!c.accents.is_empty());
+
+        // Güvenli mod, ölçü belirsiz, 120 BPM: iki vuruş tam 1,000 s; titreşimle "bir/iki/üç
+        // vuruşta bir" arasında gidip gelirdi. Beklenen: düzenli desen, aralık ≥ 1 s.
+        let (mut grid, mut map) = song(120.0, 40);
+        grid.beats = jittered(&grid.beats);
+        map.meter_confidence = 0.2;
+        let c = build_with(&grid, &map);
+        let gaps: Vec<f64> = c.safe_pulses.windows(2).map(|w| w[1] - w[0]).collect();
+        let first = gaps[0];
+        assert!(
+            gaps.iter()
+                .all(|g| (g - first).abs() < 0.02 && *g >= SAFE_PULSE_INTERVAL - 1e-9),
+            "güvenli nabız düzenli olmalı: {:?}",
+            gaps.iter().take(12).collect::<Vec<_>>()
+        );
+
+        // Güvenli mod, 3/4'te 180 BPM: ölçü tam 1,000 s. Beklenen: iki ölçüde bir, düzenli.
+        let (mut grid, mut map) = song(180.0, 40);
+        grid.beats = jittered(&grid.beats);
+        map.meter = 3;
+        map.downbeats = grid.beats.iter().step_by(3).copied().collect();
+        let c = build_with(&grid, &map);
+        assert!(
+            regular(&c.safe_pulses, 2.0),
+            "güvenli nabız iki ölçüde bir olmalı: {:?}",
+            c.safe_pulses
+                .windows(2)
+                .map(|w| w[1] - w[0])
+                .take(12)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

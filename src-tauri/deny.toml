@@ -49,5 +49,10 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 [advisories]
-# Güvenlik uyarıları ayrı bir iş olarak izlenir; lisans denetimi CI'yi bloklar.
+# Güvenlik uyarıları CI'da ayrı bir işte denetlenir ("Güvenlik uyarıları"): bilinen bir açık
+# (vulnerability, unsound) CI'yi kırar; bakımsız crate yalnızca doğrudan bağımlılıksa, geri
+# çekilen (yanked) sürüm ise uyarı verir. Lisans denetimi ayrı iştedir.
+version = 2
+yanked = "warn"
+unmaintained = "workspace"
 ignore = []
