@@ -1,5 +1,5 @@
 """R2 sonuç tabloları: r2_degerlendir.py'nin JSON çıktılarını VERITAS.md için Markdown tablolarına çevirir.
-Kullanım: python r2_tablo.py <çıktı.json> […] [--sec <yöntem alt dizesi> …]  (aynı parça birden çok dosyada varsa sözlükleri birleştirilir)."""
+Kullanım: python r2_tablo.py <çıktı.json> […] [--sec <yöntem alt dizesi> …] [--ozet]  (aynı parça birden çok dosyada varsa sözlükleri birleştirilir)."""
 import json
 import sys
 
@@ -81,10 +81,50 @@ def main(paths, secim=None):
                 print(f"| {e['ölçek']} | {tr1(e['alpha'], False)} | {tr1(sum(bits) / len(bits))} | " + " | ".join(tr(x) for x in mos) + f" | {tr(sum(mos) / len(mos))} |")
 
 
+def ozet(paths, secim=None):
+    """Grup özeti (K2): verilen dosyalardaki bütün parçalar tek grup; bit ortalamaları ve yöntem başına MOS farkı
+    (ortalama, en kötü, en iyi)."""
+    rows = []
+    for p in paths:
+        rows += json.load(open(p))
+    names = [r["ad"] for r in rows]
+    print(f"\n{len(rows)} parça: " + ", ".join(names))
+    print("\n| Model | " + " | ".join(rows[0]["bit"]["düzgün"]) + " |")
+    print("|" + "---|" * (len(rows[0]["bit"]["düzgün"]) + 1))
+    for m in rows[0]["bit"]:
+        cells = []
+        for reg in rows[0]["bit"]["düzgün"]:
+            vs = [r["bit"][m][reg] for r in rows if reg in r["bit"].get(m, {})]
+            cells.append(tr1(sum(vs) / len(vs)) if vs else "—")
+        print(f"| {m} | " + " | ".join(cells) + " |")
+    print("\n| Yöntem | MOS ort. | fark ort. | en kötü parça | en iyi parça |")
+    print("|---|---|---|---|---|")
+    methods = list(rows[0]["yöntem"])
+    if secim:
+        methods = [m for m in methods if m == "çözücü" or m.startswith("kâhin:") or any(x in m for x in secim)]
+    for m in methods:
+        v = [r["yöntem"][m]["MOS"] for r in rows if m in r["yöntem"]]
+        d = [r["yöntem"][m]["MOS"] - r["yöntem"]["çözücü"]["MOS"] for r in rows if m in r["yöntem"]]
+        print(f"| {m} | {tr(sum(v) / len(v))} | {tr1(sum(d) / len(d))} | {tr1(min(d))} | {tr1(max(d))} |")
+    if "enerji hatası" in rows[0]:
+        print("\n| Kestirici | canlı bant ortanca dB (ort., en kötü) | sıfır bant ortanca dB (ort., en kötü) |")
+        print("|---|---|---|")
+        for m in rows[0]["enerji hatası"]:
+            cells = []
+            for band in ("canlı bant", "sıfır bant"):
+                v = [r["enerji hatası"][m][band]["ortanca dB"] for r in rows]
+                cells.append(f"{tr1(sum(v) / len(v))}, {tr1(max(v))}")
+            print(f"| {m} | " + " | ".join(cells) + " |")
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     secim = None
     if "--sec" in args:
         i = args.index("--sec")
         secim, args = args[i + 1 :], args[:i]
-    main(args, secim)
+    if "--ozet" in args:
+        args.remove("--ozet")
+        ozet(args, secim)
+    else:
+        main(args, secim)
