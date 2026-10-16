@@ -135,7 +135,11 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
   - [x] Kör dinleme aracı (ABX, 0.0.40, proje sahibinin kararı): çekmecede **Kör test**. Aynı şarkının iki sürümü
         örnek düzeyinde hizalanır, ses yükseklikleri eşitlenir, işlenmeden çalınır; A/B/X aynı konumda tıksız
         değişir, sonuç binom sınamasıyla en sonda verilir.
-  - Sıradaki: kutularla sınırlanmış öğrenmeli önsel araştırması (R2); görev devredildi, sonucu bekleniyor.
+  - R2 sonucu (15–16 Ekim 2026, öğrenmeli önsel; VERITAS.md bölüm 8): kutularla sınırlanmış öğrenilmiş model de
+    kapıdan geçmedi (en iyi +0,006 MOS; örnekleyen yöntemler ortalamada çözücüden kötü). Nedeni ölçüldü: deliklerin
+    ince yapısı hakkında bit akışı ve bağlam ≈ 0,1 bit taşıyor, komşu granüllerin gerçek değeri bile bilgi eklemiyor;
+    duyulur kazanç için doğru seviye ve ≥ 0,5 bit yapı gerekiyor. **MP3 kolu kapandı**; yeniden açılması için yeni bir
+    bilgi kaynağı gerekir (aynı şarkının ikinci kopyası ya da kayıpsız referans). AAC için ayrı karar.
 - [x] Bit-perfect mod (0.0.28, öne alındı): WASAPI özel mod, ayar olarak, varsayılan kapalı (proje sahibinin
       kararı). Şarkı kendi hızında, aygıtın en yüksek tamsayı biçiminde (32 → 24 → 16 bit) çalar; örneklerin bit bit
       aynı çıktığı uçtan uca testli. Aygıt desteklemezse ya da başka program tutuyorsa normal yola geçilir, nedeni
@@ -222,8 +226,8 @@ Faz 6'da sırayı kullanıcı seçer; burada **sırayı program seçer**, geçi�
 - **Ekolayzerde sıradaki iş** ([#26](https://github.com/gozlemesevdalisi/Lyraska/issues/26)): elle parametrik EQ
   arayüzü (öneri; lisans beklemiyor), hazır kulaklık listesi (önce ölçüm kaynaklarının lisansı), loudness.
 - **Retriever / Veritas'ta sıradaki adım** ([VERITAS.md](VERITAS.md)): kör dinleme aracı (ABX) 0.0.40'ta geldi;
-  "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. Öğrenmeli önsel araştırmasının (R2) sonucu
-  gelince burada ölçülür; ürüne alınıp alınmayacağı ayrı karar.
+  "320 kbps ile FLAC'ı ayırabiliyor muyum?" sorusunu kulakla cevaplar. R2 sonucu geldi: kapıdan geçmedi, MP3 kolu
+  kapandı (bölüm 8); proje sahibi sayıları kendi düzeneğinde tekrar üretir.
 - **Fikir havuzu** (aşağıda): hangilerinin yol haritasına gireceği.
 
 ## Fikir havuzu (karar bekliyor)
