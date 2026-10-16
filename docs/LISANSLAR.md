@@ -20,6 +20,16 @@ kuralları). Kod bağımlılıklarının lisanslarını CI denetler (`npm run ch
   kullanım yasağı yok. OFL-1.1 izin listesinde olmadığı için proje sahibine soruldu, 8 Ekim 2026'da onaylandı;
   `src-tauri/deny.toml` izin listesine eklendi.
 
+## Ton profilleri (Krumhansl ve Kessler, 1982)
+
+- **Ne için:** ton tespiti (`src-tauri/src/analysis/key.rs`): her tonda 12 perdenin ne kadar "yerinde" duyulduğunu
+  gösteren 24 sayılık iki profil (majör ve minör).
+- **Kaynak:** C. L. Krumhansl ve E. J. Kessler, "Tracing the dynamic changes in perceived tonal organization in a
+  spatial representation of musical keys", _Psychological Review_ 89 (1982). Sayılar dinleyici deneylerinin
+  yayımlanmış sonuçlarıdır.
+- **Lisans:** yayımlanmış ölçüm sonuçları (bilimsel olgu); bir kod, veri seti ya da model dosyası alınmadı. Lisans
+  gerektirmez; kaynak burada ve kodda belirtilir.
+
 ## Programa girmeyen araştırma dosyaları
 
 ### LAME 3.100 ölçüm yaması

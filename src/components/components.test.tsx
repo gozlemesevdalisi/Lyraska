@@ -43,6 +43,7 @@ const backend = vi.hoisted(() => ({
   saveMarks: vi.fn(),
   annotation: null as import("../lib/backend").Annotation | null,
   songMap: null as import("../lib/backend").SongMap | null,
+  songKey: null as import("../lib/backend").KeyMap | null,
   safe: false,
   setSafe: vi.fn(),
   /** Çekirdek ekolayzer durumunu eksik alanlarla döndürür (0.0.29'daki sahne denetimi olayı). */
@@ -176,8 +177,14 @@ vi.mock("../lib/backend", async (importOriginal) => {
     },
     getAnnotation: async () => backend.annotation,
     getSongMap: async () => backend.songMap,
-    saveAnnotation: async (path: string, beats: number[], drops: number[]) => {
-      backend.saveMarks(path, beats, drops);
+    getSongKey: async () => backend.songKey,
+    saveAnnotation: async (
+      path: string,
+      beats: number[],
+      drops: number[],
+      key: import("../lib/backend").MarkedKey | null = null,
+    ) => {
+      backend.saveMarks(path, beats, drops, key);
       return "C:\\Veri\\isaretler\\Lyra - Gece Otoyolu.1234abcd.json";
     },
     evaluateAnnotation: async () => ({
@@ -195,6 +202,9 @@ vi.mock("../lib/backend", async (importOriginal) => {
         detectedDrops: [61.5],
         dropHits: 1,
         markedDrops: 1,
+        // Program Do majör buldu; işaret La minör: paralel ton, isabet sayılır.
+        detectedKey: { tonic: 0, minor: false, confidence: 0.7, camelot: 8 },
+        keyRelation: "relative" as const,
       },
     }),
     setNextTrack: async (path: string | null) => {
@@ -291,6 +301,7 @@ beforeEach(() => {
   backend.dragFailure = null;
   backend.dropOutcome = null;
   backend.songMap = null;
+  backend.songKey = null;
   backend.annotation = null;
   backend.covers = {};
   backend.libraryPanelRenders = 0;
@@ -513,9 +524,10 @@ describe("kütüphane", () => {
     trackNumber: id,
     durationSecs: 200,
     codec: "flac",
-    // 1. şarkı 128 BPM, 2. ritimsiz, 3. henüz analiz edilmedi.
+    // 1. şarkı 128 BPM ve La minör (8A), 2. ritimsiz ve tonu belirsiz, 3. henüz analiz edilmedi.
     bpm: id === 1 ? 128.4 : null,
     analyzed: id !== 3,
+    key: id === 1 ? "8A" : null,
   });
   const library = {
     folders: [{ id: 7, path: "C:\\Müzik" }],
@@ -679,6 +691,12 @@ describe("kütüphane", () => {
     const rows = screen.getAllByRole("row").slice(1);
     expect(rows.map((row) => row.querySelector(".library__bpm")?.textContent)).toEqual([
       "128",
+      "—",
+      "",
+    ]);
+    // Ton sütunu: Camelot kodu; tonu belirsizse çizgi, analiz beklerken boş.
+    expect(rows.map((row) => row.querySelector(".library__key")?.textContent)).toEqual([
+      "8A",
       "—",
       "",
     ]);
@@ -1238,6 +1256,11 @@ describe("şarkı haritası ve bilgi kartları", () => {
       dropConfidence: [0.9, 0.85],
       energy: [],
     };
+    // Şarkı La minör; ikinci bölümde ton Re majöre değişiyor.
+    backend.songKey = {
+      key: { tonic: 9, minor: true, confidence: 0.8, camelot: 8 },
+      sections: [null, { tonic: 2, minor: false, confidence: 0.7, camelot: 10 }, null],
+    };
     const { container } = render(<App />);
     await act(async () => fireEvent.keyDown(window, { code: "Space", key: " " }));
     const sections = () => [
@@ -1254,6 +1277,10 @@ describe("şarkı haritası ve bilgi kartları", () => {
     expect(screen.getByText("17 saniye sonra")).toBeInTheDocument();
     expect(screen.getByText("128 BPM · 4/4")).toBeInTheDocument();
     expect(screen.getByText("FLAC 44,1 → 48 kHz")).toBeInTheDocument();
+    // 83,4 sn ikinci bölümde: tonu değişen bölümün tonu vurgulu gösterilir.
+    const keyChip = await screen.findByText("10B · Re majör");
+    expect(keyChip).toHaveClass("is-on");
+    expect(keyChip).toHaveAttribute("title", expect.stringContaining("ton değişiyor"));
     // Arayüzün vurgu renkleri çalan bölümün temasında (83,4 sn: ikinci bölüm, etiket 1).
     expect(container.querySelector("main")).toHaveAttribute("data-theme", "1");
   });
@@ -1630,6 +1657,15 @@ describe("işaretleme", () => {
     expect(drops).toEqual([]);
     await waitFor(() => expect(screen.getByText("Kaydedildi")).toBeInTheDocument());
 
+    // Ton seçimi de işaretlerle birlikte kendiliğinden kaydedilir.
+    backend.saveMarks.mockClear();
+    await act(async () =>
+      fireEvent.change(screen.getByLabelText("Ton"), { target: { value: "4m" } }),
+    );
+    await waitFor(() => expect(backend.saveMarks).toHaveBeenCalled(), { timeout: 2000 });
+    expect(backend.saveMarks.mock.calls.at(-1)![3]).toEqual({ tonic: 4, minor: true });
+    await waitFor(() => expect(screen.getByText("Kaydedildi")).toBeInTheDocument());
+
     await act(async () => fireEvent.keyDown(document.body, { code: "Escape", key: "Escape" }));
     expect(screen.getByRole("button", { name: /İşaretlemeye başla/ })).toBeInTheDocument();
     await act(async () => fireEvent.keyDown(document.body, { code: "Space", key: " " }));
@@ -1687,7 +1723,12 @@ describe("işaretleme", () => {
     };
     await waitFor(
       () =>
-        expect(backend.saveMarks).toHaveBeenCalledWith(playing.track!.path, expect.any(Array), []),
+        expect(backend.saveMarks).toHaveBeenCalledWith(
+          playing.track!.path,
+          expect.any(Array),
+          [],
+          null,
+        ),
       { timeout: 2000 },
     );
     const [, beats] = backend.saveMarks.mock.calls.find(([p]) => p === playing.track!.path)!;
@@ -1711,6 +1752,7 @@ describe("işaretleme", () => {
       savedAt: "",
       beats: Array.from({ length: 12 }, (_, i) => 1 + i * 0.5),
       drops: [61],
+      key: { tonic: 9, minor: true },
       evaluation: null,
     };
     backend.songMap = {
@@ -1746,6 +1788,11 @@ describe("işaretleme", () => {
     expect(screen.getByText("%95,1")).toBeInTheDocument();
     expect(screen.getByText("128 / 127,9 BPM")).toBeInTheDocument();
     expect(screen.getByText("1 / 1")).toBeInTheDocument(); // drop isabeti
+    // Kayıtlı ton seçili; ölçüm programın tonuyla karşılaştırır.
+    expect(screen.getByLabelText("Ton")).toHaveValue("9m");
+    expect(
+      screen.getByText("8B · Do majör / 8A · La minör — paralel ton (aynı Camelot sayısı) ✓"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("img", {
         name: "Şarkı haritası: 2 bölüm, programın bulduğu 1 drop, sizin 1 drop işaretiniz",
@@ -1756,7 +1803,12 @@ describe("işaretleme", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Hepsini sil" })));
     expect(screen.queryByText("%87,3")).not.toBeInTheDocument();
     await waitFor(
-      () => expect(backend.saveMarks).toHaveBeenLastCalledWith(expect.any(String), [], []),
+      () =>
+        // Ton işareti silinmez: işaretler silinse de seçilen ton kalır.
+        expect(backend.saveMarks).toHaveBeenLastCalledWith(expect.any(String), [], [], {
+          tonic: 9,
+          minor: true,
+        }),
       {
         timeout: 2000,
       },

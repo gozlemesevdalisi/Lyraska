@@ -1778,7 +1778,7 @@ kbd {
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: 40px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 60px;
+  grid-template-columns: 40px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 36px 60px;
   align-items: center;
   gap: 12px;
   height: var(--row-height);
@@ -2818,7 +2818,7 @@ kbd {
     display: none;
   }
   .library__row {
-    grid-template-columns: 32px minmax(0, 1.6fr) minmax(0, 1fr) 40px 52px;
+    grid-template-columns: 32px minmax(0, 1.6fr) minmax(0, 1fr) 40px 36px 52px;
   }
   .library__title .library__count {
     display: none;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analysisPending, analysisRefreshKey, bpmLabel } from "./analysis";
+import { analysisPending, analysisRefreshKey, bpmLabel, keyCell } from "./analysis";
 
 describe("BPM sütunu", () => {
   it("tempoyu yuvarlar; ritimsiz şarkıda çizgi, analiz edilmemişte boş", () => {
@@ -24,5 +24,13 @@ describe("analiz ilerlemesi", () => {
     expect(analysisPending(3, 10)).toBe(true);
     expect(analysisPending(10, 10)).toBe(false);
     expect(analysisPending(0, 0)).toBe(false);
+  });
+});
+
+describe("ton sütunu", () => {
+  it("Camelot kodunu gösterir; tonu belirsizse çizgi, analiz beklerken boş", () => {
+    expect(keyCell({ key: "8A", analyzed: true })).toBe("8A");
+    expect(keyCell({ key: null, analyzed: true })).toBe("—");
+    expect(keyCell({ key: null, analyzed: false })).toBe("");
   });
 });

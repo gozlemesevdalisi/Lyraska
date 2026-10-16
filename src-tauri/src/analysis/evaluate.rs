@@ -12,6 +12,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::key::{key_relation, KeyRelation, MarkedKey, MusicalKey};
 use super::spectrogram::{analyze, Spectrogram};
 use crate::audio::decode::Decoder;
 use crate::audio::AudioError;
@@ -43,6 +44,12 @@ pub struct BeatEvaluation {
     pub drop_hits: usize,
     #[serde(default)]
     pub marked_drops: usize,
+    /// Programın bulduğu ton (güveni ne olursa olsun; düşükse programda gösterilmez).
+    #[serde(default)]
+    pub detected_key: Option<MusicalKey>,
+    /// İşaretlenen ton varsa, bulunanın ona göre ilişkisi.
+    #[serde(default)]
+    pub key_relation: Option<KeyRelation>,
 }
 
 /// Drop eşleşme toleransı (saniye): drop bir ölçü başıdır; parmak ve ölçü payı.
@@ -67,15 +74,18 @@ pub fn evaluate_beats(
         detected_drops: Vec::new(),
         drop_hits: 0,
         marked_drops: 0,
+        detected_key: None,
+        key_relation: None,
     }
 }
 
-/// Şarkıyı baştan analiz eder ve bulunan vuruşları işaretlere göre değerlendirir.
-/// Birkaç saniye sürer; arayüz iş parçacığında çağrılmaz.
+/// Şarkıyı baştan analiz eder ve bulunan vuruşları, dropları ve tonu işaretlere göre
+/// değerlendirir. Birkaç saniye sürer; arayüz iş parçacığında çağrılmaz.
 pub fn evaluate_file(
     path: &Path,
     marked: &[f64],
     marked_drops: &[f64],
+    marked_key: Option<MarkedKey>,
 ) -> Result<BeatEvaluation, AudioError> {
     let spectrogram = Spectrogram::new();
     analyze(Decoder::open(path)?, &spectrogram);
@@ -90,6 +100,11 @@ pub fn evaluate_file(
     result.drop_hits = drop_hits(&drops, marked_drops);
     result.marked_drops = marked_drops.len();
     result.detected_drops = drops;
+    result.detected_key = spectrogram.key().and_then(|k| k.key);
+    result.key_relation = result
+        .detected_key
+        .zip(marked_key)
+        .map(|(detected, marked)| key_relation(&detected, marked));
     Ok(result)
 }
 
@@ -232,14 +247,15 @@ mod tests {
         write_wav(&path, rate, 1, samples.len(), |f, _| 0.8 * samples[f]);
         // İnsan gibi: 40 ms geç basılmış işaretler.
         let marked: Vec<f64> = truth.iter().map(|t| t + 0.04).collect();
-        let e = evaluate_file(&path, &marked, &[10.0]).unwrap();
+        let e = evaluate_file(&path, &marked, &[10.0], None).unwrap();
         assert!(e.f_measure > 0.95, "{e:?}");
         assert!((e.tap_offset_ms - 40.0).abs() < 8.0, "{e:?}");
         assert!(e.f_measure_aligned > 0.95, "{e:?}");
         assert!((e.detected_bpm.unwrap() - 120.0).abs() < 0.5, "{e:?}");
         assert_eq!(e.marked_drops, 1);
         assert_eq!(e.drop_hits, 0, "düz davul kaydında drop yok");
-        assert!(evaluate_file(&path.with_extension("yok"), &marked, &[]).is_err());
+        assert_eq!(e.key_relation, None, "ton işaretlenmedi");
+        assert!(evaluate_file(&path.with_extension("yok"), &marked, &[], None).is_err());
         std::fs::remove_file(path).ok();
     }
 
@@ -254,6 +270,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(old.drop_hits, 0);
+        assert_eq!((old.detected_key, old.key_relation), (None, None));
     }
 
     #[test]

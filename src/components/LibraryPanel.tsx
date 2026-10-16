@@ -9,7 +9,7 @@ import {
   SearchIcon,
 } from "./icons";
 import type { LibraryTrack } from "../lib/backend";
-import { analysisPending, bpmLabel } from "../lib/analysis";
+import { analysisPending, bpmLabel, keyCell } from "../lib/analysis";
 import { formatTime } from "../lib/format";
 import { scrollToRow, visibleRange } from "../lib/virtual";
 import type { LibraryControls } from "../hooks/useLibrary";
@@ -256,6 +256,13 @@ export function LibraryPanel({
             >
               BPM
             </span>
+            <span
+              role="columnheader"
+              className="library__time library__key"
+              title="Ton, Camelot çarkında (ör. 8A = La minör, 8B = Do majör)"
+            >
+              Ton
+            </span>
             <span role="columnheader" className="library__time">
               Süre
             </span>
@@ -310,6 +317,12 @@ export function LibraryPanel({
                         title={track.analyzed ? undefined : "Analiz bekliyor"}
                       >
                         {bpmLabel(track)}
+                      </span>
+                      <span
+                        className="library__time library__key"
+                        title={track.analyzed ? undefined : "Analiz bekliyor"}
+                      >
+                        {keyCell(track)}
                       </span>
                       <span className="library__time">
                         {track.durationSecs ? formatTime(track.durationSecs) : ""}

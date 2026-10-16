@@ -77,10 +77,13 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       adı; şarkı haritası şeridi (bölümler gökyüzünün o bölümdeki renginde, enerji, drop'lar); drop geri sayımı;
       sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–4 tuşları
       sahne seçer; Inter yazı tipi (OFL-1.1)
-- [ ] **Ton tespiti (Camelot)** (plan, 9 Ekim 2026): şarkının tonu (ör. "A minör") ve Camelot kodu (ör. 8A), güven
-      değeriyle. Kütüphanede sütun; Akıllı Geçiş (Faz 6) ve Otomatik DJ (Faz 7) ton uyumunu buradan alır.
-  - Yöntem: kroma (12 perde sınıfı) özellikleri + ton profilleriyle karşılaştırma (Krumhansl–Kessler / Temperley
-    gibi klasik, lisans gerektirmeyen yöntem). Yapay zekâ modeli gerekirse önce kod ve ağırlık lisansı doğrulanır.
+- [x] **Ton tespiti (Camelot)** (0.0.42): şarkının tonu (ör. "La minör") ve Camelot kodu (ör. 8A), güven
+      değeriyle. Kütüphanede "Ton" sütunu, çalarken bilgi kartında (ton değişen bölümde o bölümün tonu, vurgulu);
+      işaretleme aracında ton seçimi ve "Doğruluğu ölç"te karşılaştırma. Akıllı Geçiş (Faz 6) ve Otomatik DJ
+      (Faz 7) ton uyumunu buradan alır. Gerçek şarkılarda isabet proje sahibinin işaretleriyle ölçülecek.
+  - Yöntem: kroma (12 perde sınıfı; tepe frekansları parabolle inceltilir, akort kayması bulunur) + Krumhansl–
+    Kessler ton profilleriyle ilinti; şarkının tonu 15 sn'lik pencerelerin oylamasıyla. Yapay zekâ modeli
+    gerekirse önce kod ve ağırlık lisansı doğrulanır.
   - Kroma, saklanan 32 bant kareden çıkmaz (perde çözünürlüğü yetmez): yeni bir analiz parçası olur, kendi sürümüyle
     (`analysis::cache::VERSIONS`). Eklenince kütüphane bir kez çözülür; spektrum ve ritim yeniden hesaplanmaz.
   - Güven düşükse (atonal, perküsyon, ton değiştiren şarkı) ton gösterilmez; şarkı içinde ton değişiyorsa bölüm

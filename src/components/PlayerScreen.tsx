@@ -17,6 +17,7 @@ import {
   getAppInfo,
   type AppInfo,
   type LibraryTrack,
+  type KeyMap,
   type SongMap,
 } from "../lib/backend";
 import { SCENES } from "../lib/scene";
@@ -35,6 +36,7 @@ import { usePlaybackOptions } from "../hooks/usePlaybackOptions";
 import { useScene } from "../hooks/useScene";
 import { useSkyLook } from "../hooks/useSkyLook";
 import { useCover } from "../hooks/useCover";
+import { useSongKey } from "../hooks/useSongKey";
 import { useSongMap } from "../hooks/useSongMap";
 import { useSync } from "../hooks/useSync";
 import { useVisualSafe } from "../hooks/useVisualSafe";
@@ -85,6 +87,7 @@ export function PlayerScreen() {
   const statusPath = status.track?.path ?? null;
   const playing = status.state === "playing";
   const songMap = useSongMap(statusPath);
+  const songKey = useSongKey(statusPath, songMap?.sections.length ?? 0);
   const sync = useSync(
     player.openPath,
     player.positionNow,
@@ -276,6 +279,7 @@ export function PlayerScreen() {
         queueLabel={playback.queueLabel}
         cover={cover}
         songMap={songMap}
+        songKey={songKey}
         soundShaped={soundShaped}
         safe={visualSafe.safe}
         next={upNext}
@@ -421,6 +425,7 @@ interface LiveChromeProps {
   queueLabel: string | null;
   cover: string | null;
   songMap: SongMap | null;
+  songKey: KeyMap | null;
   soundShaped: boolean;
   safe: boolean;
   next: UpNext | null;
@@ -440,6 +445,7 @@ function LiveChrome({
   queueLabel,
   cover,
   songMap,
+  songKey,
   soundShaped,
   safe,
   next,
@@ -465,6 +471,7 @@ function LiveChrome({
           status={status}
           positionSecs={position}
           songMap={songMap}
+          songKey={songKey}
           soundShaped={soundShaped}
           safe={safe}
           next={next}

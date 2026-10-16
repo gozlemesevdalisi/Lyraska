@@ -29,7 +29,7 @@ PlayerScreen ── usePlayback ── invoke ──▶ commands.rs (ince) ─�
 | Tauri komutları             | Arayüzün isteklerini karşılar                              | Kısa sürer; ağır işi arka plana verir       |
 | Çözme (`player.rs`)         | Dosyayı çözer, boşluksuz geçiş, hız dönüştürme             | Halka tampona (rtrb) yazar                  |
 | **Ses çıkışı**              | Halka tampondan okur, EQ, eşitleme, aygıta yazar           | **Gerçek zamanlı:** ayırma/kilit/panik yok  |
-| Analiz (şarkı açılınca)     | Spektrum, seviye, vuruş, şarkı haritası, LUFS              | Sonuç önbelleğe yazılır                     |
+| Analiz (şarkı açılınca)     | Spektrum, seviye, vuruş, şarkı haritası, LUFS, ton         | Sonuç önbelleğe yazılır                     |
 | Hızlı ölçüm                 | Yalnızca ses yüksekliği (EBU R128), FFT'siz                | İlk sesten önce bitsin diye ayrı ve hızlı   |
 | Arka plan analizi           | Kütüphaneyi düşük öncelikle analiz eder                    | Çalan → sıradaki → geri kalan               |
 | Kütüphane taraması          | Klasörleri tarar, etiketleri okur                          | Değişmeyeni atlar                           |
@@ -105,6 +105,11 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 - Şarkı açılınca (ya da önceden, arka planda) analiz edilir: spektrum (60 kare/sn), seviyeler, vuruşlar,
   ölçü başları, bölümler, droplar, enerji. Sonuç `analysis::cache`'te saklanır.
 - Görsel Yönetmen (`director`) şarkı haritasından her an için bir not çıkarır (atmosfer, ritim, doku).
+- Ton (`analysis/key.rs`): tam analizle aynı geçişte uzun pencereli (~0,37 sn) FFT'den kroma; akort kayması
+  dairesel ortalamayla bulunur; Krumhansl–Kessler profilleriyle ilinti. Şarkının tonu 15 sn'lik pencerelerin
+  oylamasıyla seçilir (ton değiştiren şarkıda iki tonun ortasındaki komşu ton çıkmasın), bölümlerin tonu ayrıca
+  hesaplanır. Güveni düşük ton gösterilmez. Arayüz `song_key` ile alır; kütüphane listesi Camelot kodunu
+  önbellekteki `camelot` sütunundan okur.
 - Arayüz her ekran karesinde `visual_frame` ister; `visual_bridge` çalma konumuna (ekran ve aygıt
   gecikmesi telafi edilerek) karşılık gelen kareyi verir. Görseller ses yolundan veri çekmez.
 - Her sahne yönetmen notunun üç katmanını kullanır:
@@ -187,6 +192,9 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Kör test kurulamazsa çalan şarkı kesilmez                               | `audio::player` testi `kor_test_kurulamazsa_calan_sarki_durmaz`               |
 | Analiz hesabı değişince eski sonuçlar kullanılmaz                       | `cache::VERSIONS` ve önbellek testleri                                        |
 | Ritim yenilenirken şarkı çözülmez, sonuç tam analizle aynı              | `analysis::spectrogram` testi `eskiyen_ritim_…`                               |
+| Tonsuz eski kayıtta yalnızca ton hesaplanır, geri kalanı aynı kalır     | `analysis::background` testi `tonsuz_eski_kayitlarda_…`, spektrum testleri    |
+| Ton 24 tonun hepsinde, akort kaymasında ve davul gürültüsünde bulunur   | `analysis::key` testleri (sentetik akor dizileri)                             |
+| Güveni düşük ton hiçbir yerde gösterilmez (kütüphane, bilgi kartı)      | `analysis::key` testleri, `library::db` testi `bpm_ve_ton_…`                  |
 | Eski tek sürümlü kayıtlar göçte yeniden analiz ettirmez                 | `storage.rs` testi `eski_analiz_kayitlari_…` (göç 5)                          |
 | Güveni düşük drop hiçbir yerde drop sayılmaz (tek eşik)                 | `analysis::structure`, `director` testleri, bileşen testleri                  |
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri (`sky`, `highway`, `stageLight`) + `npm run check:scenes` (CI) |
@@ -237,6 +245,8 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
   - `rhythm`: vuruş, ölçü, bölüm, drop, enerji (şarkı haritası). Saklanan karelerden yeniden hesaplanır, şarkı
     çözülmez (4 dakikalık şarkıda ~50 ms). Yeni bir şarkı haritası alanı da buraya girer.
   - `loudness`, `bass`: şarkı bir kez çözülür, FFT yapılmaz; yalnızca o ölçüm yapılır.
+  - `key`: ton (kroma ve tahmin). Şarkı bir kez çözülür, yalnızca uzun pencereli kroma FFT'si yapılır; bant
+    kareleri ve ritim yeniden hesaplanmaz.
   - `spectrum`: yalnızca karelerin kendisi (bantlar, kanal seviyeleri, başlangıç gücü) değişirse. Bütün kütüphane
     baştan analiz edilir; çok büyük kütüphanelerde saatler sürer, kaçınılmalıdır.
 - Sonuç yeni bir alansa önbellek kaydına ekleyin (gerekirse göç adımı).
