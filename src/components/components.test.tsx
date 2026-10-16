@@ -221,6 +221,7 @@ vi.mock("../lib/backend", async (importOriginal) => {
           name: "Sennheiser HD 600",
           preampDb: -6.4,
           filters: [{ kind: "peaking", freqHz: 1000, gainDb: 3, q: 1 }],
+          design: "rbj",
         },
         curveHz: [20, 1000, 20000],
         curveDb: [-6.4, -3.4, -6.4],

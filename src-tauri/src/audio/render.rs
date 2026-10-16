@@ -397,6 +397,7 @@ mod tests {
         let headphone = Arc::new(PeqControl::default());
         let profile = HeadphoneProfile {
             name: "Deneme".into(),
+            design: Default::default(),
             preamp_db: -4.0,
             filters: vec![
                 PeqFilter {
@@ -614,6 +615,7 @@ mod tests {
         headphone.set(
             Some(&HeadphoneProfile {
                 name: "Deneme".into(),
+                design: Default::default(),
                 preamp_db: -4.0,
                 filters: vec![
                     PeqFilter {

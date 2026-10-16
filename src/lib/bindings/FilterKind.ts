@@ -3,4 +3,4 @@
 /**
  * Filtre türü.
  */
-export type FilterKind = "peaking" | "lowShelf" | "highShelf";
+export type FilterKind = "peaking" | "lowShelf" | "highShelf" | "lowPass" | "highPass" | "bandPass" | "notch" | "allPass";

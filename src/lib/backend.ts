@@ -10,6 +10,7 @@ import type { AppInfo } from "./bindings/AppInfo";
 import type { BeatEvaluation } from "./bindings/BeatEvaluation";
 import type { BeatFrame } from "./bindings/BeatFrame";
 import type { CalibrationTrack } from "./bindings/CalibrationTrack";
+import type { DesignMethod } from "./bindings/DesignMethod";
 import type { DirectorFrame } from "./bindings/DirectorFrame";
 import type { DropOutcome } from "./bindings/DropOutcome";
 import type { EqSettings } from "./bindings/EqSettings";
@@ -45,6 +46,7 @@ export type {
   BeatEvaluation,
   BeatFrame,
   CalibrationTrack,
+  DesignMethod,
   DirectorFrame,
   DropOutcome,
   EqSettings,
