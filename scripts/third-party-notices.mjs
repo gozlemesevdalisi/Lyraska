@@ -34,6 +34,8 @@ function rustPackages() {
     [
       "tree",
       "--locked",
+      "--color",
+      "never",
       "--target",
       TARGET,
       "-e",
@@ -47,7 +49,11 @@ function rustPackages() {
   );
   const seen = new Map();
   for (const raw of out.split("\n")) {
-    const line = raw.replace(/ \(\*\)$/, "").trim();
+    // CI `CARGO_TERM_COLOR=always` verse bile renk kodları ve "(*)" tekrar işareti temizlenir.
+    const line = raw
+      .replace(/\u001b\[[0-9;]*m/g, "")
+      .replace(/ \(\*\)$/, "")
+      .trim();
     if (!line) continue;
     const [pkg, license, repository] = line.split("|");
     const match = /^(\S+) v(\S+)(?: \((.*)\))?$/.exec(pkg);
