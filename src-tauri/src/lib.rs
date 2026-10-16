@@ -124,6 +124,7 @@ pub fn run() {
             commands::annotation_evaluate,
             commands::annotation_open_folder,
             commands::song_map,
+            commands::song_key,
             commands::headphone_get,
             commands::headphone_import,
             commands::headphone_set_enabled,

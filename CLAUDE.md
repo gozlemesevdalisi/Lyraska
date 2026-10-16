@@ -73,9 +73,9 @@ lyraska/
 │   │                         # (sahne, 1–4), useDropToLibrary (sürükle-bırak), useIdle (sinema görünümü),
 │   │                         # useVisualSafe (epilepsi güvenli modu), usePlaybackOptions (ses yüksekliği eşitleme),
 │   │                         # useSkyLook (gece göğünün manzarası: göl, korona, karlı vadi), useCover (kapak),
-│   │                         # useAbx (kör test)
+│   │                         # useAbx (kör test), useSongKey (çalan şarkının tonu)
 │   ├── lib/                  # Saf yardımcılar (format, meter, dotFont, vu, sky, highway, queue, sync, songMap,
-│   │                         # timeline, cover, abx, stageLight), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
+│   │                         # timeline, cover, abx, stageLight, musicalKey), Rust köprüsü (backend.ts; veri tipleri bindings/ altında
 │   │                         # Rust'tan üretilir, elle düzenlenmez), arayüz hatalarını günlüğe yazma (errorReporting.ts), parlama sayacı
 │   │                         # (flash.ts), WebGL2 çizimi (gl.ts ortak; skyRenderer.ts, highwayRenderer.ts),
 │   │                         # WebGL2 açılamazsa gece göğü için 2D yedek çizim (skyFallback.ts)
@@ -109,14 +109,15 @@ lyraska/
 │   │   ├── storage.rs        # library.sqlite3 şeması ve sıralı göçleri (kütüphane + analiz önbelleği)
 │   │   ├── diagnostics.rs    # Yerel hata ve çökme günlüğü (logs/lyraska.log; gerçek zamanlı yoldan çağrılmaz)
 │   │   ├── settings.rs       # Kalıcı ayarlar (settings.json; ekolayzer, kulaklık, eşitleme, güvenli mod, ses gecikmesi)
-│   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji
+│   │   ├── analysis/         # Şarkı haritası: beat, ölçü, bölüm, drop, enerji, ton
 │   │   │   ├── spectrogram.rs #  şarkı açılınca arka planda spektrum (60 kare/sn, 32 bant), seviyeler, LUFS, bas tepeleri
 │   │   │   ├── levels.rs     #   sol/sağ RMS ve tepe; şarkıya göre 0 VU referansı
 │   │   │   ├── annotation.rs #   kullanıcının işaretlediği beat/drop anları (JSON, ses içermez)
 │   │   │   ├── evaluate.rs   #   analizi işaretlere göre ölçme (F-ölçüsü, parmak gecikmesi)
 │   │   │   ├── beats.rs      #   başlangıç gücü, tempo ve vuruşlar (dinamik programlama)
 │   │   │   ├── structure.rs  #   ölçü başları, bölümler (Foote yeniliği), droplar, enerji eğrisi
-│   │   │   ├── cache.rs      #   şarkı haritası önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
+│   │   │   ├── key.rs        #   ton tespiti: kroma, akort, Krumhansl–Kessler, Camelot, bölüm bölüm
+│   │   │   ├── cache.rs      #   analiz önbelleği (SQLite; yol + boyut + değişme zamanı; parça sürümleri)
 │   │   │   └── background.rs #   kütüphanenin arka plan analizi (düşük öncelik; çalan → sıradaki → geri kalan)
 │   │   ├── director/         # Görsel Yönetmen: şarkı haritasından koreografi (atmosfer, ritim, doku),
 │   │   │                     # drop beklentisi/açılımı; nabız hız garantisi (≤ 3/sn, güvenli modda ≤ 1/sn)
@@ -152,9 +153,9 @@ Kurallar:
 - Yeni modüller ilgili klasörün altında alt modül olarak açılır (ör. `audio/decode.rs`).
 - Görseller ses yolundan veri çekmez: şarkı önceden analiz edilir (`analysis`), görseller çalma
   konumuna karşılık gelen analiz karesini `visual_bridge` üzerinden okur.
-- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Analiz dört parçadır ve her birinin kendi sürümü
+- Analiz sonuçları önbellekte (`analysis/cache.rs`) saklanır. Analiz beş parçadır ve her birinin kendi sürümü
   vardır (`cache::VERSIONS`): spektrum (kareler), ritim (beat, ölçü, bölüm, drop, enerji), ses yüksekliği, bas
-  tepeleri. Bir hesabı değiştiren iş **yalnızca o parçanın** sürümünü artırır; kütüphanede yalnızca o parça yeniden
+  tepeleri, ton. Bir hesabı değiştiren iş **yalnızca o parçanın** sürümünü artırır; kütüphanede yalnızca o parça yeniden
   hesaplanır (ritim karelerden, şarkı çözülmeden). Bütün kütüphaneyi baştan analiz ettiren spektrum sürümü yalnızca
   karelerin kendisi değişince artırılır.
 - Sahneler hareket ve parlaklığı Görsel Yönetmen'in notundan (`VisualFrame.director`) türetir; parlaklığı

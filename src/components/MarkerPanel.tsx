@@ -2,6 +2,15 @@ import type { MarkerControls } from "../hooks/useMarker";
 import { openAnnotationFolder } from "../lib/backend";
 import { formatTime } from "../lib/format";
 import { tapBpm } from "../lib/marks";
+import {
+  KEY_CONFIDENCE_MIN,
+  MARKED_KEY_OPTIONS,
+  isKeyHit,
+  keyLabel,
+  markedKeyValue,
+  parseMarkedKey,
+  relationText,
+} from "../lib/musicalKey";
 import { confidentDrops } from "../lib/songMap";
 import { timelineLayout } from "../lib/timeline";
 
@@ -163,6 +172,27 @@ export function MarkerPanel({ marker, trackTitle, playing, durationSecs }: Marke
           )}
         </div>
 
+        <div className="sync__setting marker__key">
+          <label htmlFor="marker-key">Ton</label>
+          <select
+            id="marker-key"
+            value={markedKeyValue(marker.key)}
+            disabled={!trackTitle}
+            onChange={(e) => marker.setKey(parseMarkedKey(e.currentTarget.value))}
+          >
+            <option value="">Bilmiyorum</option>
+            {MARKED_KEY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="sync__caption">
+            Şarkının tonunu biliyorsanız seçin (ör. akor kâğıdından); "Doğruluğu ölç" programın
+            bulduğu tonla karşılaştırır.
+          </span>
+        </div>
+
         {durationSecs !== null && <SongTimeline marker={marker} durationSecs={durationSecs} />}
 
         <div className="marker__actions">
@@ -237,6 +267,25 @@ export function MarkerPanel({ marker, trackTitle, playing, durationSecs }: Marke
                 {bpmText(evaluation.detectedBpm)} / {bpmText(evaluation.markedBpm)} BPM
               </dd>
             </div>
+            {marker.key && (
+              <div>
+                <dt>Ton (program / siz)</dt>
+                <dd>
+                  {evaluation.detectedKey ? keyLabel(evaluation.detectedKey) : "bulunamadı"} /{" "}
+                  {keyLabel(marker.key)}
+                  {evaluation.keyRelation && (
+                    <>
+                      {" — "}
+                      {relationText(evaluation.keyRelation)}
+                      {isKeyHit(evaluation.keyRelation) ? " ✓" : ""}
+                    </>
+                  )}
+                  {evaluation.detectedKey && evaluation.detectedKey.confidence < KEY_CONFIDENCE_MIN
+                    ? " (güveni düşük: programda gösterilmez)"
+                    : ""}
+                </dd>
+              </div>
+            )}
           </dl>
         )}
 

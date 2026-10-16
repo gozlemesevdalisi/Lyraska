@@ -468,9 +468,10 @@ pub async fn annotation_save(
     path: PathBuf,
     beats: Vec<f64>,
     drops: Vec<f64>,
+    key: Option<crate::analysis::key::MarkedKey>,
     store: State<'_, AnnotationStore>,
 ) -> Result<String, String> {
-    let annotation = Annotation::new(annotated_track(&path)?, beats, drops);
+    let annotation = Annotation::new(annotated_track(&path)?, beats, drops, key);
     store
         .save(&annotation)
         .map(|p| p.display().to_string())
@@ -493,8 +494,9 @@ pub async fn annotation_evaluate(
     }
     let marked = annotation.beats.clone();
     let marked_drops = annotation.drops.clone();
+    let marked_key = annotation.key;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        evaluate::evaluate_file(&path, &marked, &marked_drops)
+        evaluate::evaluate_file(&path, &marked, &marked_drops, marked_key)
     })
     .await
     .map_err(reported)?
@@ -512,6 +514,14 @@ pub async fn song_map(
     player: State<'_, PlayerState>,
 ) -> Result<Option<crate::analysis::structure::SongMap>, String> {
     Ok(player.lock()?.song_map().map(|m| (*m).clone()))
+}
+
+/// Çalan şarkının tonu (Camelot) ve tonu farklı bölümleri; ton analizi bitmediyse `null`.
+#[tauri::command]
+pub async fn song_key(
+    player: State<'_, PlayerState>,
+) -> Result<Option<crate::analysis::key::KeyMap>, String> {
+    Ok(player.lock()?.song_key())
 }
 
 /// İşaret dosyalarının klasörünü dosya gezgininde açar.

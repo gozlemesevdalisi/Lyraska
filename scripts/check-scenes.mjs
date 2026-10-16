@@ -59,7 +59,7 @@ const fakeCore = (level = null, theme = 1) => `
       // Tek bölümlük harita: arayüzün vurgu rengi (VU ve spektrum sahnelerinin halesi) de temada.
       case "song_map": return { meter: 4, downbeatPhase: 0, downbeats: [], drops: [], dropConfidence: [],
         energy: [], sections: [{ start: 0, end: 240, energy: 0.8, label: ${theme} }] };
-      case "annotation_get": return null;
+      case "annotation_get": case "song_key": return null;
       case "visual_frame": return {
         positionSecs: 60 + t,
         bands: Array.from({ length: 32 }, (_, i) =>

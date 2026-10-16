@@ -329,6 +329,44 @@ mod tests {
     }
 
     #[test]
+    fn tonsuz_eski_kayitlarda_yalnizca_ton_hesaplanir() {
+        let (service, cache, songs) = library_with_songs();
+        let foreground = Arc::new(AtomicUsize::new(0));
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), Arc::clone(&foreground));
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        background.stop();
+        let before: Vec<_> = songs
+            .iter()
+            .map(|s| cache.load(s, FileStamp::of(s).unwrap()).unwrap().unwrap())
+            .collect();
+        assert!(before.iter().all(|c| c.saved.key.is_some()));
+
+        // Ton parçası eklenmeden önceki sürümün kayıtları (göç 7'den sonraki hâli).
+        cache
+            .lock_for_test()
+            .execute(
+                "UPDATE analyses SET key_version = 0, chroma = NULL, musical_key = NULL,
+                     camelot = NULL",
+                [],
+            )
+            .unwrap();
+        assert_eq!(service.status().unwrap().analyzed, 0);
+        let background = BackgroundAnalysis::start(Arc::clone(&cache), foreground);
+        assert!(wait_until(|| background.analyzed() == songs.len(), 30));
+        for (song, old) in songs.iter().zip(&before) {
+            let now = cache
+                .load(song, FileStamp::of(song).unwrap())
+                .unwrap()
+                .unwrap();
+            assert!(!now.stale.any(), "{song:?} yenilendi");
+            // Kareler ve diğer parçalar dokunulmadan kaldı; ton aynı hesaplandı.
+            assert_eq!(now.saved, old.saved, "{song:?}");
+        }
+        assert_eq!(service.status().unwrap().analyzed, songs.len());
+        background.stop();
+    }
+
+    #[test]
     fn ritim_hesabi_degisince_yalnizca_ritim_yenilenir() {
         let (service, cache, songs) = library_with_songs();
         let foreground = Arc::new(AtomicUsize::new(0));

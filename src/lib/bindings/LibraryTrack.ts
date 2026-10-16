@@ -15,4 +15,8 @@ bpm: number | null,
 /**
  * Geçerli bir analizi var mı (ritimsiz şarkılar da analiz edilmiş sayılır).
  */
-analyzed: boolean, };
+analyzed: boolean, 
+/**
+ * Tonun Camelot kodu (ör. "8A"; geçerli ton analizinden, güveni yeterliyse).
+ */
+key: string | null, };

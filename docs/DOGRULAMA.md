@@ -11,7 +11,7 @@ düzeltilir.
 
 1. Test sürümünü kurun: https://github.com/gozlemesevdalisi/Lyraska/releases/download/test-surumu/Lyraska-Kurulum.exe
    Windows "bilinmeyen yayımcı" derse **Ek bilgi → Yine de çalıştır**.
-2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.41 ya da sonrası** yazmalı.
+2. **Ayarlar** (sağ üstteki dişli) → en altta sürüm **0.0.42 ya da sonrası** yazmalı.
 3. Maddeleri sırayla deneyin. Her madde için bana yalnızca şunu yazmanız yeterli:
    - madde numarası ve **✅ oldu** ya da **❌ olmadı**,
    - olmadıysa ne gördüğünüzü bir cümleyle (ekran görüntüsü varsa çok iyi).
@@ -252,6 +252,17 @@ Hepsini bir günde yapmanız gerekmez. En önemlileri **kalın** yazılı: önce
 - Nasıl: Bir şarkıda **İşaretle → İşaretlemeye başla**; 30–60 saniye her vuruşta **Boşluk**, drop'ta **D**; sonra
   **Doğruluğu ölç**. Bluetooth kullanıyorsanız önce E2'yi yapın. Ayrıntılar: [ISARETLEME.md](ISARETLEME.md).
 - Neye bakılır: "Gecikme düzeltilince" doğruluğu %80 ve üstü hedef. Sonucu ve şarkının türünü bildirin.
+
+**E4. Ton (Camelot, 0.0.42)**
+
+- Nasıl: Kütüphanede birkaç dakika bekleyin (yeni sürümde şarkılar bir kez daha arka planda çözülür; bu sırada
+  müzik takılmamalı). **Ton** sütununa bakın. Tonunu bildiğiniz birkaç şarkı çalın; sağ alttaki bilgi kartında
+  "8A · La minör" gibi bir yazı çıkar. **İşaretle** sekmesinde **Ton** listesinden doğru tonu seçip (birkaç beat de
+  işaretleyip) **Doğruluğu ölç**'e basın.
+- Neye bakılır: tonu bildiğiniz şarkılarda "aynı ton", "komşu ton" ya da "paralel ton" (✓) çıkmalı. Ton değiştiren
+  bir şarkıda o bölüme gelince bilgi kartı vurgulu olarak bölümün tonunu gösterir. Yalnızca davul ya da konuşma
+  olan kayıtlarda ton boş kalır ("—").
+- Bildirin: şarkı adı, sizin bildiğiniz ton ve programın yazdığı ton (✓ olmayanlar en değerlisi).
 
 ## F. Hata günlüğü
 

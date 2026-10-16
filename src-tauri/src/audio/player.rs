@@ -1091,6 +1091,19 @@ impl Player {
         self.analysis_for(&track.path)?.spectrogram.song_map()
     }
 
+    /// Çalan şarkının tonu ve tonu farklı bölümleri; ton analizi bitmediyse `None`. Ritim yoksa
+    /// (bölüm yok) yalnızca şarkının tonu.
+    pub fn song_key(&self) -> Option<crate::analysis::key::KeyMap> {
+        let (track, _) = self.session.as_ref()?.now_playing();
+        let spectrogram = &self.analysis_for(&track.path)?.spectrogram;
+        let key = spectrogram.key()?;
+        let sections = spectrogram
+            .song_map()
+            .map(|m| m.sections.clone())
+            .unwrap_or_default();
+        Some(key.key_map(&sections))
+    }
+
     /// Ekolayzerin ve bas düğmesinin spektrum bantlarındaki toplam kazancı (dB): filtrelerin
     /// tepkisi ve ses yolundaki gibi, şarkının boşluğunun yetmediği kadar taşma koruması
     /// kısması. (Küçük hoparlörün harmonikleri doğrusal olmadığı için eklenmez.)

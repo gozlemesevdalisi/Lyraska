@@ -17,9 +17,13 @@ import type { EqState } from "./bindings/EqState";
 import type { HeadphoneFilter } from "./bindings/HeadphoneFilter";
 import type { HeadphoneProfile } from "./bindings/HeadphoneProfile";
 import type { HeadphoneState } from "./bindings/HeadphoneState";
+import type { KeyMap } from "./bindings/KeyMap";
+import type { KeyRelation } from "./bindings/KeyRelation";
 import type { LibraryFolder } from "./bindings/LibraryFolder";
 import type { LibraryStatus } from "./bindings/LibraryStatus";
 import type { LibraryTrack } from "./bindings/LibraryTrack";
+import type { MarkedKey } from "./bindings/MarkedKey";
+import type { MusicalKey } from "./bindings/MusicalKey";
 import type { PlaybackOptions } from "./bindings/PlaybackOptions";
 import type { PlaybackState } from "./bindings/PlaybackState";
 import type { PlaybackStatus } from "./bindings/PlaybackStatus";
@@ -48,9 +52,13 @@ export type {
   HeadphoneFilter,
   HeadphoneProfile,
   HeadphoneState,
+  KeyMap,
+  KeyRelation,
   LibraryFolder,
   LibraryStatus,
   LibraryTrack,
+  MarkedKey,
+  MusicalKey,
   PlaybackOptions,
   PlaybackState,
   PlaybackStatus,
@@ -71,6 +79,12 @@ export async function getTrackCover(path: string): Promise<string | null> {
 export async function getSongMap(): Promise<SongMap | null> {
   if (!isTauri()) return null;
   return invoke<SongMap | null>("song_map");
+}
+
+/** Çalan şarkının tonu ve tonu farklı bölümleri; ton analizi bitmediyse `null`. */
+export async function getSongKey(): Promise<KeyMap | null> {
+  if (!isTauri()) return null;
+  return invoke<KeyMap | null>("song_key");
 }
 
 export const EMPTY_LIBRARY: LibraryStatus = {
@@ -222,8 +236,9 @@ export async function saveAnnotation(
   path: string,
   beats: number[],
   drops: number[],
+  key: MarkedKey | null = null,
 ): Promise<string> {
-  return invoke<string>("annotation_save", { path, beats, drops });
+  return invoke<string>("annotation_save", { path, beats, drops, key });
 }
 
 /** Kayıtlı işaretleri programın beat analiziyle karşılaştırır (birkaç saniye sürer). */
