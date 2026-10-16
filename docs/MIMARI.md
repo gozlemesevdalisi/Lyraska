@@ -211,6 +211,7 @@ Her kural ya bir testle ya da CI'daki bir adımla denetlenir. Elle hatırlanmas�
 | Hiçbir sahne saniyede 3'ten fazla parlamaz                              | Sahne testleri (`sky`, `highway`, `stageLight`) + `npm run check:scenes` (CI) |
 | Parlama sınırı her renk temasında ve her gök manzarasında               | `npm run check:scenes` (temaya göre renklenen sahneler, CI)                   |
 | Yasaklı lisans yok                                                      | `npm run check:licenses`, `cargo deny` (CI)                                   |
+| Üçüncü taraf lisans bildirimleri pakette ve güncel                      | `npm run check:notices` (CI; `npm run notices` üretir)                        |
 | Depoda ses dosyası yok                                                  | `npm run check:audio` (CI)                                                    |
 | Biçim ve lint temiz, tür hatası yok                                     | Prettier, ESLint, `tsc`, `cargo fmt`, Clippy (CI)                             |
 | Çalarken paneller her karede yeniden çizilmez                           | Bileşen testi "çizim yükü" (kütüphane panelinin çizim sayısı)                 |

@@ -109,6 +109,12 @@ jobs:
         with:
           manifest-path: src-tauri/Cargo.toml
           command: check licenses bans sources
+      # Pakete giren crate ve npm paketlerinin lisans bildirimleri (public/lisanslar/UCUNCU-TARAF.txt)
+      # depodakiyle aynı mı? Windows hedefinin crate'leri önce indirilir.
+      - name: Üçüncü taraf lisans bildirimleri güncel mi
+        run: |
+          (cd src-tauri && cargo fetch --locked --target x86_64-pc-windows-msvc)
+          npm run check:notices
 
   guvenlik:
     name: Güvenlik uyarıları

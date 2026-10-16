@@ -351,6 +351,17 @@ describe("oynatıcı ekranı", () => {
     // Program bilgisi ayarlar panelinde.
     await act(async () => fireEvent.click(screen.getByRole("tab", { name: "Ayarlar" })));
     await waitFor(() => expect(screen.getByText(/Faz 1 · Sürüm/)).toBeInTheDocument());
+    // Lisanslar: GPL ve kaynak kodu bağlantısı; üçüncü taraf bildirimleri açılınca yüklenir (C3).
+    expect(screen.getByText(/GNU GPL 3.0/)).toBeInTheDocument();
+    expect(screen.queryByTitle("Üçüncü taraf lisans bildirimleri")).not.toBeInTheDocument();
+    const details = screen.getByText("Üçüncü taraf lisans bildirimleri").closest("details");
+    expect(details).not.toBeNull();
+    details!.open = true;
+    await act(async () => fireEvent(details!, new Event("toggle")));
+    expect(screen.getByTitle("Üçüncü taraf lisans bildirimleri")).toHaveAttribute(
+      "src",
+      "/lisanslar/UCUNCU-TARAF.txt",
+    );
   });
 
   it("dosya seçilince şarkıyı açar ve süreyi gösterir", async () => {
@@ -656,6 +667,22 @@ describe("kütüphane", () => {
     await act(async () => backend.drag!.onDrop(["C:\\İndirilenler\\a.mp3"]));
     await waitFor(() => expect(backend.open).toHaveBeenCalledWith("C:\\İndirilenler\\a.mp3"));
     await act(async () => release());
+    backend.appInfoGate = null;
+  });
+
+  it("program bilgisi gelmeden Dosya aç'a basılırsa pencere yine uzantı süzgeciyle açılır", async () => {
+    // Uzantı listesi çekirdekten gelir; gelmeden basılan Dosya aç eskiden süzgeçsiz pencere
+    // açıyordu (CI'da yarış olarak da görüldü).
+    backend.desktop = true;
+    let release = () => {};
+    backend.appInfoGate = new Promise<void>((resolve) => (release = resolve));
+    backend.pick.mockResolvedValue(null);
+    render(<App />);
+    const open = screen.getByRole("button", { name: /Dosya aç/ });
+    await waitFor(() => expect(open).toBeEnabled());
+    await act(async () => fireEvent.click(open));
+    await act(async () => release());
+    await waitFor(() => expect(backend.pick).toHaveBeenCalledWith(["mp3", "flac"]));
     backend.appInfoGate = null;
   });
 
