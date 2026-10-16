@@ -7,15 +7,22 @@ describe("sahneler", () => {
     vi.restoreAllMocks();
   });
 
-  it("adları ve 1–4 tuşlarını bilir", () => {
+  it("adları ve 1–5 tuşlarını bilir", () => {
     expect(SCENES.map((s) => s.name)).toEqual([
       "Gece göğü",
       "Gece otoyolu",
       "VU ibreleri",
       "Spektrum",
+      "Gece sürüşü",
     ]);
-    expect(["1", "2", "3", "4"].map(sceneForKey)).toEqual(["sky", "highway", "vu", "spectrum"]);
-    expect(sceneForKey("5")).toBeNull();
+    expect(["1", "2", "3", "4", "5"].map(sceneForKey)).toEqual([
+      "sky",
+      "highway",
+      "vu",
+      "spectrum",
+      "drive",
+    ]);
+    expect(sceneForKey("6")).toBeNull();
     expect(sceneForKey("0")).toBeNull();
     expect(sceneForKey("a")).toBeNull();
     expect(sceneForKey("12")).toBeNull();

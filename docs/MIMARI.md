@@ -125,6 +125,9 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
     (`stageLight.ts`). Rengi bölüm teması (`--aurora`), gücü ruh hâli; droptan önce hale daralır, drop'ta
     açılır, ölçü başında kabarır (yalnızca boyut). Spektrumda tepe noktaları droptan önce asılı kalır, tizler
     canlıyken çevik düşer.
+  - Gece sürüşü (`DriveScene`): ön camda gece otoyolunun aynı çizimi; torpidonun ve teybin ışığı sahne ışığından,
+    teybin VU ibreleri ve spektrumu tek görsel veri akışından. Kasetin makaraları çalarken döner ("animasyonları
+    azalt"ta durur). Çerçeve açıkken teyp geri planda (kısık), sinema görünümünde yavaşça belirir.
   - Parlaklığı değiştiren her değer hız sınırlıdır (güvenli modda yarı hız); her sahnenin kendi parlama testi var.
 
 ## Arayüz yapısı
@@ -141,7 +144,7 @@ dosya ─▶ symphonia (çözme) ─▶ f64 ─▶ boşluksuz kırpma ─▶ rub
 - Durum ve davranış hook'lardadır:
   - `usePlayback`: oynatıcı ve çalma sırası.
   - `useDrawer`: çekmece ve Esc.
-  - `useScene`: sahne seçimi ve 1–4 tuşları.
+  - `useScene`: sahne seçimi ve 1–5 tuşları.
   - `useDropToLibrary`: sürükle-bırak.
   - `useIdle`: sinema görünümü.
   - `useSongMap`: çalan şarkının haritası.

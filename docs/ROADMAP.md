@@ -75,7 +75,7 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
       ekranda "Güvenli mod" yazar
 - [x] Yeni arayüz "Sahne" (0.0.25): sahne tüm pencereyi kaplar, yazı ve düğmeler cam katmanlarda; büyük şarkı
       adı; şarkı haritası şeridi (bölümler gökyüzünün o bölümdeki renginde, enerji, drop'lar); drop geri sayımı;
-      sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–4 tuşları
+      sıradaki şarkı; kütüphane ve paneller sağdan açılan çekmecede; fare durunca sinema görünümü; 1–5 tuşları
       sahne seçer; Inter yazı tipi (OFL-1.1)
 - [x] **Ton tespiti (Camelot)** (0.0.42): şarkının tonu (ör. "La minör") ve Camelot kodu (ör. 8A), güven
       değeriyle. Kütüphanede "Ton" sütunu, çalarken bilgi kartında (ton değişen bölümde o bölümün tonu, vurgulu);
@@ -101,9 +101,10 @@ Lansman hedefi: **Mart 2027 başı (v1.0)**.
     8 ölçülük pencerelerde aynı ölçü başı konumunun kazanma payından.
   - Yalnızca ritim parçasının sürümü artar: kütüphane çözülmeden yenilenir.
   - Kalite hedefi: işaretli aksak şarkılarda ölçü başı isabeti; test verisi sentetik 9/8 ve 7/8 davul kayıtları.
-- [ ] "Gece sürüşü" nostalji modu (proje sahibi onayladı, A'dan sonra): ön camdan gece otoyolu, torpidoda
-      özgün tasarım teyp — parlayan nokta matris ekran, ışık halkalı düğmeler, arkadan aydınlatmalı VU
-      ibreleri. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz
+- [x] "Gece sürüşü" nostalji modu (0.0.44; proje sahibi onayladı): ön camdan gece otoyolu (aynı çizim), torpidoda
+      özgün tasarım teyp: makaraları dönen kaset, kayan şarkı adı ve spektrumlu nokta matris ekran, ışık halkalı
+      düğmeler, arkadan aydınlatmalı VU ibreleri. Işıklar Görsel Yönetmen'in sahne ışığından; sinema görünümünde
+      tam belirir. Hiçbir markanın adı, logosu ya da yazı tipi kullanılmaz. Proje sahibinin görüşü bekleniyor
 
 ## Faz 3 — Profesyonel ses, v0.3 (21 Aralık 2026 – 17 Ocak 2027)
 

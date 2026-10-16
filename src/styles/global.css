@@ -1358,7 +1358,8 @@ kbd {
    o değiştirir), `--stage-spread` halenin genişliği (gerilimde daralır, açılımda genişler, ölçü
    başında kabarır), `--stage-sway` süzülmesi. Rengi bölüm teması (`--aurora`, yumuşak geçişli). */
 .vu-scene,
-.vfd-frame {
+.vfd-frame,
+.drive-scene__dash {
   --stage-glow: 0;
   --stage-spread: 1;
   --stage-sway: 0%;
@@ -1543,6 +1544,217 @@ kbd {
 
 .sky-scene__canvas[hidden] {
   display: none;
+}
+
+/* ---------- Gece sürüşü sahnesi ---------- */
+
+/* Ön camdan gece otoyolu, altta torpido ve ortada özgün tasarım teyp. Hiçbir markanın adı, logosu
+   ya da yazı tipi kullanılmaz. Torpidonun ışığı sahne ışığından (bkz. VU sahnesi). */
+.drive-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #020203;
+}
+
+.drive-scene__windshield {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 46%;
+}
+
+/* Ön camın çerçevesi: tavan, iki direk ve iç dikiz aynası. */
+.drive-scene__frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, #040405 0, #040405 5%, transparent 12%),
+    linear-gradient(104deg, #040405 0, #040405 6%, transparent 11%),
+    linear-gradient(256deg, #040405 0, #040405 6%, transparent 11%);
+}
+
+.drive-scene__frame::after {
+  content: "";
+  position: absolute;
+  top: 3%;
+  left: 50%;
+  width: min(18vw, 220px);
+  height: 9%;
+  transform: translateX(-50%);
+  border-radius: 6px 6px 16px 16px;
+  background: linear-gradient(180deg, #121316, #060607);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.drive-scene__dash {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: 40%;
+  bottom: 0;
+  border-radius: 50% 50% 0 0 / 12% 12% 0 0;
+  background:
+    radial-gradient(
+      calc(55% * var(--stage-spread)) 26% at calc(50% + var(--stage-sway)) 0%,
+      color-mix(in srgb, var(--aurora) calc(3% + 8% * var(--stage-glow)), transparent),
+      transparent 70%
+    ),
+    linear-gradient(180deg, #18191d 0%, #0d0e11 16%, #060608 100%);
+  box-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 2px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Teyp: kaset, nokta matris ekran, VU ibreleri ve ışık halkalı düğmeler. */
+.deck {
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(84%, 980px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 14px 18px 12px;
+  border: 1px solid #000;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #25272c, #131417 58%, #0e0f11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 28px rgba(0, 0, 0, 0.6);
+  /* Çerçeve (başlık, düğmeler) açıkken teyp geri planda kalır; sinema görünümünde yavaşça
+     belirir (ani parlama yok). */
+  opacity: 0.32;
+  transition: opacity 1.6s ease;
+}
+
+.app.is-cinema .deck {
+  opacity: 1;
+}
+
+.deck__cassette {
+  grid-row: 1 / span 2;
+  width: clamp(88px, 10vw, 150px);
+  height: auto;
+}
+
+.deck__shell {
+  fill: #1b1c20;
+  stroke: #2e3035;
+}
+
+.deck__label {
+  fill: color-mix(in srgb, var(--aurora) 16%, #2b2c31);
+}
+
+.deck__window {
+  fill: #08090b;
+  stroke: #2e3035;
+}
+
+.deck__reel {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.deck__reel-tape {
+  fill: #3b2b1d;
+}
+
+.deck__reel-hub {
+  fill: #cfd2d6;
+}
+
+.deck__reel-tooth {
+  fill: #08090b;
+}
+
+.deck__cassette.is-spinning .deck__reel {
+  animation: deck-reel 1.8s linear infinite;
+}
+
+@keyframes deck-reel {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.deck__display {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #03100e;
+  box-shadow:
+    inset 0 0 0 1px #000,
+    inset 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.deck__display .dot-matrix {
+  width: 100%;
+  height: auto;
+}
+
+.deck__display .dot-matrix__lit {
+  fill: color-mix(in srgb, var(--vfd) 80%, var(--aurora));
+}
+
+.deck__meters {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  display: flex;
+  gap: 10px;
+}
+
+.deck__meters .vu-meter {
+  width: clamp(104px, 11vw, 190px);
+  filter: drop-shadow(0 0 10px rgba(255, 190, 90, 0.16))
+    brightness(calc(0.92 + 0.12 * var(--stage-glow)));
+}
+
+.deck__buttons {
+  grid-column: 2;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.deck__button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #8e949a;
+  background: linear-gradient(180deg, #2b2d32, #17181b);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px #000,
+    0 0 0 2px color-mix(in srgb, var(--aurora) calc(12% + 14% * var(--stage-glow)), transparent);
+}
+
+.deck__button.is-lit {
+  color: #f4f6f8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px #000,
+    0 0 0 2px color-mix(in srgb, var(--aurora) 70%, transparent),
+    0 0 10px color-mix(in srgb, var(--aurora) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck__cassette.is-spinning .deck__reel {
+    animation: none;
+  }
 }
 
 /* ---------- Spektrum sahnesi ---------- */

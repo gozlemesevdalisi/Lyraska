@@ -20,12 +20,12 @@ import {
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
 import { useVisualFeed } from "../hooks/useVisualFeed";
 
-interface Meters {
+export interface Meters {
   needles: [Needle, Needle];
   lamps: [number, number];
 }
 
-const AT_REST: Meters = { needles: [NEEDLE_AT_REST, NEEDLE_AT_REST], lamps: [0, 0] };
+export const AT_REST: Meters = { needles: [NEEDLE_AT_REST, NEEDLE_AT_REST], lamps: [0, 0] };
 
 /** Ölçerleri `dt` saniye ilerletir (saf; test edilebilir). */
 export function stepMeters(prev: Meters, frame: VisualFrame | null, dt: number): Meters {
