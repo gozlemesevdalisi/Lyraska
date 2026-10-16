@@ -94,6 +94,9 @@ sarma hedeften geç başlar. Düzeltme: başlangıcı `pts + trim_start` saymak;
 
 ## 4. Bulgular
 
+GitHub kayıtları (etiket "hata"): K1 → #72, S1 → #73, U1 → #74, C1/C2/C4 → #75, C3 → #76, U3 → #77, A2 → #78,
+S2/S3 → #79, A1/A3/A4 → #80, K3–K6 → #81.
+
 Kodlar: **S** ses motoru, **A** analiz ve Görsel Yönetmen, **K** kütüphane/depolama/komutlar, **U** arayüz, **C** CI,
 yayın, lisans. Güven: **kesin** = kod akışı ya da deney kanıtladı; **olası** = okumadan çıkarıldı, çalıştırılmadı.
 
